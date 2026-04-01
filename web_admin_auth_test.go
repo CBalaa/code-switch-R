@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"codeswitch/services"
+	"crypto/tls"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +16,10 @@ func newTestWebRuntime(t *testing.T) *appRuntime {
 	t.Setenv("HOME", t.TempDir())
 
 	appSettings := services.NewAppSettingsService(nil)
+	adminSecurity, err := newAdminSecurity(appSettings)
+	if err != nil {
+		t.Fatalf("failed to create admin security: %v", err)
+	}
 
 	return &appRuntime{
 		adminAddr:      "127.0.0.1:0",
@@ -23,11 +28,27 @@ func newTestWebRuntime(t *testing.T) *appRuntime {
 		appService:     &AppService{},
 		appSettings:    appSettings,
 		adminAuth:      services.NewAdminAuthService(appSettings),
+		adminSecurity:  adminSecurity,
 		codexRelayKeys: services.NewCodexRelayKeyService(),
 	}
 }
 
+type requestOptions struct {
+	Cookies    []*http.Cookie
+	Headers    map[string]string
+	RemoteAddr string
+	Host       string
+	TLS        bool
+}
+
 func performRequest(t *testing.T, handler http.Handler, method, path string, body any, cookies ...*http.Cookie) *httptest.ResponseRecorder {
+	return performRequestWithOptions(t, handler, method, path, body, requestOptions{
+		Cookies:    cookies,
+		RemoteAddr: "127.0.0.1:12345",
+	})
+}
+
+func performRequestWithOptions(t *testing.T, handler http.Handler, method, path string, body any, options requestOptions) *httptest.ResponseRecorder {
 	t.Helper()
 
 	var requestBody *bytes.Reader
@@ -42,10 +63,22 @@ func performRequest(t *testing.T, handler http.Handler, method, path string, bod
 	}
 
 	req := httptest.NewRequest(method, path, requestBody)
+	if options.RemoteAddr != "" {
+		req.RemoteAddr = options.RemoteAddr
+	}
+	if options.Host != "" {
+		req.Host = options.Host
+	}
+	if options.TLS {
+		req.TLS = &tls.ConnectionState{}
+	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	for _, cookie := range cookies {
+	for key, value := range options.Headers {
+		req.Header.Set(key, value)
+	}
+	for _, cookie := range options.Cookies {
 		req.AddCookie(cookie)
 	}
 
@@ -185,5 +218,149 @@ func TestAdminServerInitializeAndManageCodexKeys(t *testing.T) {
 	}
 	if listPayload.Keys[0].ID == firstKey.ID {
 		t.Fatalf("expected deleted key %q to be absent from list", firstKey.ID)
+	}
+}
+
+func TestAdminServerRejectsInsecurePublicHTTP(t *testing.T) {
+	rt := newTestWebRuntime(t)
+	server := newAdminServer(rt)
+
+	status := performRequestWithOptions(t, server.Handler, http.MethodGet, "/api/admin/status", nil, requestOptions{
+		RemoteAddr: "203.0.113.25:54321",
+	})
+	if status.Code != http.StatusForbidden {
+		t.Fatalf("expected insecure public request to return 403, got %d: %s", status.Code, status.Body.String())
+	}
+}
+
+func TestAdminServerAllowsTrustedProxyHTTPS(t *testing.T) {
+	rt := newTestWebRuntime(t)
+	server := newAdminServer(rt)
+
+	status := performRequestWithOptions(t, server.Handler, http.MethodGet, "/api/admin/status", nil, requestOptions{
+		RemoteAddr: "127.0.0.1:8081",
+		Host:       "admin.example.com",
+		Headers: map[string]string{
+			"X-Forwarded-For":   "203.0.113.25",
+			"X-Forwarded-Proto": "https",
+			"X-Forwarded-Host":  "admin.example.com",
+		},
+	})
+	if status.Code != http.StatusOK {
+		t.Fatalf("expected trusted proxy https request to return 200, got %d: %s", status.Code, status.Body.String())
+	}
+}
+
+func TestAdminServerRemoteInitializeRequiresSetupToken(t *testing.T) {
+	rt := newTestWebRuntime(t)
+	server := newAdminServer(rt)
+
+	withoutToken := performRequestWithOptions(t, server.Handler, http.MethodPost, "/api/admin/initialize", map[string]string{
+		"username": "admin",
+		"password": "password123",
+	}, requestOptions{
+		RemoteAddr: "127.0.0.1:8081",
+		Host:       "admin.example.com",
+		Headers: map[string]string{
+			"Origin":            "https://admin.example.com",
+			"X-Forwarded-For":   "203.0.113.25",
+			"X-Forwarded-Proto": "https",
+			"X-Forwarded-Host":  "admin.example.com",
+		},
+	})
+	if withoutToken.Code != http.StatusForbidden {
+		t.Fatalf("expected remote initialize without setup token to return 403, got %d: %s", withoutToken.Code, withoutToken.Body.String())
+	}
+
+	withToken := performRequestWithOptions(t, server.Handler, http.MethodPost, "/api/admin/initialize", map[string]string{
+		"username":   "admin",
+		"password":   "password123",
+		"setupToken": rt.adminSecurity.setupToken,
+	}, requestOptions{
+		RemoteAddr: "127.0.0.1:8081",
+		Host:       "admin.example.com",
+		Headers: map[string]string{
+			"Origin":            "https://admin.example.com",
+			"X-Forwarded-For":   "203.0.113.25",
+			"X-Forwarded-Proto": "https",
+			"X-Forwarded-Host":  "admin.example.com",
+		},
+	})
+	if withToken.Code != http.StatusOK {
+		t.Fatalf("expected remote initialize with setup token to return 200, got %d: %s", withToken.Code, withToken.Body.String())
+	}
+
+	cookies := withToken.Result().Cookies()
+	if len(cookies) == 0 || !cookies[0].Secure {
+		t.Fatalf("expected remote https initialize to set a secure session cookie, got %+v", cookies)
+	}
+}
+
+func TestAdminServerRateLimitsLogin(t *testing.T) {
+	rt := newTestWebRuntime(t)
+	server := newAdminServer(rt)
+
+	initialize := performRequest(t, server.Handler, http.MethodPost, "/api/admin/initialize", map[string]string{
+		"username": "admin",
+		"password": "password123",
+	})
+	if initialize.Code != http.StatusOK {
+		t.Fatalf("expected initialize 200, got %d: %s", initialize.Code, initialize.Body.String())
+	}
+
+	for i := 0; i < services.AdminAuthMaxFailures; i++ {
+		response := performRequest(t, server.Handler, http.MethodPost, "/api/admin/login", map[string]string{
+			"username": "admin",
+			"password": "wrong-password",
+		})
+		if i < services.AdminAuthMaxFailures-1 && response.Code != http.StatusUnauthorized {
+			t.Fatalf("expected attempt %d to return 401, got %d: %s", i+1, response.Code, response.Body.String())
+		}
+	}
+
+	limited := performRequest(t, server.Handler, http.MethodPost, "/api/admin/login", map[string]string{
+		"username": "admin",
+		"password": "password123",
+	})
+	if limited.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected rate-limited login to return 429, got %d: %s", limited.Code, limited.Body.String())
+	}
+	if limited.Header().Get("Retry-After") == "" {
+		t.Fatal("expected rate-limited response to include Retry-After header")
+	}
+}
+
+func TestAdminServerRejectsCrossSiteAdminMutation(t *testing.T) {
+	rt := newTestWebRuntime(t)
+	server := newAdminServer(rt)
+
+	initialize := performRequestWithOptions(t, server.Handler, http.MethodPost, "/api/admin/initialize", map[string]string{
+		"username": "admin",
+		"password": "password123",
+	}, requestOptions{
+		RemoteAddr: "127.0.0.1:12345",
+		Host:       "example.com",
+		Headers: map[string]string{
+			"Origin": "http://example.com",
+		},
+	})
+	if initialize.Code != http.StatusOK {
+		t.Fatalf("expected initialize 200, got %d: %s", initialize.Code, initialize.Body.String())
+	}
+
+	adminCookie := initialize.Result().Cookies()[0]
+
+	crossSite := performRequestWithOptions(t, server.Handler, http.MethodPost, "/api/admin/codex-keys", map[string]string{
+		"name": "evil",
+	}, requestOptions{
+		Cookies:    []*http.Cookie{adminCookie},
+		RemoteAddr: "127.0.0.1:12345",
+		Host:       "example.com",
+		Headers: map[string]string{
+			"Origin": "https://evil.example",
+		},
+	})
+	if crossSite.Code != http.StatusForbidden {
+		t.Fatalf("expected cross-site mutation to return 403, got %d: %s", crossSite.Code, crossSite.Body.String())
 	}
 }

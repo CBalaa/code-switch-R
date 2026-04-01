@@ -165,6 +165,7 @@ func newAdminServer(rt *appRuntime) *http.Server {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	router.Use(gin.Logger(), gin.Recovery())
+	router.Use(adminSecurityMiddleware(rt.adminSecurity))
 
 	registry := newRPCRegistry()
 	rt.registerServices(registry)
@@ -178,9 +179,10 @@ func newAdminServer(rt *appRuntime) *http.Server {
 
 	registerAdminAuthRoutes(router, rt)
 
-	authRequired := requireAdminSession(rt.adminAuth)
+	authRequired := requireAdminSession(rt.adminAuth, rt.adminSecurity)
+	originRequired := requireTrustedOrigin(rt.adminSecurity)
 
-	router.POST("/api/wails/call", authRequired, func(c *gin.Context) {
+	router.POST("/api/wails/call", originRequired, authRequired, func(c *gin.Context) {
 		var request rpcCallRequest
 		if err := c.ShouldBindJSON(&request); err != nil {
 			c.JSON(http.StatusBadRequest, apiErrorResponse{
@@ -207,8 +209,12 @@ func newAdminServer(rt *appRuntime) *http.Server {
 	registerStaticRoutes(router, rt.staticDir)
 
 	return &http.Server{
-		Addr:    rt.adminAddr,
-		Handler: router,
+		Addr:              rt.adminAddr,
+		Handler:           router,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 20,
 	}
 }
 

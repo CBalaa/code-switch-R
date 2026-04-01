@@ -142,10 +142,14 @@ export async function refreshAdminAuthStatus(force = false): Promise<AdminAuthSt
   return statusPromise
 }
 
-export async function initializeAdmin(username: string, password: string): Promise<AdminAuthStatus> {
+export async function initializeAdmin(
+  username: string,
+  password: string,
+  setupToken = '',
+): Promise<AdminAuthStatus> {
   const status = await adminRequest<AdminAuthStatus>('/api/admin/initialize', {
     method: 'POST',
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ username, password, setupToken }),
   })
   applyStatus(status)
   return status

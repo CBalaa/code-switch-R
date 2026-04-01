@@ -147,6 +147,7 @@
       "password": "管理员密码",
       "confirmPassword": "确认密码",
       "currentPassword": "当前密码",
+      "setupToken": "初始化 Token",
       "newUsername": "新账号",
       "newPassword": "新密码"
     },
@@ -154,6 +155,7 @@
       "username": "输入管理员账号",
       "password": "输入管理员密码",
       "confirmPassword": "再次输入管理员密码",
+      "setupToken": "公网首次初始化时填写 setup token，本机初始化可留空",
       "currentPassword": "输入当前密码以确认修改",
       "newUsername": "留空则保持当前账号",
       "newPassword": "留空则保持当前密码"
@@ -166,7 +168,8 @@
     "setup": {
       "eyebrow": "首次初始化",
       "title": "创建管理员账号",
-      "description": "第一次打开管理端时，请先设置 8080 后台登录账号和密码。创建成功后会自动登录。",
+      "description": "第一次打开管理端时，请先设置 8080 后台登录账号和密码。公网首次初始化时，还需要输入 setup token。创建成功后会自动登录。",
+      "tokenHint": "如果你是从公网第一次初始化，请填写启动日志里输出的 setup token；如果你直接在服务器本机打开，可以留空。",
       "submit": "创建并登录",
       "submitting": "创建中...",
       "success": "管理员账号已创建"

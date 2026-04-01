@@ -38,7 +38,8 @@
 注意：
 
 - Web 管理界面可以通过 SSH 隧道或反向代理从远端浏览器访问
-- `8080` 管理后台现在内置管理员账号密码登录
+- `8080` 管理后台现在内置管理员账号密码登录、首次公网初始化 setup token、登录限流和同源校验
+- 非本机来源直接用明文 HTTP 访问 `8080` 会被拒绝，公网访问应走 HTTPS 反向代理
 - `18100` 上的 Codex API 现在只接受后台生成的 relay key
 - 代理服务默认监听 `0.0.0.0:18100`
 - 也就是说，Claude Code / Codex / Gemini CLI 应该运行在同一台服务器上
@@ -101,9 +102,12 @@ cd /home/chh/gitprojects/code-switch-R
 正常启动后会看到类似日志：
 
 ```text
+admin setup token (save it before first initialization): <generated-token>
 web admin listening on http://0.0.0.0:8080
 provider relay listening on http://0.0.0.0:18100
 ```
+
+如果管理员账号已经初始化过，就不会再输出 `admin setup token`。
 
 ### 5. 验证服务
 
@@ -122,7 +126,7 @@ curl http://127.0.0.1:8080/healthz
 浏览器访问：
 
 - 本机访问：`http://127.0.0.1:8080`
-- 远程机器访问：`http://<服务器IP>:8080`
+- 远程机器访问：推荐 `https://<你的域名>`，由 Nginx / Caddy 反向代理到本机 `8080`
 - 如果你不想直接暴露管理端，也可以继续用 SSH 隧道
 
 SSH 隧道示例：
@@ -146,7 +150,8 @@ After=network.target
 Type=simple
 User=chh
 WorkingDirectory=/home/chh/gitprojects/code-switch-R
-Environment=CODE_SWITCH_WEB_ADDR=0.0.0.0:8080
+Environment=CODE_SWITCH_WEB_ADDR=127.0.0.1:8080
+Environment=CODE_SWITCH_SETUP_TOKEN=replace-with-a-long-random-token
 ExecStart=/home/chh/gitprojects/code-switch-R/codeswitch-web
 Restart=on-failure
 RestartSec=3
@@ -182,17 +187,50 @@ sudo systemctl restart codeswitch
 
 ## 远程访问和安全建议
 
-默认配置下，Web 管理界面监听 `0.0.0.0:8080`，也就是会接受来自其他机器的访问请求。
+默认配置下，Web 管理界面监听 `0.0.0.0:8080`，但现在后台只接受两类访问：
 
-如果你要让其他机器访问这个管理界面，有两种常见方式：
+1. 服务器本机直接访问
+2. 经过受信反向代理转发的 HTTPS 访问
 
-1. 直接开放 `8080`，并在防火墙 / 安全组中只放行可信来源
-2. 把管理界面挂到 Nginx / Caddy 反向代理后面，并补上 TLS / 访问控制
+也就是说，把 `8080` 直接裸露到公网并用 `http://<公网IP>:8080` 打开，服务会返回 `403`，这是故意的安全策略，不是故障。
+
+推荐公网部署方式：
+
+1. `codeswitch-web` 监听本机：`127.0.0.1:8080`
+2. Nginx / Caddy 对外监听 `443`
+3. 反向代理把 HTTPS 请求转发到 `127.0.0.1:8080`
+4. 第一次公网初始化时，在页面输入 setup token
+5. `18100` 只对可信来源放行，或者也放到反向代理 / 网关后面
+
+仓库里已经附了两份可直接改域名后使用的示例：
+
+- Nginx: [deploy/nginx/code-switch.conf](/home/chh/gitprojects/code-switch-R/deploy/nginx/code-switch.conf)
+- Caddy: [deploy/caddy/Caddyfile](/home/chh/gitprojects/code-switch-R/deploy/caddy/Caddyfile)
 
 管理界面监听地址可以通过环境变量修改：
 
 ```bash
 export CODE_SWITCH_WEB_ADDR=0.0.0.0:8080
+```
+
+首次公网初始化 token 可以显式指定：
+
+```bash
+export CODE_SWITCH_SETUP_TOKEN='change-this-to-a-long-random-token'
+```
+
+如果不设置，程序会在“管理员尚未初始化”时自动生成一次并打印到启动日志。
+
+如果你的 HTTPS 反代不在同一台机器上，或者是 Docker / 容器网段转发，需要把代理地址加入受信列表，例如：
+
+```bash
+export CODE_SWITCH_TRUSTED_PROXIES='127.0.0.1/32,::1/128,172.18.0.0/16'
+```
+
+如果反向代理改写了 Host，而不是把原始域名转发给后端，再补一个公网 Origin：
+
+```bash
+export CODE_SWITCH_PUBLIC_ORIGIN='https://admin.example.com'
 ```
 
 静态文件目录也可以改：
@@ -203,10 +241,83 @@ export CODE_SWITCH_STATIC_DIR=/your/path/to/frontend/dist
 
 重要说明：
 
-- 当前应用已经内置 `8080` 管理员登录鉴权，但如果要对公网开放，仍建议放在反向代理后面并启用 TLS
+- 当前应用已经内置 `8080` 管理员登录鉴权、首次初始化 token、登录限流、服务端 session、`HttpOnly`/`SameSite=Strict` Cookie、同源校验和安全响应头
+- 如果要对公网开放，推荐仍然是“本机监听 + HTTPS 反向代理”，而不是直接裸露 `8080`
 - `18100` 是 CLI / API relay 端口，默认监听 `0.0.0.0:18100`
-- `18100` 已经加了 Codex relay key 校验，但如果要直接暴露到公网，仍建议配合防火墙、反向代理或来源限制
+- `18100` 已经加了 Codex relay key 校验，但如果要直接暴露到公网，仍建议配合防火墙、反向代理、WAF 或来源限制
 - Codex 相关接口现在必须使用后台生成的 relay key，不能再随便填任意密钥
+
+### Nginx 示例
+
+适合“同机部署”：
+
+- `codeswitch-web` 监听 `127.0.0.1:8080`
+- Nginx 监听公网 `443`
+- 默认情况下，不需要额外设置 `CODE_SWITCH_TRUSTED_PROXIES`
+
+示例文件见：[deploy/nginx/code-switch.conf](/home/chh/gitprojects/code-switch-R/deploy/nginx/code-switch.conf)
+
+使用前你只需要改这几项：
+
+1. `server_name admin.example.com`
+2. `ssl_certificate`
+3. `ssl_certificate_key`
+
+如果你用的是 `certbot`，常见部署步骤类似：
+
+```bash
+sudo cp /home/chh/gitprojects/code-switch-R/deploy/nginx/code-switch.conf /etc/nginx/sites-available/code-switch.conf
+sudo ln -sf /etc/nginx/sites-available/code-switch.conf /etc/nginx/sites-enabled/code-switch.conf
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+### Caddy 示例
+
+Caddy 更省事，前提是：
+
+- 你有一个域名
+- 这个域名已经解析到当前服务器公网 IP
+- 80/443 端口能从公网打到这台机器
+
+示例文件见：[deploy/caddy/Caddyfile](/home/chh/gitprojects/code-switch-R/deploy/caddy/Caddyfile)
+
+改完域名后常见启动方式类似：
+
+```bash
+sudo cp /home/chh/gitprojects/code-switch-R/deploy/caddy/Caddyfile /etc/caddy/Caddyfile
+sudo caddy validate --config /etc/caddy/Caddyfile
+sudo systemctl reload caddy
+```
+
+### 必须要域名吗
+
+不是绝对必须，但如果你的目标是：
+
+- 从公网浏览器稳定访问
+- 浏览器不报证书不可信
+- 用标准 HTTPS 保护管理员登录和 Cookie
+
+那基本上应该有域名。
+
+原因很简单：
+
+- Nginx / Caddy 给浏览器做一张“被系统信任的 HTTPS 证书”时，最常见的方案就是给域名签证书
+- 没域名时，你仍然可以给公网 IP 做反代，但通常只能用自签名证书，浏览器会报不安全
+- 对管理员后台来说，这种体验和安全边界都不理想
+
+如果你没有域名，实际可行的方案是这几个：
+
+1. 最稳：继续走 SSH 隧道，只从本机浏览器访问 `127.0.0.1:8080`
+2. 也可以：用 Tailscale / ZeroTier / WireGuard 之类的内网组网，再通过内网地址访问
+3. 勉强可用：公网 IP + 自签名 HTTPS 反代，但不推荐当正式方案
+
+如果你愿意上公网正式使用，我的建议是：
+
+1. 准备一个域名，例如 `admin.example.com`
+2. 把它解析到你的服务器
+3. 用 Caddy 或 Nginx + Let's Encrypt
+4. `codeswitch-web` 只监听 `127.0.0.1:8080`
 
 ## 如何使用
 
@@ -239,9 +350,10 @@ curl http://127.0.0.1:8080/healthz
 
 当前版本里，`8080` 和 `18100` 都默认对外监听。
 
-如果你只是想远程打开网页后台，可以直接访问：
+如果你只是想远程打开网页后台，不要直接访问裸露的 `http://<服务器IP>:8080`。推荐两种方式：
 
-- `http://<服务器公网IP>:8080`
+1. SSH 隧道
+2. `https://<你的域名>` 反向代理到 `127.0.0.1:8080`
 
 如果你还想在本地电脑上把远程机器的 `18100` 映射成自己电脑上的本地端口，SSH 隧道仍然是最稳的方式。
 
@@ -267,13 +379,14 @@ curl http://127.0.0.1:18100/v1/models \
 
 第一次打开网页后台：
 
-1. 浏览器打开 `http://127.0.0.1:8080` 或 `http://<服务器IP>:8080`
+1. 浏览器打开本机 `http://127.0.0.1:8080`，或远程 `https://<你的域名>`
 2. 先创建管理员账号和密码
-3. 创建成功后会自动登录
+3. 如果这是第一次公网初始化，再填写启动日志里的 setup token
+4. 创建成功后会自动登录
 
 以后再次访问：
 
-1. 打开 `http://127.0.0.1:8080` 或 `http://<服务器IP>:8080`
+1. 打开本机 `http://127.0.0.1:8080`，或远程 `https://<你的域名>`
 2. 输入管理员账号密码登录
 
 ### 4. 在网页里配置供应商

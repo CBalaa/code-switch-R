@@ -1,12 +1,9 @@
 package services
 
 import (
-	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -26,20 +23,22 @@ type AdminAuthStatus struct {
 	Username      string `json:"username,omitempty"`
 }
 
-type adminSessionPayload struct {
-	Username  string `json:"username"`
-	ExpiresAt int64  `json:"expiresAt"`
+type adminSessionRecord struct {
+	Username  string
+	ExpiresAt time.Time
 }
 
 type AdminAuthService struct {
 	appSettings *AppSettingsService
 	mu          sync.Mutex
+	sessions    map[string]adminSessionRecord
 	now         func() time.Time
 }
 
 func NewAdminAuthService(appSettings *AppSettingsService) *AdminAuthService {
 	return &AdminAuthService{
 		appSettings: appSettings,
+		sessions:    make(map[string]adminSessionRecord),
 		now:         time.Now,
 	}
 }
@@ -60,10 +59,7 @@ func (s *AdminAuthService) GetStatus(sessionToken string) (*AdminAuthStatus, err
 		return status, nil
 	}
 
-	username, ok, err := s.validateSessionToken(config, sessionToken)
-	if err != nil {
-		return nil, err
-	}
+	username, ok := s.validateSessionLocked(config, sessionToken)
 	if ok {
 		status.Authenticated = true
 		status.Username = username
@@ -111,7 +107,9 @@ func (s *AdminAuthService) InitializeAdmin(username, password string) (string, *
 		return "", nil, err
 	}
 
-	token, err := s.issueSessionToken(config)
+	s.sessions = make(map[string]adminSessionRecord)
+
+	token, err := s.issueSessionLocked(normalizedUsername)
 	if err != nil {
 		return "", nil, err
 	}
@@ -156,7 +154,7 @@ func (s *AdminAuthService) Login(username, password string) (string, *AdminAuthS
 		}
 	}
 
-	token, err := s.issueSessionToken(config)
+	token, err := s.issueSessionLocked(config.Username)
 	if err != nil {
 		return "", nil, err
 	}
@@ -184,11 +182,13 @@ func (s *AdminAuthService) UpdateCredentials(currentPassword, newUsername, newPa
 	}
 
 	nextUsername := config.Username
+	changed := false
 	if strings.TrimSpace(newUsername) != "" {
 		nextUsername, err = normalizeAdminUsername(newUsername)
 		if err != nil {
 			return "", nil, err
 		}
+		changed = true
 	}
 
 	nextPasswordHash := config.PasswordHash
@@ -200,9 +200,10 @@ func (s *AdminAuthService) UpdateCredentials(currentPassword, newUsername, newPa
 		if err != nil {
 			return "", nil, err
 		}
+		changed = true
 	}
 
-	if nextUsername == config.Username && nextPasswordHash == config.PasswordHash {
+	if !changed {
 		return "", nil, errors.New("没有需要更新的管理员信息")
 	}
 
@@ -220,7 +221,9 @@ func (s *AdminAuthService) UpdateCredentials(currentPassword, newUsername, newPa
 		return "", nil, err
 	}
 
-	token, err := s.issueSessionToken(config)
+	s.sessions = make(map[string]adminSessionRecord)
+
+	token, err := s.issueSessionLocked(nextUsername)
 	if err != nil {
 		return "", nil, err
 	}
@@ -244,75 +247,74 @@ func (s *AdminAuthService) ValidateSession(sessionToken string) (string, bool, e
 		return "", false, nil
 	}
 
-	return s.validateSessionToken(config, sessionToken)
+	username, ok := s.validateSessionLocked(config, sessionToken)
+	return username, ok, nil
 }
 
-func (s *AdminAuthService) validateSessionToken(config AdminAuthConfig, sessionToken string) (string, bool, error) {
+func (s *AdminAuthService) Logout(sessionToken string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	sessionToken = strings.TrimSpace(sessionToken)
 	if sessionToken == "" {
-		return "", false, nil
-	}
-	if strings.TrimSpace(config.SessionSecret) == "" {
-		return "", false, nil
+		return nil
 	}
 
-	parts := strings.Split(sessionToken, ".")
-	if len(parts) != 2 {
-		return "", false, nil
-	}
-
-	payloadPart := parts[0]
-	signaturePart := parts[1]
-	expectedSignature := s.signSessionPayload(config.SessionSecret, payloadPart)
-	if subtle.ConstantTimeCompare([]byte(signaturePart), []byte(expectedSignature)) != 1 {
-		return "", false, nil
-	}
-
-	payloadBytes, err := base64.RawURLEncoding.DecodeString(payloadPart)
-	if err != nil {
-		return "", false, nil
-	}
-
-	var payload adminSessionPayload
-	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
-		return "", false, nil
-	}
-	if payload.Username != config.Username {
-		return "", false, nil
-	}
-	if payload.ExpiresAt <= s.now().Unix() {
-		return "", false, nil
-	}
-
-	return payload.Username, true, nil
+	delete(s.sessions, sessionToken)
+	return nil
 }
 
-func (s *AdminAuthService) issueSessionToken(config AdminAuthConfig) (string, error) {
-	if !isAdminConfigured(config) {
-		return "", errors.New("管理员账号尚未初始化")
-	}
-	if strings.TrimSpace(config.SessionSecret) == "" {
-		return "", errors.New("session secret 缺失")
+func (s *AdminAuthService) validateSessionLocked(config AdminAuthConfig, sessionToken string) (string, bool) {
+	s.pruneExpiredSessionsLocked()
+
+	sessionToken = strings.TrimSpace(sessionToken)
+	if sessionToken == "" {
+		return "", false
 	}
 
-	payload := adminSessionPayload{
-		Username:  config.Username,
-		ExpiresAt: s.now().Add(AdminSessionTTL).Unix(),
+	session, ok := s.sessions[sessionToken]
+	if !ok {
+		return "", false
 	}
-	payloadBytes, err := json.Marshal(payload)
+	if session.ExpiresAt.Before(s.now()) || session.ExpiresAt.Equal(s.now()) {
+		delete(s.sessions, sessionToken)
+		return "", false
+	}
+	if subtle.ConstantTimeCompare([]byte(session.Username), []byte(config.Username)) != 1 {
+		delete(s.sessions, sessionToken)
+		return "", false
+	}
+
+	return session.Username, true
+}
+
+func (s *AdminAuthService) issueSessionLocked(username string) (string, error) {
+	if strings.TrimSpace(username) == "" {
+		return "", errors.New("管理员账号不能为空")
+	}
+
+	s.pruneExpiredSessionsLocked()
+
+	token, err := generateAdminOpaqueToken()
 	if err != nil {
 		return "", err
 	}
 
-	payloadPart := base64.RawURLEncoding.EncodeToString(payloadBytes)
-	signaturePart := s.signSessionPayload(config.SessionSecret, payloadPart)
-	return payloadPart + "." + signaturePart, nil
+	s.sessions[token] = adminSessionRecord{
+		Username:  username,
+		ExpiresAt: s.now().Add(AdminSessionTTL),
+	}
+
+	return token, nil
 }
 
-func (s *AdminAuthService) signSessionPayload(secret string, payload string) string {
-	mac := hmac.New(sha256.New, []byte(secret))
-	_, _ = mac.Write([]byte(payload))
-	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+func (s *AdminAuthService) pruneExpiredSessionsLocked() {
+	now := s.now()
+	for token, session := range s.sessions {
+		if !session.ExpiresAt.After(now) {
+			delete(s.sessions, token)
+		}
+	}
 }
 
 func normalizeAdminUsername(username string) (string, error) {
@@ -345,9 +347,17 @@ func hashAdminPassword(password string) (string, error) {
 }
 
 func generateAdminSessionSecret() (string, error) {
-	buf := make([]byte, 32)
+	return generateAdminRandomToken(32, "session secret")
+}
+
+func generateAdminOpaqueToken() (string, error) {
+	return generateAdminRandomToken(32, "session token")
+}
+
+func generateAdminRandomToken(size int, name string) (string, error) {
+	buf := make([]byte, size)
 	if _, err := rand.Read(buf); err != nil {
-		return "", fmt.Errorf("生成管理员 session secret 失败: %w", err)
+		return "", fmt.Errorf("生成管理员 %s 失败: %w", name, err)
 	}
 	return base64.RawURLEncoding.EncodeToString(buf), nil
 }

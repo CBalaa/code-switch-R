@@ -11,6 +11,7 @@ const authState = useAdminAuthState()
 const username = ref('')
 const password = ref('')
 const confirmPassword = ref('')
+const setupToken = ref('')
 const submitting = ref(false)
 
 const isSetupMode = computed(() => !authState.initialized)
@@ -28,7 +29,7 @@ const submit = async () => {
   submitting.value = true
   try {
     if (isSetupMode.value) {
-      await initializeAdmin(username.value.trim(), password.value)
+      await initializeAdmin(username.value.trim(), password.value, setupToken.value.trim())
       showToast(t('auth.setup.success'), 'success')
     } else {
       await loginAdmin(username.value.trim(), password.value)
@@ -36,6 +37,7 @@ const submit = async () => {
     }
     password.value = ''
     confirmPassword.value = ''
+    setupToken.value = ''
   } catch (error) {
     showToast(extractErrorMessage(error, t('auth.errors.requestFailed')), 'error')
   } finally {
@@ -111,6 +113,19 @@ const submit = async () => {
               :disabled="submitting"
               required
             />
+          </label>
+
+          <label v-if="isSetupMode" class="auth-field">
+            <span>{{ t('auth.fields.setupToken') }}</span>
+            <input
+              v-model="setupToken"
+              class="base-input"
+              type="password"
+              autocomplete="one-time-code"
+              :placeholder="t('auth.placeholders.setupToken')"
+              :disabled="submitting"
+            />
+            <small>{{ t('auth.setup.tokenHint') }}</small>
           </label>
 
           <button class="auth-submit" type="submit" :disabled="submitting">

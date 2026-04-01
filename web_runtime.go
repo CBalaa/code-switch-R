@@ -37,6 +37,7 @@ type appRuntime struct {
 	logService         *services.LogService
 	appSettings        *services.AppSettingsService
 	adminAuth          *services.AdminAuthService
+	adminSecurity      *adminSecurity
 	codexRelayKeys     *services.CodexRelayKeyService
 	mcpService         *services.MCPService
 	skillService       *services.SkillService
@@ -70,6 +71,10 @@ func newAppRuntime() (*appRuntime, error) {
 	settingsService := services.NewSettingsService()
 	appSettings := services.NewAppSettingsService(nil)
 	adminAuth := services.NewAdminAuthService(appSettings)
+	adminSecurity, err := newAdminSecurity(appSettings)
+	if err != nil {
+		return nil, fmt.Errorf("初始化后台安全配置失败: %w", err)
+	}
 	codexRelayKeys := services.NewCodexRelayKeyService()
 	bootstrapNetworkService := services.NewNetworkService(defaultRelayAddr, nil, nil, nil, codexRelayKeys)
 	relayAddr := defaultRelayAddr
@@ -165,6 +170,7 @@ func newAppRuntime() (*appRuntime, error) {
 		logService:         logService,
 		appSettings:        appSettings,
 		adminAuth:          adminAuth,
+		adminSecurity:      adminSecurity,
 		codexRelayKeys:     codexRelayKeys,
 		mcpService:         mcpService,
 		skillService:       skillService,

@@ -50,6 +50,15 @@ func TestAdminAuthServiceLifecycle(t *testing.T) {
 		t.Fatal("expected login with wrong password to fail")
 	}
 
+	if err := service.Logout(loginToken); err != nil {
+		t.Fatalf("Logout() failed: %v", err)
+	}
+	if _, ok, err := service.ValidateSession(loginToken); err != nil {
+		t.Fatalf("ValidateSession(loginToken after logout) failed: %v", err)
+	} else if ok {
+		t.Fatal("expected logged-out session token to be invalid")
+	}
+
 	rotatedToken, status, err := service.UpdateCredentials("password123", "root", "newpassword456")
 	if err != nil {
 		t.Fatalf("UpdateCredentials() failed: %v", err)
@@ -81,6 +90,13 @@ func TestAdminAuthServiceLifecycle(t *testing.T) {
 	}
 	if !status.Initialized || !status.Authenticated || status.Username != "root" {
 		t.Fatalf("unexpected status for rotated token: %+v", status)
+	}
+
+	restartedService := NewAdminAuthService(appSettings)
+	if _, ok, err := restartedService.ValidateSession(rotatedToken); err != nil {
+		t.Fatalf("ValidateSession(rotatedToken after restart) failed: %v", err)
+	} else if ok {
+		t.Fatal("expected in-memory sessions to be cleared after service restart")
 	}
 
 	if _, _, err := service.InitializeAdmin("another", "password789"); err == nil {

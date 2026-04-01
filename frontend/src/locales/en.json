@@ -147,6 +147,7 @@
       "password": "Admin password",
       "confirmPassword": "Confirm password",
       "currentPassword": "Current password",
+      "setupToken": "Setup token",
       "newUsername": "New username",
       "newPassword": "New password"
     },
@@ -154,6 +155,7 @@
       "username": "Enter admin username",
       "password": "Enter admin password",
       "confirmPassword": "Re-enter admin password",
+      "setupToken": "Required for first-time public setup. Leave blank for local setup.",
       "currentPassword": "Enter current password to confirm",
       "newUsername": "Leave blank to keep current username",
       "newPassword": "Leave blank to keep current password"
@@ -166,7 +168,8 @@
     "setup": {
       "eyebrow": "First-time setup",
       "title": "Create the admin account",
-      "description": "Before using the admin UI for the first time, set the 8080 admin username and password. You will be logged in immediately after setup.",
+      "description": "Before using the admin UI for the first time, set the 8080 admin username and password. First-time public setup also requires the setup token. You will be logged in immediately after setup.",
+      "tokenHint": "For first-time public setup, enter the setup token printed in the server logs. Leave it blank if you are initializing directly on the server itself.",
       "submit": "Create and sign in",
       "submitting": "Creating...",
       "success": "Admin account created"
