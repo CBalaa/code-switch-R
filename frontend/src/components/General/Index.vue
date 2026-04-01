@@ -6,6 +6,7 @@ import ListItem from '../Setting/ListRow.vue'
 import LanguageSwitcher from '../Setting/LanguageSwitcher.vue'
 import ThemeSetting from '../Setting/ThemeSetting.vue'
 import NetworkWslSettings from '../Setting/NetworkWslSettings.vue'
+import SecuritySettings from '../Setting/SecuritySettings.vue'
 import { fetchAppSettings, saveAppSettings, type AppSettings } from '../../services/appSettings'
 import { getBlacklistSettings, updateBlacklistSettings, getLevelBlacklistEnabled, setLevelBlacklistEnabled, getBlacklistEnabled, setBlacklistEnabled, type BlacklistSettings } from '../../services/settings'
 import { fetchConfigImportStatus, importFromPath, type ConfigImportStatus } from '../../services/configImport'
@@ -774,6 +775,8 @@ onMounted(async () => {
 
       <!-- Network & WSL Settings -->
       <NetworkWslSettings />
+
+      <SecuritySettings />
 
       <section>
         <h2 class="mac-section-title">{{ $t('components.general.title.blacklist') }}</h2>

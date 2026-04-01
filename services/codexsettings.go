@@ -22,15 +22,21 @@ const (
 	codexProviderKey      = "code-switch-r"
 	codexEnvKey           = "OPENAI_API_KEY"
 	codexWireAPI          = "responses"
-	codexTokenValue       = "code-switch-r"
 )
 
 type CodexSettingsService struct {
 	relayAddr string
+	relayKeys *CodexRelayKeyService
 }
 
-func NewCodexSettingsService(relayAddr string) *CodexSettingsService {
-	return &CodexSettingsService{relayAddr: relayAddr}
+func NewCodexSettingsService(relayAddr string, relayKeys *CodexRelayKeyService) *CodexSettingsService {
+	if relayKeys == nil {
+		relayKeys = NewCodexRelayKeyService()
+	}
+	return &CodexSettingsService{
+		relayAddr: relayAddr,
+		relayKeys: relayKeys,
+	}
 }
 
 func (css *CodexSettingsService) ProxyStatus() (ClaudeProxyStatus, error) {
@@ -109,6 +115,11 @@ func (css *CodexSettingsService) EnableProxy() error {
 
 	// 首次启用：记录启用前的关键字段基线到状态文件
 	if !stateExists {
+		relayKey, err := css.currentRelayKey()
+		if err != nil {
+			return err
+		}
+
 		// 检查 auth.json 是否存在
 		authFileExisted := false
 		var originalAuthKey *string
@@ -141,7 +152,7 @@ func (css *CodexSettingsService) EnableProxy() error {
 			TargetPath:               settingsPath,
 			FileExisted:              fileExisted,
 			InjectedBaseURL:          css.baseURL(),
-			InjectedAuthToken:        codexTokenValue,
+			InjectedAuthToken:        relayKey,
 			AuthFilePath:             authPath,
 			AuthFileExisted:          authFileExisted,
 			InjectedProviderKey:      codexProviderKey,
@@ -406,7 +417,7 @@ func (css *CodexSettingsService) surgicalRestoreAuthFile(state *ProxyState) erro
 
 	if state == nil {
 		// 兜底模式：仅删除代理 token
-		if currentKey == codexTokenValue {
+		if css.isManagedRelayKey(currentKey) {
 			delete(payload, codexEnvKey)
 			if len(payload) == 0 {
 				// 文件变空，删除文件
@@ -575,9 +586,31 @@ func (css *CodexSettingsService) writeAuthFile() error {
 	}
 
 	// 仅更新代理专用的 API Key
-	payload[codexEnvKey] = codexTokenValue
+	relayKey, err := css.currentRelayKey()
+	if err != nil {
+		return err
+	}
+	payload[codexEnvKey] = relayKey
 
 	return AtomicWriteJSON(authPath, payload)
+}
+
+func (css *CodexSettingsService) currentRelayKey() (string, error) {
+	key, err := css.relayKeys.EnsureDefaultKey()
+	if err != nil {
+		return "", err
+	}
+	return key.Key, nil
+}
+
+func (css *CodexSettingsService) isManagedRelayKey(candidate string) bool {
+	candidate = strings.TrimSpace(candidate)
+	if candidate == "" {
+		return false
+	}
+
+	ok, err := css.relayKeys.ValidateKey(candidate)
+	return err == nil && ok
 }
 
 func (css *CodexSettingsService) restoreAuthFile() error {

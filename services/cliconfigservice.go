@@ -18,15 +18,20 @@ type CliConfigService struct {
 	relayAddr string
 	homeDir   string // 缓存的用户家目录（已校验）
 	homeErr   error  // 家目录获取错误
+	relayKeys *CodexRelayKeyService
 }
 
 // NewCliConfigService 创建 CLI 配置服务
-func NewCliConfigService(relayAddr string) *CliConfigService {
+func NewCliConfigService(relayAddr string, relayKeys *CodexRelayKeyService) *CliConfigService {
 	home, err := getUserHomeDir()
+	if relayKeys == nil {
+		relayKeys = NewCodexRelayKeyService()
+	}
 	return &CliConfigService{
 		relayAddr: relayAddr,
 		homeDir:   home,
 		homeErr:   err,
+		relayKeys: relayKeys,
 	}
 }
 
@@ -39,6 +44,14 @@ func (s *CliConfigService) requireHome() error {
 		return fmt.Errorf("无法获取用户家目录: homeDir 未初始化或无效")
 	}
 	return nil
+}
+
+func (s *CliConfigService) currentCodexRelayKey() (string, error) {
+	key, err := s.relayKeys.EnsureDefaultKey()
+	if err != nil {
+		return "", err
+	}
+	return key.Key, nil
 }
 
 // CLIPlatform CLI 平台类型
@@ -69,14 +82,14 @@ type CLIConfigFile struct {
 
 // CLIConfig CLI 配置数据
 type CLIConfig struct {
-	Platform     CLIPlatform               `json:"platform"`
-	Fields       []CLIConfigField          `json:"fields"`
-	RawContent   string                    `json:"rawContent,omitempty"`   // 原始文件内容（用于高级编辑）
-	RawFiles     []CLIConfigFile           `json:"rawFiles,omitempty"`     // 多文件内容预览
-	ConfigFormat string                    `json:"configFormat,omitempty"` // "json" 或 "toml"
-	EnvContent   map[string]string         `json:"envContent,omitempty"`   // Gemini .env 内容
-	FilePath     string                    `json:"filePath,omitempty"`     // 配置文件路径
-	Editable     map[string]interface{}    `json:"editable,omitempty"`     // 可编辑字段的当前值
+	Platform     CLIPlatform            `json:"platform"`
+	Fields       []CLIConfigField       `json:"fields"`
+	RawContent   string                 `json:"rawContent,omitempty"`   // 原始文件内容（用于高级编辑）
+	RawFiles     []CLIConfigFile        `json:"rawFiles,omitempty"`     // 多文件内容预览
+	ConfigFormat string                 `json:"configFormat,omitempty"` // "json" 或 "toml"
+	EnvContent   map[string]string      `json:"envContent,omitempty"`   // Gemini .env 内容
+	FilePath     string                 `json:"filePath,omitempty"`     // 配置文件路径
+	Editable     map[string]interface{} `json:"editable,omitempty"`     // 可编辑字段的当前值
 }
 
 // CLIConfigSnapshots CLI 配置快照（用于前端对比：当前 vs 预览）
@@ -250,6 +263,11 @@ func (s *CliConfigService) GetConfigSnapshots(platform string, apiUrl string, ap
 		}, nil
 
 	case PlatformCodex:
+		relayKey, err := s.currentCodexRelayKey()
+		if err != nil {
+			return nil, fmt.Errorf("获取 Codex relay key 失败: %w", err)
+		}
+
 		configPath := s.getCodexConfigPath()
 		authPath := s.getCodexAuthPath()
 
@@ -340,23 +358,23 @@ func (s *CliConfigService) GetConfigSnapshots(platform string, apiUrl string, ap
 			authPayload = map[string]any{"OPENAI_API_KEY": apiKey}
 		} else {
 			raw["preferred_auth_method"] = "apikey"
-			raw["model_provider"] = "code-switch-r"
+			raw["model_provider"] = codexProviderKey
 
 			if _, exists := raw["model"]; !exists {
 				raw["model"] = "gpt-5-codex"
 			}
 
 			modelProviders := ensureTomlTable(raw, "model_providers")
-			providerCfg := ensureProviderTable(modelProviders, "code-switch-r")
-			providerCfg["name"] = "code-switch-r"
+			providerCfg := ensureProviderTable(modelProviders, codexProviderKey)
+			providerCfg["name"] = codexProviderKey
 			providerCfg["base_url"] = s.baseURL()
 			providerCfg["wire_api"] = "responses"
 			providerCfg["requires_openai_auth"] = false
-			modelProviders["code-switch-r"] = providerCfg
+			modelProviders[codexProviderKey] = providerCfg
 			raw["model_providers"] = modelProviders
 
 			// proxy 模式：保留其他字段，只更新 OPENAI_API_KEY（与 writeAuthFile 一致）
-			authPayload["OPENAI_API_KEY"] = "code-switch-r"
+			authPayload["OPENAI_API_KEY"] = relayKey
 		}
 
 		tomlBytes, err := toml.Marshal(raw)
@@ -917,7 +935,7 @@ func (s *CliConfigService) getCodexConfig() (*CLIConfig, error) {
 	config.Fields = append(config.Fields,
 		CLIConfigField{
 			Key:    "model_provider",
-			Value:  "code-switch-r",
+			Value:  codexProviderKey,
 			Locked: true,
 			Hint:   "代理提供商标识",
 			Type:   "string",
@@ -930,7 +948,7 @@ func (s *CliConfigService) getCodexConfig() (*CLIConfig, error) {
 			Type:   "string",
 		},
 		CLIConfigField{
-			Key:    "model_providers.code-switch-r.base_url",
+			Key:    "model_providers." + codexProviderKey + ".base_url",
 			Value:  baseURL,
 			Locked: true,
 			Hint:   "由代理管理，指向本地代理服务",
@@ -1002,7 +1020,7 @@ func (s *CliConfigService) saveCodexConfig(editable map[string]interface{}) erro
 	}
 
 	// 设置锁定字段
-	raw["model_provider"] = "code-switch-r"
+	raw["model_provider"] = codexProviderKey
 	raw["preferred_auth_method"] = "apikey"
 
 	// 确保 model_providers.code-switch-r 存在
@@ -1010,15 +1028,15 @@ func (s *CliConfigService) saveCodexConfig(editable map[string]interface{}) erro
 	if !ok {
 		modelProviders = make(map[string]interface{})
 	}
-	provider, ok := modelProviders["code-switch-r"].(map[string]interface{})
+	provider, ok := modelProviders[codexProviderKey].(map[string]interface{})
 	if !ok {
 		provider = make(map[string]interface{})
 	}
-	provider["name"] = "code-switch-r"
+	provider["name"] = codexProviderKey
 	provider["base_url"] = s.baseURL()
 	provider["wire_api"] = "responses"
 	provider["requires_openai_auth"] = false
-	modelProviders["code-switch-r"] = provider
+	modelProviders[codexProviderKey] = provider
 	raw["model_providers"] = modelProviders
 
 	// 锁定字段列表（这些字段不允许用户覆盖）
@@ -1074,7 +1092,7 @@ func (s *CliConfigService) saveCodexConfigContent(configPath string, content str
 	}
 
 	// 强制写入锁定字段
-	raw["model_provider"] = "code-switch-r"
+	raw["model_provider"] = codexProviderKey
 	raw["preferred_auth_method"] = "apikey"
 
 	// 确保 model_providers.code-switch-r 存在并写入锁定字段
@@ -1082,15 +1100,15 @@ func (s *CliConfigService) saveCodexConfigContent(configPath string, content str
 	if !ok || modelProviders == nil {
 		modelProviders = make(map[string]interface{})
 	}
-	provider, ok := modelProviders["code-switch-r"].(map[string]interface{})
+	provider, ok := modelProviders[codexProviderKey].(map[string]interface{})
 	if !ok || provider == nil {
 		provider = make(map[string]interface{})
 	}
-	provider["name"] = "code-switch-r"
+	provider["name"] = codexProviderKey
 	provider["base_url"] = s.baseURL()
 	provider["wire_api"] = "responses"
 	provider["requires_openai_auth"] = false
-	modelProviders["code-switch-r"] = provider
+	modelProviders[codexProviderKey] = provider
 	raw["model_providers"] = modelProviders
 
 	// 确保目录存在

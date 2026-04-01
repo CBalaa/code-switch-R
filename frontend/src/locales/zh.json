@@ -135,6 +135,84 @@
     "saving": "保存中...",
     "cancel": "取消"
   },
+  "auth": {
+    "eyebrow": "管理端访问控制",
+    "title": "先验证管理员身份",
+    "lead": "8080 管理界面现在需要账号密码，18100 上的 Codex relay 也只接受后台生成的专用 key。",
+    "noteTitle": "当前保护范围",
+    "noteBody": "未登录时只能访问初始化 / 登录接口，业务 RPC 与事件流都会被拦住。",
+    "statusChecking": "正在检查管理员会话...",
+    "fields": {
+      "username": "管理员账号",
+      "password": "管理员密码",
+      "confirmPassword": "确认密码",
+      "currentPassword": "当前密码",
+      "newUsername": "新账号",
+      "newPassword": "新密码"
+    },
+    "placeholders": {
+      "username": "输入管理员账号",
+      "password": "输入管理员密码",
+      "confirmPassword": "再次输入管理员密码",
+      "currentPassword": "输入当前密码以确认修改",
+      "newUsername": "留空则保持当前账号",
+      "newPassword": "留空则保持当前密码"
+    },
+    "errors": {
+      "passwordMismatch": "两次输入的密码不一致",
+      "copyFailed": "复制到剪贴板失败",
+      "requestFailed": "请求失败，请稍后重试"
+    },
+    "setup": {
+      "eyebrow": "首次初始化",
+      "title": "创建管理员账号",
+      "description": "第一次打开管理端时，请先设置 8080 后台登录账号和密码。创建成功后会自动登录。",
+      "submit": "创建并登录",
+      "submitting": "创建中...",
+      "success": "管理员账号已创建"
+    },
+    "login": {
+      "eyebrow": "管理员登录",
+      "title": "登录后台",
+      "description": "输入管理员账号密码后，才能继续使用管理界面和受保护的 API。",
+      "submit": "登录",
+      "submitting": "登录中...",
+      "success": "登录成功"
+    },
+    "security": {
+      "description": "管理 8080 后台账号与 18100 的 Codex relay key。只有这里生成的 key 才能访问 Codex API。",
+      "adminCardTitle": "管理员账号",
+      "adminCardDescription": "当前登录账号：{username}。新账号或新密码留空时表示保持不变。",
+      "update": "更新账号密码",
+      "updating": "更新中...",
+      "updateSuccess": "管理员账号已更新",
+      "updateFailed": "更新管理员账号失败",
+      "logout": "退出登录",
+      "logoutSuccess": "已退出管理员登录",
+      "logoutFailed": "退出登录失败",
+      "keepHint": "留空则保持不变",
+      "keysCardTitle": "Codex API Keys",
+      "keysCardDescription": "18100 上的 Codex 服务会校验这些 key，不再接受任意伪造的密钥。",
+      "createLabel": "新 key 名称",
+      "createPlaceholder": "例如：本地开发 / CI / 自动化脚本",
+      "create": "生成 key",
+      "creating": "生成中...",
+      "createSuccess": "已生成新的 Codex key",
+      "createFailed": "生成 Codex key 失败",
+      "copy": "复制 key",
+      "copied": "已复制到剪贴板",
+      "copyFailed": "复制 Codex key 失败",
+      "delete": "删除 key",
+      "deleteConfirm": "确定删除 key “{name}” 吗？",
+      "deleteSuccess": "Codex key 已删除",
+      "deleteFailed": "删除 Codex key 失败",
+      "loadKeysFailed": "读取 Codex key 列表失败",
+      "loadingKeys": "正在加载 Codex key 列表...",
+      "empty": "当前还没有可用的 Codex key，可以先生成一个。",
+      "oneTimeTitle": "完整 key 只显示这一次",
+      "oneTimeDescription": "请立即复制并妥善保存，列表里只会显示脱敏后的值。"
+    }
+  },
   "prompts": {
     "hero": {
       "eyebrow": "提示词管理",
@@ -550,6 +628,7 @@
         "application": "应用设置",
         "trayPanel": "托盘弹窗",
         "exterior": "外观设置",
+        "security": "安全设置",
         "blacklist": "拉黑配置",
         "dataImport": "数据导入",
         "connectivity": "连通性检测"

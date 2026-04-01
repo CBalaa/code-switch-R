@@ -19,9 +19,14 @@ type RPCError = {
 
 let sharedEventSource: EventSource | null = null
 
+function notifyAdminAuthInvalid() {
+  window.dispatchEvent(new Event('codeswitch-admin-auth-invalid'))
+}
+
 async function rpcCall<T>(name: string, args: any[]): Promise<T> {
   const response = await fetch('/api/wails/call', {
     method: 'POST',
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
     },
@@ -30,6 +35,9 @@ async function rpcCall<T>(name: string, args: any[]): Promise<T> {
 
   const payload = await response.json().catch(() => ({})) as RPCSuccess<T> & RPCError
   if (!response.ok) {
+    if (response.status === 401) {
+      notifyAdminAuthInvalid()
+    }
     const message = payload?.error?.message || `RPC failed with status ${response.status}`
     throw new Error(message)
   }
@@ -40,8 +48,21 @@ async function rpcCall<T>(name: string, args: any[]): Promise<T> {
 function ensureEventSource(): EventSource {
   if (!sharedEventSource) {
     sharedEventSource = new EventSource('/api/wails/events')
+    sharedEventSource.onerror = () => {
+      if (sharedEventSource?.readyState === EventSource.CLOSED) {
+        sharedEventSource = null
+      }
+    }
   }
   return sharedEventSource
+}
+
+export function resetEventSource() {
+  if (!sharedEventSource) {
+    return
+  }
+  sharedEventSource.close()
+  sharedEventSource = null
 }
 
 export namespace Call {
@@ -123,4 +144,3 @@ export const Create = {
   },
   Events: {},
 }
-

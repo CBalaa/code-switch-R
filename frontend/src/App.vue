@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import { computed, onBeforeUnmount, onMounted } from 'vue'
 import { RouterView, useRoute } from 'vue-router'
-import { computed, onMounted } from 'vue'
+import AdminAccessGate from './components/Auth/AdminAccessGate.vue'
 import Sidebar from './components/Sidebar.vue'
 import UpdateNotification from './components/common/UpdateNotification.vue'
+import { refreshAdminAuthStatus, useAdminAuthState } from './services/adminAuth'
 
 const applyTheme = () => {
   const userTheme = localStorage.getItem('theme')
@@ -13,21 +15,48 @@ const applyTheme = () => {
   document.documentElement.classList.toggle('dark', isDark)
 }
 
-onMounted(() => {
-  applyTheme()
-
-  // 可监听系统主题变化自动更新（可选）
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-    applyTheme()
-  })
-})
-
+const authState = useAdminAuthState()
 const route = useRoute()
 const isTray = computed(() => route.path === '/tray')
+const canRenderApp = computed(() => authState.ready && authState.authenticated)
+
+let mediaQuery: MediaQueryList | null = null
+let handleThemeChange: (() => void) | null = null
+let handleWindowFocus: (() => void) | null = null
+
+onMounted(() => {
+  applyTheme()
+  refreshAdminAuthStatus().catch((error) => {
+    console.error('failed to refresh admin auth status', error)
+  })
+
+  mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+  handleThemeChange = () => {
+    applyTheme()
+  }
+  mediaQuery.addEventListener('change', handleThemeChange)
+
+  handleWindowFocus = () => {
+    refreshAdminAuthStatus(true).catch((error) => {
+      console.error('failed to refresh admin auth status', error)
+    })
+  }
+  window.addEventListener('focus', handleWindowFocus)
+})
+
+onBeforeUnmount(() => {
+  if (mediaQuery && handleThemeChange) {
+    mediaQuery.removeEventListener('change', handleThemeChange)
+  }
+  if (handleWindowFocus) {
+    window.removeEventListener('focus', handleWindowFocus)
+  }
+})
 </script>
 
 <template>
-  <div v-if="isTray" class="tray-layout">
+  <AdminAccessGate v-if="!canRenderApp" />
+  <div v-else-if="isTray" class="tray-layout">
     <RouterView v-slot="{ Component }">
       <component :is="Component" />
     </RouterView>
@@ -41,7 +70,6 @@ const isTray = computed(() => route.path === '/tray')
         </keep-alive>
       </RouterView>
     </main>
-    <!-- 全局更新通知 -->
     <UpdateNotification />
   </div>
 </template>
@@ -58,6 +86,7 @@ const isTray = computed(() => route.path === '/tray')
   height: 100vh;
   width: 100vw;
   overflow: hidden;
+  background: var(--app-background);
 }
 
 .main-content {

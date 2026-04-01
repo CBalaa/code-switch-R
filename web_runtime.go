@@ -35,6 +35,8 @@ type appRuntime struct {
 	cliConfigService   *services.CliConfigService
 	logService         *services.LogService
 	appSettings        *services.AppSettingsService
+	adminAuth          *services.AdminAuthService
+	codexRelayKeys     *services.CodexRelayKeyService
 	mcpService         *services.MCPService
 	skillService       *services.SkillService
 	promptService      *services.PromptService
@@ -66,15 +68,17 @@ func newAppRuntime() (*appRuntime, error) {
 	providerService := services.NewProviderService()
 	settingsService := services.NewSettingsService()
 	appSettings := services.NewAppSettingsService(nil)
+	adminAuth := services.NewAdminAuthService(appSettings)
+	codexRelayKeys := services.NewCodexRelayKeyService()
 	eventHub := services.NewEventHub()
 	notificationService := services.NewNotificationService(appSettings)
 	notificationService.SetEventEmitter(eventHub)
 	blacklistService := services.NewBlacklistService(settingsService, notificationService)
 	geminiService := services.NewGeminiService(defaultRelayAddr)
-	providerRelay := services.NewProviderRelayService(providerService, geminiService, blacklistService, notificationService, appSettings, defaultRelayAddr)
+	providerRelay := services.NewProviderRelayService(providerService, geminiService, codexRelayKeys, blacklistService, notificationService, appSettings, defaultRelayAddr)
 	claudeSettings := services.NewClaudeSettingsService(providerRelay.Addr())
-	codexSettings := services.NewCodexSettingsService(providerRelay.Addr())
-	cliConfigService := services.NewCliConfigService(providerRelay.Addr())
+	codexSettings := services.NewCodexSettingsService(providerRelay.Addr(), codexRelayKeys)
+	cliConfigService := services.NewCliConfigService(providerRelay.Addr(), codexRelayKeys)
 	logService := services.NewLogService()
 	mcpService := services.NewMCPService()
 	skillService := services.NewSkillService()
@@ -94,10 +98,16 @@ func newAppRuntime() (*appRuntime, error) {
 	updateService.SetWebMode(true)
 	consoleService := services.NewConsoleService()
 	customCliService := services.NewCustomCliService(providerRelay.Addr())
-	networkService := services.NewNetworkService(providerRelay.Addr(), claudeSettings, codexSettings, geminiService)
+	networkService := services.NewNetworkService(providerRelay.Addr(), claudeSettings, codexSettings, geminiService, codexRelayKeys)
 
 	if err := providerRelay.Start(); err != nil {
 		return nil, fmt.Errorf("启动代理服务失败: %w", err)
+	}
+
+	if status, err := codexSettings.ProxyStatus(); err == nil && status.Enabled {
+		if err := codexSettings.EnableProxy(); err != nil {
+			log.Printf("刷新 Codex relay key 失败: %v", err)
+		}
 	}
 
 	blacklistStopChan := make(chan struct{})
@@ -146,6 +156,8 @@ func newAppRuntime() (*appRuntime, error) {
 		cliConfigService:   cliConfigService,
 		logService:         logService,
 		appSettings:        appSettings,
+		adminAuth:          adminAuth,
+		codexRelayKeys:     codexRelayKeys,
 		mcpService:         mcpService,
 		skillService:       skillService,
 		promptService:      promptService,

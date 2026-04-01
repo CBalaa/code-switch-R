@@ -28,11 +28,11 @@ const (
 
 // NetworkSettings 网络设置
 type NetworkSettings struct {
-	ListenMode    ListenMode `json:"listenMode"`
-	CustomAddress string     `json:"customAddress,omitempty"`
-	CurrentAddress string    `json:"currentAddress,omitempty"`
-	WSLAutoConfig bool       `json:"wslAutoConfig"`
-	TargetCli     TargetCli  `json:"targetCli"`
+	ListenMode     ListenMode `json:"listenMode"`
+	CustomAddress  string     `json:"customAddress,omitempty"`
+	CurrentAddress string     `json:"currentAddress,omitempty"`
+	WSLAutoConfig  bool       `json:"wslAutoConfig"`
+	TargetCli      TargetCli  `json:"targetCli"`
 }
 
 // TargetCli 目标 CLI 工具配置
@@ -62,6 +62,7 @@ type NetworkService struct {
 	claudeService *ClaudeSettingsService
 	codexService  *CodexSettingsService
 	geminiService *GeminiService
+	relayKeys     *CodexRelayKeyService
 }
 
 // NewNetworkService 创建网络服务
@@ -70,10 +71,14 @@ func NewNetworkService(
 	claudeService *ClaudeSettingsService,
 	codexService *CodexSettingsService,
 	geminiService *GeminiService,
+	relayKeys *CodexRelayKeyService,
 ) *NetworkService {
 	home, err := getUserHomeDir()
 	if err != nil {
 		home = "."
+	}
+	if relayKeys == nil {
+		relayKeys = NewCodexRelayKeyService()
 	}
 
 	return &NetworkService{
@@ -82,6 +87,7 @@ func NewNetworkService(
 		claudeService: claudeService,
 		codexService:  codexService,
 		geminiService: geminiService,
+		relayKeys:     relayKeys,
 	}
 }
 
@@ -98,6 +104,14 @@ func (ns *NetworkService) defaultSettings() NetworkSettings {
 			Gemini:     true,
 		},
 	}
+}
+
+func (ns *NetworkService) currentCodexRelayKey() (string, error) {
+	key, err := ns.relayKeys.EnsureDefaultKey()
+	if err != nil {
+		return "", err
+	}
+	return key.Key, nil
 }
 
 // GetNetworkSettings 获取网络设置
@@ -508,6 +522,11 @@ trap - EXIT
 
 // configureWSLCodex 在 WSL 中配置 Codex（字段级合并）
 func (ns *NetworkService) configureWSLCodex(distro, proxyURL string) error {
+	relayKey, err := ns.currentCodexRelayKey()
+	if err != nil {
+		return err
+	}
+
 	// 字段级合并：
 	// - config.toml: 更新 preferred_auth_method、model_provider；移除旧的 [model_providers.code-switch-r]；追加新段到文件末尾
 	// - auth.json: 仅更新 OPENAI_API_KEY
@@ -535,7 +554,7 @@ fi
 
 base_url=%s
 provider_key='code-switch-r'
-api_key='code-switch-r'
+api_key=%s
 
 ts="$(date +%%s)"
 [ -f "$config_path" ] && cp -a "$config_path" "$config_path.bak.$ts"
@@ -769,7 +788,7 @@ fi
 
 echo "Failed to write $config_path" >&2
 exit 1
-`, bashSingleQuote(proxyURL))
+`, bashSingleQuote(proxyURL), bashSingleQuote(relayKey))
 
 	return ns.runWSLCommand(distro, script)
 }

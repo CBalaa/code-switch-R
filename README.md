@@ -27,8 +27,10 @@
 数据默认写入：
 
 - `~/.code-switch/app.db`
+- `~/.code-switch/app.json`
 - `~/.code-switch/claude-code.json`
 - `~/.code-switch/codex.json`
+- `~/.code-switch/codex-relay-keys.json`
 - `~/.code-switch/mcp.json`
 - `~/.code-switch/prompts.json`
 - `~/.code-switch/proxy-state/`
@@ -36,6 +38,8 @@
 注意：
 
 - Web 管理界面可以通过 SSH 隧道或反向代理从远端浏览器访问
+- `8080` 管理后台现在内置管理员账号密码登录
+- `18100` 上的 Codex API 现在只接受后台生成的 relay key
 - 代理服务当前仍固定监听 `127.0.0.1:18100`
 - 也就是说，Claude Code / Codex / Gemini CLI 应该运行在同一台服务器上
 
@@ -123,7 +127,7 @@ curl http://127.0.0.1:8080/healthz
 SSH 隧道示例：
 
 ```bash
-ssh -L 8080:127.0.0.1:8080 your-user@your-server
+ssh -L 8080:127.0.0.1:8080 -L 18100:127.0.0.1:18100 your-user@your-server
 ```
 
 ## 作为守护进程运行
@@ -182,7 +186,7 @@ sudo systemctl restart codeswitch
 如果你要让其他机器访问这个管理界面，有两种常见方式：
 
 1. 保持默认监听，只通过 SSH 隧道访问
-2. 把管理界面挂到 Nginx / Caddy 反向代理后面，并自行加认证
+2. 把管理界面挂到 Nginx / Caddy 反向代理后面，并补上 TLS / 访问控制
 
 管理界面监听地址可以通过环境变量修改：
 
@@ -198,21 +202,74 @@ export CODE_SWITCH_STATIC_DIR=/your/path/to/frontend/dist
 
 重要说明：
 
-- 当前应用本身没有登录鉴权
-- 如果你把 `8080` 暴露到局域网或公网，必须在外层自己做鉴权
-- `18100` 是 CLI 代理端口，不建议直接暴露
+- 当前应用已经内置 `8080` 管理员登录鉴权，但如果要对公网开放，仍建议放在反向代理后面并启用 TLS
+- `18100` 是 CLI / API relay 端口，默认只监听 `127.0.0.1:18100`
+- `18100` 不建议直接暴露到公网；远程调用更推荐使用 SSH 隧道
+- Codex 相关接口现在必须使用后台生成的 relay key，不能再随便填任意密钥
 
 ## 如何使用
 
-### 1. 打开网页
+### 1. 本机上怎么开启服务
 
-启动程序后，在浏览器打开：
+先构建前端，再构建并启动后端：
 
-```text
-http://127.0.0.1:8080
+```bash
+cd /home/chh/gitprojects/code-switch-R/frontend
+npm install
+npm run build
+
+cd /home/chh/gitprojects/code-switch-R
+go build -o codeswitch-web .
+./codeswitch-web
 ```
 
-### 2. 添加供应商
+启动后会同时提供：
+
+- Web 管理后台：`http://127.0.0.1:8080`
+- Provider Relay：`http://127.0.0.1:18100`
+
+健康检查：
+
+```bash
+curl http://127.0.0.1:8080/healthz
+```
+
+### 2. 远程怎么用
+
+当前版本里，`18100` 默认只监听远程机器自己的 `127.0.0.1`，所以远程最稳的方式是 SSH 隧道。
+
+如果服务跑在远程服务器，而你想在自己电脑上使用：
+
+```bash
+ssh -L 8080:127.0.0.1:8080 -L 18100:127.0.0.1:18100 your-user@your-server
+```
+
+隧道建立后：
+
+- 本地浏览器访问 `http://127.0.0.1:8080`
+- 本地脚本 / 客户端访问 `http://127.0.0.1:18100`
+
+例如在本地测试 Codex relay：
+
+```bash
+curl http://127.0.0.1:18100/v1/models \
+  -H "Authorization: Bearer csk_xxx"
+```
+
+### 3. 网页端怎么用
+
+第一次打开网页后台：
+
+1. 浏览器打开 `http://127.0.0.1:8080`
+2. 先创建管理员账号和密码
+3. 创建成功后会自动登录
+
+以后再次访问：
+
+1. 打开 `http://127.0.0.1:8080`
+2. 输入管理员账号密码登录
+
+### 4. 在网页里配置供应商
 
 进入主界面后：
 
@@ -223,7 +280,7 @@ http://127.0.0.1:8080
 
 推荐至少配置两个供应商，这样自动降级才有意义。
 
-### 3. 打开对应 CLI 的代理
+### 5. 在网页里打开对应 CLI 的代理
 
 在主界面分别可以给这些目标打开代理：
 
@@ -236,11 +293,37 @@ http://127.0.0.1:8080
 
 如果后续要恢复原始直连配置，直接在页面里把对应代理关闭即可。
 
-### 4. 重启 CLI
+### 6. 生成 Codex relay key
+
+如果你要把 `18100` 当作 Codex API 服务给脚本、客户端或远程隧道后的本地工具使用：
+
+1. 打开 `设置`
+2. 进入 `安全设置`
+3. 点击 `生成 key`
+4. 复制生成出来的 `csk_...` key
+
+调用时可以放在这些头里：
+
+- `Authorization: Bearer csk_xxx`
+- `X-Code-Switch-Key: csk_xxx`
+- `X-API-Key: csk_xxx`
+
+示例：
+
+```bash
+curl http://127.0.0.1:18100/responses \
+  -H "Authorization: Bearer csk_xxx" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gpt-5-codex","input":"hello"}'
+```
+
+如果你只是通过网页打开 Codex CLI 代理，程序会为本机 Codex 配置注入可用的 relay key，一般不需要手动再填一遍。
+
+### 7. 重启 CLI
 
 代理配置切换后，建议重启一次相关 CLI 进程，再发起新请求。
 
-### 5. 在日志和统计页面确认生效
+### 8. 在日志和统计页面确认生效
 
 确认是否正常工作，最简单的方法是：
 
@@ -248,7 +331,7 @@ http://127.0.0.1:8080
 2. 回到网页的日志页面查看是否出现新记录
 3. 再看统计页里的请求量、Token 和成本是否增长
 
-### 6. MCP、提示词和配置管理
+### 9. MCP、提示词和配置管理
 
 网页里还可以继续做这些事情：
 

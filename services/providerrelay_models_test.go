@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -50,11 +51,15 @@ func newTestRelayService(t *testing.T) (*ProviderService, *ProviderRelayService)
 	}
 	_ = os.Remove(filepath.Join(homeDir, ".code-switch", "claude-code.json"))
 	_ = os.Remove(filepath.Join(homeDir, ".code-switch", "codex.json"))
+	_ = os.Remove(filepath.Join(homeDir, ".code-switch", codexRelayKeysFile))
 	_ = os.RemoveAll(filepath.Join(homeDir, ".code-switch", "providers"))
+	_ = os.Remove(filepath.Join(homeDir, ".codex", "config.toml"))
+	_ = os.Remove(filepath.Join(homeDir, ".codex", "auth.json"))
 
 	providerService := NewProviderService()
 	settingsService := NewSettingsService()
 	appSettings := NewAppSettingsService(nil)
+	codexRelayKeys := NewCodexRelayKeyService()
 	notificationService := NewNotificationService(appSettings)
 	blacklistService := NewBlacklistService(settingsService, notificationService)
 	geminiService := NewGeminiService("127.0.0.1:18100")
@@ -62,6 +67,7 @@ func newTestRelayService(t *testing.T) (*ProviderService, *ProviderRelayService)
 	relayService := NewProviderRelayService(
 		providerService,
 		geminiService,
+		codexRelayKeys,
 		blacklistService,
 		notificationService,
 		appSettings,
@@ -102,15 +108,15 @@ func TestModelsHandler(t *testing.T) {
 			"object": "list",
 			"data": []map[string]interface{}{
 				{
-					"id":      "claude-sonnet-4",
-					"object":  "model",
-					"created": 1234567890,
+					"id":       "claude-sonnet-4",
+					"object":   "model",
+					"created":  1234567890,
 					"owned_by": "anthropic",
 				},
 				{
-					"id":      "claude-opus-4",
-					"object":  "model",
-					"created": 1234567890,
+					"id":       "claude-opus-4",
+					"object":   "model",
+					"created":  1234567890,
 					"owned_by": "anthropic",
 				},
 			},
@@ -145,8 +151,14 @@ func TestModelsHandler(t *testing.T) {
 	router := gin.New()
 	relayService.registerRoutes(router)
 
+	relayKey, err := relayService.codexRelayKeys.EnsureDefaultKey()
+	if err != nil {
+		t.Fatalf("创建 relay key 失败: %v", err)
+	}
+
 	// 创建测试请求
 	req := httptest.NewRequest("GET", "/v1/models", nil)
+	req.Header.Set("Authorization", "Bearer "+relayKey.Key)
 	w := httptest.NewRecorder()
 
 	// 执行请求
@@ -277,6 +289,122 @@ func TestCustomModelsHandler(t *testing.T) {
 	}
 }
 
+func TestCodexResponsesRequireManagedKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	upstreamHits := 0
+	upstreamServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamHits++
+
+		if r.Method != http.MethodPost {
+			t.Errorf("期望 POST 请求，收到 %s", r.Method)
+		}
+		if r.URL.Path != "/responses" {
+			t.Errorf("期望路径 /responses，收到 %s", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer provider-api-key" {
+			t.Errorf("上游 Authorization 头不正确，期望 'Bearer provider-api-key'，收到 %q", got)
+		}
+		if got := r.Header.Get(codexRelayKeyHeader); got != "" {
+			t.Errorf("relay key 不应继续转发到上游，收到 %q", got)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"resp_1","object":"response","status":"completed"}`))
+	}))
+	defer upstreamServer.Close()
+
+	providerService, relayService := newTestRelayService(t)
+	err := providerService.SaveProviders("codex", []Provider{
+		{
+			ID:      1,
+			Name:    "CodexProvider",
+			APIURL:  upstreamServer.URL,
+			APIKey:  "provider-api-key",
+			Enabled: true,
+			Level:   1,
+		},
+	})
+	if err != nil {
+		t.Fatalf("保存 codex provider 失败: %v", err)
+	}
+
+	relayKey, err := relayService.codexRelayKeys.EnsureDefaultKey()
+	if err != nil {
+		t.Fatalf("创建 Codex relay key 失败: %v", err)
+	}
+
+	router := gin.New()
+	relayService.registerRoutes(router)
+
+	makeRequest := func(authHeader string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/responses", strings.NewReader(`{"model":"gpt-5-codex","input":"hello"}`))
+		req.Header.Set("Content-Type", "application/json")
+		if authHeader != "" {
+			req.Header.Set("Authorization", authHeader)
+		}
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		return w
+	}
+
+	if w := makeRequest(""); w.Code != http.StatusUnauthorized {
+		t.Fatalf("缺少 key 时应返回 401，实际为 %d，响应体: %s", w.Code, w.Body.String())
+	}
+
+	if w := makeRequest("Bearer wrong-key"); w.Code != http.StatusUnauthorized {
+		t.Fatalf("错误 key 时应返回 401，实际为 %d，响应体: %s", w.Code, w.Body.String())
+	}
+
+	w := makeRequest("Bearer " + relayKey.Key)
+	if w.Code != http.StatusOK {
+		t.Fatalf("正确 key 时应返回 200，实际为 %d，响应体: %s", w.Code, w.Body.String())
+	}
+
+	if upstreamHits != 1 {
+		t.Fatalf("只有合法请求才应命中上游，实际命中 %d 次", upstreamHits)
+	}
+}
+
+func TestCodexEnableProxyWritesManagedRelayKey(t *testing.T) {
+	setupRelayTestEnv(t)
+
+	homeDir, err := getUserHomeDir()
+	if err != nil {
+		t.Fatalf("获取测试 home 目录失败: %v", err)
+	}
+	_ = os.Remove(filepath.Join(homeDir, ".code-switch", codexRelayKeysFile))
+	_ = os.Remove(filepath.Join(homeDir, ".codex", "config.toml"))
+	_ = os.Remove(filepath.Join(homeDir, ".codex", "auth.json"))
+
+	relayKeys := NewCodexRelayKeyService()
+	settings := NewCodexSettingsService("127.0.0.1:18100", relayKeys)
+	if err := settings.EnableProxy(); err != nil {
+		t.Fatalf("启用 Codex 代理失败: %v", err)
+	}
+
+	managedKey, err := relayKeys.EnsureDefaultKey()
+	if err != nil {
+		t.Fatalf("获取 relay key 失败: %v", err)
+	}
+
+	authPath := filepath.Join(homeDir, ".codex", "auth.json")
+	authData, err := os.ReadFile(authPath)
+	if err != nil {
+		t.Fatalf("读取 auth.json 失败: %v", err)
+	}
+
+	var payload map[string]string
+	if err := json.Unmarshal(authData, &payload); err != nil {
+		t.Fatalf("解析 auth.json 失败: %v", err)
+	}
+
+	if payload[codexEnvKey] != managedKey.Key {
+		t.Fatalf("auth.json 中的 OPENAI_API_KEY = %q，期望 %q", payload[codexEnvKey], managedKey.Key)
+	}
+}
+
 // TestModelsHandler_NoProviders 测试没有可用 provider 的情况
 func TestModelsHandler_NoProviders(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -291,8 +419,14 @@ func TestModelsHandler_NoProviders(t *testing.T) {
 	router := gin.New()
 	relayService.registerRoutes(router)
 
+	relayKey, err := relayService.codexRelayKeys.EnsureDefaultKey()
+	if err != nil {
+		t.Fatalf("创建 relay key 失败: %v", err)
+	}
+
 	// 创建测试请求
 	req := httptest.NewRequest("GET", "/v1/models", nil)
+	req.Header.Set("Authorization", "Bearer "+relayKey.Key)
 	w := httptest.NewRecorder()
 
 	// 执行请求
@@ -305,7 +439,7 @@ func TestModelsHandler_NoProviders(t *testing.T) {
 
 	// 验证响应包含错误信息
 	var response map[string]interface{}
-	err := json.Unmarshal(w.Body.Bytes(), &response)
+	err = json.Unmarshal(w.Body.Bytes(), &response)
 	if err != nil {
 		t.Errorf("响应体不是有效的 JSON: %v", err)
 	}

@@ -31,6 +31,7 @@ type LastUsedProvider struct {
 type ProviderRelayService struct {
 	providerService     *ProviderService
 	geminiService       *GeminiService
+	codexRelayKeys      *CodexRelayKeyService
 	blacklistService    *BlacklistService
 	notificationService *NotificationService
 	appSettings         *AppSettingsService // 应用设置服务（用于获取轮询开关状态）
@@ -45,9 +46,12 @@ type ProviderRelayService struct {
 // errClientAbort 表示客户端中断连接，不应计入 provider 失败次数
 var errClientAbort = errors.New("client aborted, skip failure count")
 
-func NewProviderRelayService(providerService *ProviderService, geminiService *GeminiService, blacklistService *BlacklistService, notificationService *NotificationService, appSettings *AppSettingsService, addr string) *ProviderRelayService {
+func NewProviderRelayService(providerService *ProviderService, geminiService *GeminiService, codexRelayKeys *CodexRelayKeyService, blacklistService *BlacklistService, notificationService *NotificationService, appSettings *AppSettingsService, addr string) *ProviderRelayService {
 	if addr == "" {
 		addr = "127.0.0.1:18100" // 【安全修复】仅监听本地回环地址，防止 API Key 暴露到局域网
+	}
+	if codexRelayKeys == nil {
+		codexRelayKeys = NewCodexRelayKeyService()
 	}
 
 	// 【修复】数据库初始化已移至 main.go 的 InitDatabase()
@@ -56,6 +60,7 @@ func NewProviderRelayService(providerService *ProviderService, geminiService *Ge
 	return &ProviderRelayService{
 		providerService:     providerService,
 		geminiService:       geminiService,
+		codexRelayKeys:      codexRelayKeys,
 		blacklistService:    blacklistService,
 		notificationService: notificationService,
 		appSettings:         appSettings,
@@ -321,12 +326,14 @@ func (prs *ProviderRelayService) Addr() string {
 }
 
 func (prs *ProviderRelayService) registerRoutes(router gin.IRouter) {
+	codexAuth := prs.codexRelayAuthMiddleware()
+
 	router.POST("/v1/messages", prs.proxyHandler("claude", "/v1/messages"))
-	router.POST("/responses", prs.proxyHandler("codex", "/responses"))
+	router.POST("/responses", codexAuth, prs.proxyHandler("codex", "/responses"))
 
 	// /v1/models 端点（OpenAI-compatible API）
 	// 支持 Claude 和 Codex 平台
-	router.GET("/v1/models", prs.modelsHandler("claude"))
+	router.GET("/v1/models", codexAuth, prs.modelsHandler("claude"))
 
 	// Gemini API 端点（使用专门的路径前缀避免与 Claude 冲突）
 	router.POST("/gemini/v1beta/*any", prs.geminiProxyHandler("/v1beta"))
@@ -335,7 +342,7 @@ func (prs *ProviderRelayService) registerRoutes(router gin.IRouter) {
 	// 自定义 CLI 工具端点（路由格式: /custom/:toolId/v1/messages）
 	// toolId 用于区分不同的 CLI 工具，对应 provider kind 为 "custom:{toolId}"
 	router.POST("/custom/:toolId/v1/messages", prs.customCliProxyHandler())
-	
+
 	// 自定义 CLI 工具的 /v1/models 端点
 	router.GET("/custom/:toolId/v1/models", prs.customModelsHandler())
 }
@@ -724,9 +731,9 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 			totalAttempts, lastProvider, errorMsg)
 
 		c.JSON(http.StatusBadGateway, gin.H{
-			"error":         fmt.Sprintf("所有 %d 个 provider 均失败，最后错误: %s", totalAttempts, errorMsg),
-			"last_provider": lastProvider,
-			"last_duration": fmt.Sprintf("%.2fs", lastDuration.Seconds()),
+			"error":          fmt.Sprintf("所有 %d 个 provider 均失败，最后错误: %s", totalAttempts, errorMsg),
+			"last_provider":  lastProvider,
+			"last_duration":  fmt.Sprintf("%.2fs", lastDuration.Seconds()),
 			"total_attempts": totalAttempts,
 		})
 	}
@@ -1229,7 +1236,7 @@ func mergeGeminiUsageMetadata(usage gjson.Result, reqLog *ReqeustLog) {
 // 【修复】维护跨 chunk 缓冲，确保完整 SSE 事件解析
 // Gemini SSE 格式: "data: {json}\n\n" 或 "data: [DONE]\n\n"
 func streamGeminiResponseWithHook(body io.Reader, writer io.Writer, requestLog *ReqeustLog) error {
-	buf := make([]byte, 8192) // 增大缓冲区减少系统调用
+	buf := make([]byte, 8192)   // 增大缓冲区减少系统调用
 	var lineBuf strings.Builder // 跨 chunk 行缓冲
 
 	for {

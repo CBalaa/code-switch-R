@@ -176,7 +176,11 @@ func newAdminServer(rt *appRuntime) *http.Server {
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 	})
 
-	router.POST("/api/wails/call", func(c *gin.Context) {
+	registerAdminAuthRoutes(router, rt)
+
+	authRequired := requireAdminSession(rt.adminAuth)
+
+	router.POST("/api/wails/call", authRequired, func(c *gin.Context) {
 		var request rpcCallRequest
 		if err := c.ShouldBindJSON(&request); err != nil {
 			c.JSON(http.StatusBadRequest, apiErrorResponse{
@@ -196,7 +200,7 @@ func newAdminServer(rt *appRuntime) *http.Server {
 		c.JSON(http.StatusOK, rpcCallResponse{Data: result})
 	})
 
-	router.GET("/api/wails/events", func(c *gin.Context) {
+	router.GET("/api/wails/events", authRequired, func(c *gin.Context) {
 		streamEvents(c, rt.eventHub)
 	})
 
@@ -297,4 +301,3 @@ func registerStaticRoutes(router *gin.Engine, staticDir string) {
 		c.File(indexPath)
 	})
 }
-

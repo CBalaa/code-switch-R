@@ -135,6 +135,84 @@
     "saving": "Saving...",
     "cancel": "Cancel"
   },
+  "auth": {
+    "eyebrow": "Admin Access Control",
+    "title": "Authenticate before entering",
+    "lead": "The 8080 admin UI now requires a username and password, and the Codex relay on 18100 only accepts managed keys created here.",
+    "noteTitle": "Protected scope",
+    "noteBody": "Before login, only initialization and login endpoints stay open. RPC traffic and event streams are blocked.",
+    "statusChecking": "Checking admin session...",
+    "fields": {
+      "username": "Admin username",
+      "password": "Admin password",
+      "confirmPassword": "Confirm password",
+      "currentPassword": "Current password",
+      "newUsername": "New username",
+      "newPassword": "New password"
+    },
+    "placeholders": {
+      "username": "Enter admin username",
+      "password": "Enter admin password",
+      "confirmPassword": "Re-enter admin password",
+      "currentPassword": "Enter current password to confirm",
+      "newUsername": "Leave blank to keep current username",
+      "newPassword": "Leave blank to keep current password"
+    },
+    "errors": {
+      "passwordMismatch": "The two passwords do not match",
+      "copyFailed": "Failed to copy to clipboard",
+      "requestFailed": "Request failed. Please try again."
+    },
+    "setup": {
+      "eyebrow": "First-time setup",
+      "title": "Create the admin account",
+      "description": "Before using the admin UI for the first time, set the 8080 admin username and password. You will be logged in immediately after setup.",
+      "submit": "Create and sign in",
+      "submitting": "Creating...",
+      "success": "Admin account created"
+    },
+    "login": {
+      "eyebrow": "Admin sign in",
+      "title": "Sign in to the admin UI",
+      "description": "Enter the admin username and password to unlock the management UI and protected APIs.",
+      "submit": "Sign in",
+      "submitting": "Signing in...",
+      "success": "Signed in successfully"
+    },
+    "security": {
+      "description": "Manage the 8080 admin account and the Codex relay keys for 18100. Only keys created here can access the Codex API.",
+      "adminCardTitle": "Admin account",
+      "adminCardDescription": "Current signed-in account: {username}. Leave the new username or password blank to keep the current value.",
+      "update": "Update credentials",
+      "updating": "Updating...",
+      "updateSuccess": "Admin credentials updated",
+      "updateFailed": "Failed to update admin credentials",
+      "logout": "Sign out",
+      "logoutSuccess": "Signed out",
+      "logoutFailed": "Failed to sign out",
+      "keepHint": "Leave blank to keep the current value",
+      "keysCardTitle": "Codex API Keys",
+      "keysCardDescription": "The Codex relay on 18100 validates these keys and no longer accepts arbitrary secrets.",
+      "createLabel": "New key name",
+      "createPlaceholder": "For example: Local dev / CI / automation",
+      "create": "Generate key",
+      "creating": "Generating...",
+      "createSuccess": "New Codex key generated",
+      "createFailed": "Failed to generate Codex key",
+      "copy": "Copy key",
+      "copied": "Copied to clipboard",
+      "copyFailed": "Failed to copy Codex key",
+      "delete": "Delete key",
+      "deleteConfirm": "Delete key “{name}”?",
+      "deleteSuccess": "Codex key deleted",
+      "deleteFailed": "Failed to delete Codex key",
+      "loadKeysFailed": "Failed to load Codex key list",
+      "loadingKeys": "Loading Codex keys...",
+      "empty": "No Codex keys yet. Generate one to start using the relay.",
+      "oneTimeTitle": "The full key is shown only once",
+      "oneTimeDescription": "Copy and store it now. The list only shows a masked value afterwards."
+    }
+  },
   "prompts": {
     "hero": {
       "eyebrow": "Prompt Manager",
@@ -549,6 +627,7 @@
         "trayPanel": "Tray panel",
         "exterior": "Appearance settings",
         "power": "Permission settings",
+        "security": "Security",
         "blacklist": "Blacklist Settings",
         "dataImport": "Data Import",
         "connectivity": "Connectivity Test"
