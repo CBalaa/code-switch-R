@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -767,6 +768,18 @@ func (prs *ProviderRelayService) forwardRequest(
 ) (bool, error) {
 	targetURL := joinURL(provider.APIURL, endpoint)
 	headers := cloneMap(clientHeaders)
+
+	// ========== count_tokens 本地估算（协议转换之前拦截）==========
+	if kind == "claude" && strings.HasSuffix(endpoint, "/count_tokens") {
+		supportsCountTokens := provider.SupportsCountTokens == nil || *provider.SupportsCountTokens
+		if !supportsCountTokens {
+			estimatedTokens := estimateInputTokens(bodyBytes)
+			c.JSON(http.StatusOK, gin.H{
+				"input_tokens": estimatedTokens,
+			})
+			return true, nil
+		}
+	}
 
 	// ========== 协议转换检测 ==========
 	upstreamProtocol := provider.ResolveUpstreamProtocol(endpoint)
@@ -2416,4 +2429,79 @@ func (prs *ProviderRelayService) customModelsHandler() gin.HandlerFunc {
 
 		_ = prs.forwardModelsRequest(c, kind, "CustomModels")
 	}
+}
+
+// estimateInputTokens 在本地估算 Anthropic Messages 请求的输入 token 数。
+// 用于上游不支持 /v1/messages/count_tokens 的场景。
+// 中文按每字 1 token，英文按每 4 字符 1 token。
+func estimateInputTokens(bodyBytes []byte) int {
+	var body struct {
+		System   interface{}     `json:"system"`
+		Messages []interface{}   `json:"messages"`
+		Tools    json.RawMessage `json:"tools"`
+	}
+	if err := json.Unmarshal(bodyBytes, &body); err != nil {
+		return 100
+	}
+
+	var totalChars int
+	var cjkCount int
+
+	extractText := func(v interface{}) string {
+		if v == nil {
+			return ""
+		}
+		switch val := v.(type) {
+		case string:
+			return val
+		case []interface{}:
+			var parts []string
+			for _, item := range val {
+				if s, ok := item.(string); ok {
+					parts = append(parts, s)
+				} else if m, ok := item.(map[string]interface{}); ok {
+					if t, ok := m["type"].(string); ok && t == "text" {
+						parts = append(parts, fmt.Sprint(m["text"]))
+					}
+				}
+			}
+			return strings.Join(parts, "\n")
+		default:
+			return fmt.Sprint(v)
+		}
+	}
+
+	systemText := extractText(body.System)
+	for _, ch := range systemText {
+		if ch >= 0x4e00 && ch <= 0x9fff {
+			cjkCount++
+		}
+		totalChars += len(string(ch))
+	}
+
+	for _, raw := range body.Messages {
+		if m, ok := raw.(map[string]interface{}); ok {
+			txt := fmt.Sprint(m["role"]) + "\n" + extractText(m["content"])
+			for _, ch := range txt {
+				if ch >= 0x4e00 && ch <= 0x9fff {
+					cjkCount++
+				}
+				totalChars += len(string(ch))
+			}
+		}
+	}
+
+	if body.Tools != nil {
+		totalChars += len(body.Tools)
+	}
+
+	otherCount := totalChars - cjkCount
+	if otherCount < 0 {
+		otherCount = 0
+	}
+	estimated := cjkCount + (otherCount / 4) + 20
+	if estimated < 1 {
+		estimated = 1
+	}
+	return estimated
 }

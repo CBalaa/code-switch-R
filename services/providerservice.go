@@ -76,6 +76,13 @@ type Provider struct {
 	// 默认 false，避免对不支持该工具类型的 OpenAI-compatible 中转盲目透传并触发上游 400。
 	SupportsWebSearch bool `json:"supportsWebSearch,omitempty"`
 
+	// 是否支持 /v1/messages/count_tokens 接口
+	// 部分上游（如 Chatbox / ISRC）虽然支持 Anthropic Messages API，
+	// 但不提供 count_tokens 端点。关闭后中转站会本地估算 token 数，
+	// 不再把 count_tokens 请求转发给上游。
+	// 默认为 true（即上游支持 count_tokens）。
+	SupportsCountTokens *bool `json:"supportsCountTokens,omitempty"`
+
 	// ========== 旧字段（已废弃，仅用于读取迁移） ==========
 	// 这些字段在保存时不再写入，但读取时会自动迁移到新字段
 
@@ -415,6 +422,7 @@ func (ps *ProviderService) DuplicateProvider(kind string, sourceID int64) (*Prov
 		APIEndpoint:          source.APIEndpoint,          // 复制端点配置
 		UpstreamProtocol:     source.UpstreamProtocol,     // 复制上游协议配置
 		SupportsWebSearch:    source.SupportsWebSearch,    // 复制 WebSearch 兼容开关
+		SupportsCountTokens:  source.SupportsCountTokens,  // 复制 count_tokens 支持开关
 		ConnectivityAuthType: source.ConnectivityAuthType, // 复制认证方式
 		// 可用性监控配置
 		AvailabilityMonitorEnabled: source.AvailabilityMonitorEnabled,
