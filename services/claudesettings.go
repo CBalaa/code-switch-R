@@ -13,7 +13,9 @@ const (
 	claudeSettingsDir      = ".claude"
 	claudeSettingsFileName = "settings.json"
 	claudeBackupFileName   = "cc-studio.back.settings.json"
-	claudeAuthTokenValue   = "code-switch-r"
+
+	// claudeAuthTokenValue 是旧版本的硬编码 token，仅保留用于向后兼容的判断
+	claudeAuthTokenValue = "code-switch-r"
 )
 
 type ClaudeProxyStatus struct {
@@ -23,10 +25,17 @@ type ClaudeProxyStatus struct {
 
 type ClaudeSettingsService struct {
 	relayAddr string
+	relayKeys *CodexRelayKeyService
 }
 
-func NewClaudeSettingsService(relayAddr string) *ClaudeSettingsService {
-	return &ClaudeSettingsService{relayAddr: relayAddr}
+func NewClaudeSettingsService(relayAddr string, relayKeys *CodexRelayKeyService) *ClaudeSettingsService {
+	if relayKeys == nil {
+		relayKeys = NewCodexRelayKeyService()
+	}
+	return &ClaudeSettingsService{
+		relayAddr: relayAddr,
+		relayKeys: relayKeys,
+	}
 }
 
 func (css *ClaudeSettingsService) ProxyStatus() (ClaudeProxyStatus, error) {
@@ -117,13 +126,18 @@ func (css *ClaudeSettingsService) EnableProxy() error {
 
 	// 首次启用：记录启用前的关键字段基线到状态文件
 	if !stateExists {
+		relayKey, err := css.currentRelayKey()
+		if err != nil {
+			return err
+		}
+
 		envRaw, _ := existingData["env"].(map[string]interface{})
 		state := &ProxyState{
 			TargetPath:        settingsPath,
 			FileExisted:       fileExisted,
 			EnvExisted:        envRaw != nil,
 			InjectedBaseURL:   css.baseURL(),
-			InjectedAuthToken: claudeAuthTokenValue,
+			InjectedAuthToken: relayKey,
 		}
 		if envRaw != nil {
 			if v, ok := envRaw["ANTHROPIC_BASE_URL"]; ok {
@@ -140,12 +154,18 @@ func (css *ClaudeSettingsService) EnableProxy() error {
 		}
 	}
 
+	// 获取当前的 relay key
+	relayKey, err := css.currentRelayKey()
+	if err != nil {
+		return err
+	}
+
 	// 仅更新代理相关字段，保留其他配置（如 model, alwaysThinkingEnabled, enabledPlugins）
 	env, ok := existingData["env"].(map[string]interface{})
 	if !ok {
 		env = make(map[string]interface{})
 	}
-	env["ANTHROPIC_AUTH_TOKEN"] = claudeAuthTokenValue
+	env["ANTHROPIC_AUTH_TOKEN"] = relayKey
 	env["ANTHROPIC_BASE_URL"] = css.baseURL()
 	existingData["env"] = env
 
@@ -199,7 +219,7 @@ func (css *ClaudeSettingsService) DisableProxy() error {
 			delete(env, "ANTHROPIC_BASE_URL")
 			changed = true
 		}
-		if anyToString(env["ANTHROPIC_AUTH_TOKEN"]) == claudeAuthTokenValue {
+		if anyToString(env["ANTHROPIC_AUTH_TOKEN"]) == claudeAuthTokenValue || css.isManagedRelayKey(anyToString(env["ANTHROPIC_AUTH_TOKEN"])) {
 			delete(env, "ANTHROPIC_AUTH_TOKEN")
 			changed = true
 		}
@@ -404,4 +424,22 @@ func (css *ClaudeSettingsService) GetDirectAppliedProviderID() (*int64, error) {
 	}
 
 	return nil, nil
+}
+
+func (css *ClaudeSettingsService) currentRelayKey() (string, error) {
+	key, err := css.relayKeys.EnsureDefaultKey()
+	if err != nil {
+		return "", err
+	}
+	return key.Key, nil
+}
+
+func (css *ClaudeSettingsService) isManagedRelayKey(candidate string) bool {
+	candidate = strings.TrimSpace(candidate)
+	if candidate == "" {
+		return false
+	}
+
+	ok, err := css.relayKeys.ValidateKey(candidate)
+	return err == nil && ok
 }

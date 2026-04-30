@@ -9,6 +9,64 @@ import (
 
 const codexRelayKeyHeader = "X-Code-Switch-Key"
 
+func (prs *ProviderRelayService) claudeRelayAuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if prs.codexRelayKeys == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "relay key service is unavailable"})
+			c.Abort()
+			return
+		}
+
+		if _, err := prs.codexRelayKeys.EnsureDefaultKey(); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to initialize relay keys"})
+			c.Abort()
+			return
+		}
+
+		candidate := extractClaudeRelayKey(c.Request)
+		ok, err := prs.codexRelayKeys.ValidateKey(candidate)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to validate relay key"})
+			c.Abort()
+			return
+		}
+		if !ok {
+			c.Header("WWW-Authenticate", "Bearer realm=\"code-switch-claude\"")
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": "invalid claude relay api key",
+			})
+			c.Abort()
+			return
+		}
+
+		// 清理客户端传来的认证头，避免泄漏 relay key 给上游
+		c.Request.Header.Del("Authorization")
+		c.Request.Header.Del("X-Api-Key")
+		c.Request.Header.Del("x-api-key")
+		c.Request.Header.Del(codexRelayKeyHeader)
+
+		c.Next()
+	}
+}
+
+func extractClaudeRelayKey(req *http.Request) string {
+	if req == nil {
+		return ""
+	}
+
+	if key := strings.TrimSpace(req.Header.Get("x-api-key")); key != "" {
+		return key
+	}
+	if key := strings.TrimSpace(req.Header.Get(codexRelayKeyHeader)); key != "" {
+		return key
+	}
+	if auth := strings.TrimSpace(req.Header.Get("Authorization")); auth != "" {
+		return extractBearerToken(auth)
+	}
+
+	return ""
+}
+
 func (prs *ProviderRelayService) codexRelayAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if prs.codexRelayKeys == nil {

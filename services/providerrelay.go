@@ -327,10 +327,11 @@ func (prs *ProviderRelayService) Addr() string {
 }
 
 func (prs *ProviderRelayService) registerRoutes(router gin.IRouter) {
+	claudeAuth := prs.claudeRelayAuthMiddleware()
 	codexAuth := prs.codexRelayAuthMiddleware()
 
-	router.POST("/v1/messages", prs.proxyHandler("claude", "/v1/messages"))
-	router.POST("/v1/messages/count_tokens", prs.proxyHandler("claude", "/v1/messages/count_tokens"))
+	router.POST("/v1/messages", claudeAuth, prs.proxyHandler("claude", "/v1/messages"))
+	router.POST("/v1/messages/count_tokens", claudeAuth, prs.proxyHandler("claude", "/v1/messages/count_tokens"))
 	router.POST("/responses", codexAuth, prs.proxyHandler("codex", "/responses"))
 
 	// /v1/models 端点（OpenAI-compatible API）

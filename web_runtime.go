@@ -89,7 +89,7 @@ func newAppRuntime() (*appRuntime, error) {
 	blacklistService := services.NewBlacklistService(settingsService, notificationService)
 	geminiService := services.NewGeminiService(relayAddr)
 	providerRelay := services.NewProviderRelayService(providerService, geminiService, codexRelayKeys, blacklistService, notificationService, appSettings, relayAddr)
-	claudeSettings := services.NewClaudeSettingsService(providerRelay.Addr())
+	claudeSettings := services.NewClaudeSettingsService(providerRelay.Addr(), codexRelayKeys)
 	codexSettings := services.NewCodexSettingsService(providerRelay.Addr(), codexRelayKeys)
 	cliConfigService := services.NewCliConfigService(providerRelay.Addr(), codexRelayKeys)
 	logService := services.NewLogService()
@@ -120,6 +120,12 @@ func newAppRuntime() (*appRuntime, error) {
 	if status, err := codexSettings.ProxyStatus(); err == nil && status.Enabled {
 		if err := codexSettings.EnableProxy(); err != nil {
 			log.Printf("刷新 Codex relay key 失败: %v", err)
+		}
+	}
+
+	if status, err := claudeSettings.ProxyStatus(); err == nil && status.Enabled {
+		if err := claudeSettings.EnableProxy(); err != nil {
+			log.Printf("刷新 Claude relay key 失败: %v", err)
 		}
 	}
 
