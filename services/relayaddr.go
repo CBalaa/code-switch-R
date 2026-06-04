@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-const DefaultRelayBindAddr = "0.0.0.0:18100"
+const DefaultRelayBindAddr = "127.0.0.1:18100"
 
 func RelayListenAddr(addr string) string {
 	addr = strings.TrimSpace(addr)

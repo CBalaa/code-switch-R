@@ -39,7 +39,6 @@ type AppSettings struct {
 	BudgetShowForecastCodex   bool    `json:"budget_show_forecast_codex"`
 	BudgetForecastMethodCodex string  `json:"budget_forecast_method_codex"`
 	AutoStart                 bool    `json:"auto_start"`
-	AutoUpdate                bool    `json:"auto_update"`
 	AutoConnectivityTest      bool    `json:"auto_connectivity_test"`
 	EnableSwitchNotify        bool    `json:"enable_switch_notify"` // 供应商切换通知开关
 	EnableRoundRobin          bool    `json:"enable_round_robin"`   // 同 Level 轮询负载均衡开关（默认关闭）
@@ -99,7 +98,7 @@ func NewAppSettingsService(autoStartService *AutoStartService) *AppSettingsServi
 // 迁移顺序：写新文件 → 校验 → 标记 → 删旧
 func migrateSettings(oldPath, newPath, oldDir, markerPath string) error {
 	// 1. 确保新目录存在
-	if err := os.MkdirAll(filepath.Dir(newPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(newPath), 0o700); err != nil {
 		return fmt.Errorf("创建新目录失败: %w", err)
 	}
 
@@ -115,7 +114,7 @@ func migrateSettings(oldPath, newPath, oldDir, markerPath string) error {
 		}
 
 		// 4. 写入新配置
-		if err := os.WriteFile(newPath, data, 0644); err != nil {
+		if err := os.WriteFile(newPath, data, 0o600); err != nil {
 			return fmt.Errorf("写入新配置失败: %w", err)
 		}
 
@@ -145,7 +144,7 @@ func migrateSettings(oldPath, newPath, oldDir, markerPath string) error {
 
 	// 6. 创建迁移标记文件
 	markerContent := fmt.Sprintf("迁移时间: %s\n旧路径: %s\n", time.Now().Format(time.RFC3339), oldDir)
-	if err := os.WriteFile(markerPath, []byte(markerContent), 0644); err != nil {
+	if err := os.WriteFile(markerPath, []byte(markerContent), 0o600); err != nil {
 		return fmt.Errorf("创建迁移标记失败: %w", err)
 	}
 
@@ -189,10 +188,9 @@ func (as *AppSettingsService) defaultSettings() AppSettings {
 		BudgetRefreshDayCodex:     1,
 		BudgetShowCountdownCodex:  false,
 		BudgetShowForecastCodex:   false,
-		BudgetForecastMethodCodex: "cycle",
-		AutoStart:                 autoStartEnabled,
-		AutoUpdate:                true,  // 默认开启自动更新
-		AutoConnectivityTest:      true,  // 默认开启自动可用性监控（开箱即用）
+			BudgetForecastMethodCodex: "cycle",
+			AutoStart:                 autoStartEnabled,
+			AutoConnectivityTest:      true,  // 默认开启自动可用性监控（开箱即用）
 		EnableSwitchNotify:        true,  // 默认开启切换通知
 		EnableRoundRobin:          false, // 默认关闭轮询（使用顺序降级）
 	}
@@ -311,12 +309,12 @@ func (as *AppSettingsService) loadFullLocked() (persistedAppSettings, error) {
 
 func (as *AppSettingsService) saveFullLocked(file persistedAppSettings) error {
 	dir := filepath.Dir(as.path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(file, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(as.path, data, 0o644)
+	return os.WriteFile(as.path, data, 0o600)
 }

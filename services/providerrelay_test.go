@@ -192,9 +192,10 @@ func TestWriteStreamingResponseFlushesFirstLineImmediately(t *testing.T) {
 	})
 
 	recorder := newStreamingRecorder()
+	requestLog := &ReqeustLog{startedAt: time.Now()}
 	done := make(chan error, 1)
 	go func() {
-		_, err := writeStreamingResponse(recorder, resp)
+		_, err := writeStreamingResponse(recorder, resp, requestLog)
 		done <- err
 	}()
 
@@ -215,6 +216,9 @@ func TestWriteStreamingResponseFlushesFirstLineImmediately(t *testing.T) {
 	if recorder.header.Get("X-Accel-Buffering") != "no" {
 		t.Fatalf("expected X-Accel-Buffering=no, got %q", recorder.header.Get("X-Accel-Buffering"))
 	}
+	if requestLog.FirstEventSec <= 0 {
+		t.Fatalf("expected FirstEventSec to be recorded")
+	}
 
 	if err := pw.Close(); err != nil {
 		t.Fatalf("close pipe writer: %v", err)
@@ -226,6 +230,18 @@ func TestWriteStreamingResponseFlushesFirstLineImmediately(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatalf("writeStreamingResponse did not return after upstream EOF")
+	}
+}
+
+func TestMarkFirstTextFromSSEPayload(t *testing.T) {
+	requestLog := &ReqeustLog{startedAt: time.Now()}
+	payload := `event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"你"}}`
+
+	markFirstTextFromSSEPayload(payload, requestLog)
+
+	if requestLog.FirstTextSec <= 0 {
+		t.Fatalf("expected FirstTextSec to be recorded")
 	}
 }
 
@@ -445,6 +461,84 @@ func TestRemoveInboundAuthHeaders(t *testing.T) {
 	}
 	if headers["X-Provider-Trace-Tag"] != "keep" {
 		t.Fatalf("expected unrelated headers to be preserved")
+	}
+}
+
+func TestCalculateProviderUsageCostUsesConfiguredModelPrice(t *testing.T) {
+	provider := Provider{
+		ModelPrices: []ProviderModelPrice{
+			{
+				Model:                      "gpt-5-codex",
+				InputPricePerMillion:       2,
+				CachedInputPricePerMillion: 0.25,
+				OutputPricePerMillion:      8,
+			},
+		},
+		ModelPriceMultiplier: 1.5,
+	}
+	requestLog := &ReqeustLog{
+		Model:                       "gpt-5-codex",
+		InputTokens:                 1200,
+		OutputTokens:                300,
+		CacheReadTokens:             200,
+		ReasoningTokens:             50,
+		inputTokensIncludeCacheRead: true,
+	}
+
+	got := calculateProviderUsageCost(provider, requestLog)
+	want := ((1000.0 * 2.0) + (200.0 * 0.25) + (350.0 * 8.0)) / 1_000_000.0 * 1.5
+	if got != want {
+		t.Fatalf("cost mismatch: got %.12f want %.12f", got, want)
+	}
+}
+
+func TestCalculateProviderUsageCostKeepsAnthropicInputAsNonCached(t *testing.T) {
+	provider := Provider{
+		ModelPrices: []ProviderModelPrice{
+			{
+				Model:                      "claude-sonnet-4",
+				InputPricePerMillion:       3,
+				CachedInputPricePerMillion: 0.3,
+				OutputPricePerMillion:      15,
+			},
+		},
+	}
+	requestLog := &ReqeustLog{
+		Model:             "claude-sonnet-4",
+		InputTokens:       1000,
+		OutputTokens:      200,
+		CacheCreateTokens: 100,
+		CacheReadTokens:   500,
+	}
+
+	got := calculateProviderUsageCost(provider, requestLog)
+	want := ((1100.0 * 3.0) + (500.0 * 0.3) + (200.0 * 15.0)) / 1_000_000.0
+	if got != want {
+		t.Fatalf("cost mismatch: got %.12f want %.12f", got, want)
+	}
+}
+
+func TestCalculateProviderUsageCostDefaultsUnconfiguredModelToZero(t *testing.T) {
+	provider := Provider{
+		ModelPrices: []ProviderModelPrice{
+			{
+				Model:                      "configured-model",
+				InputPricePerMillion:       2,
+				CachedInputPricePerMillion: 0.25,
+				OutputPricePerMillion:      8,
+			},
+		},
+		ModelPriceMultiplier: 2,
+	}
+	requestLog := &ReqeustLog{
+		Model:           "unconfigured-model",
+		InputTokens:     1200,
+		OutputTokens:    300,
+		CacheReadTokens: 200,
+	}
+
+	if got := calculateProviderUsageCost(provider, requestLog); got != 0 {
+		t.Fatalf("unconfigured model should cost 0, got %.12f", got)
 	}
 }
 

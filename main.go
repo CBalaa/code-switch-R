@@ -11,8 +11,6 @@ import (
 )
 
 func main() {
-	UpdatePolicy = "web"
-
 	runtime, err := newAppRuntime()
 	if err != nil {
 		log.Fatalf("启动服务失败: %v", err)

@@ -49,7 +49,6 @@ type appRuntime struct {
 	connectivityTest   *services.ConnectivityTestService
 	healthCheckService *services.HealthCheckService
 	versionService     *VersionService
-	updateService      *services.UpdateService
 	geminiService      *services.GeminiService
 	consoleService     *services.ConsoleService
 	customCliService   *services.CustomCliService
@@ -106,9 +105,6 @@ func newAppRuntime() (*appRuntime, error) {
 		return nil, fmt.Errorf("初始化健康检查服务失败: %w", err)
 	}
 	versionService := NewVersionService()
-	updateService := services.NewUpdateService(AppVersion)
-	updateService.SetEventEmitter(eventHub)
-	updateService.SetWebMode(true)
 	consoleService := services.NewConsoleService()
 	customCliService := services.NewCustomCliService(providerRelay.Addr())
 	networkService := services.NewNetworkService(providerRelay.Addr(), claudeSettings, codexSettings, geminiService, codexRelayKeys)
@@ -188,7 +184,6 @@ func newAppRuntime() (*appRuntime, error) {
 		connectivityTest:   connectivityTestService,
 		healthCheckService: healthCheckService,
 		versionService:     versionService,
-		updateService:      updateService,
 		geminiService:      geminiService,
 		consoleService:     consoleService,
 		customCliService:   customCliService,
@@ -239,7 +234,6 @@ func (rt *appRuntime) registerServices(registry *rpcRegistry) {
 	registry.Register("codeswitch/services.SpeedTestService", rt.speedTestService)
 	registry.Register("codeswitch/services.ConnectivityTestService", rt.connectivityTest)
 	registry.Register("codeswitch/services.HealthCheckService", rt.healthCheckService)
-	registry.Register("codeswitch/services.UpdateService", rt.updateService)
 	registry.Register("codeswitch/services.GeminiService", rt.geminiService)
 	registry.Register("codeswitch/services.ConsoleService", rt.consoleService)
 	registry.Register("codeswitch/services.CustomCliService", rt.customCliService)

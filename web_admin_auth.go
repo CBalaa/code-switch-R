@@ -35,6 +35,10 @@ type codexRelayKeyCreateRequest struct {
 	Name string `json:"name"`
 }
 
+type codexRelayKeyRenameRequest struct {
+	Name string `json:"name"`
+}
+
 func registerAdminAuthRoutes(router *gin.Engine, rt *appRuntime) {
 	authRequired := requireAdminSession(rt.adminAuth, rt.adminSecurity)
 	originRequired := requireTrustedOrigin(rt.adminSecurity)
@@ -204,6 +208,40 @@ func registerAdminAuthRoutes(router *gin.Engine, rt *appRuntime) {
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"key": secret})
+	})
+
+	router.PATCH("/api/admin/codex-keys/:id", originRequired, authRequired, func(c *gin.Context) {
+		c.Header("Cache-Control", "no-store")
+		var request codexRelayKeyRenameRequest
+		if err := c.ShouldBindJSON(&request); err != nil {
+			c.JSON(http.StatusBadRequest, apiErrorResponse{
+				Error: apiError{Code: "invalid_request", Message: err.Error()},
+			})
+			return
+		}
+		if err := rt.codexRelayKeys.RenameKey(c.Param("id"), request.Name); err != nil {
+			statusCode := http.StatusBadRequest
+			if strings.Contains(err.Error(), "未找到") {
+				statusCode = http.StatusNotFound
+			}
+			c.JSON(statusCode, apiErrorResponse{
+				Error: apiError{Code: "rename_key_failed", Message: err.Error()},
+			})
+			return
+		}
+		c.Status(http.StatusNoContent)
+	})
+
+	router.GET("/api/admin/codex-keys/:id/usage", authRequired, func(c *gin.Context) {
+		c.Header("Cache-Control", "no-store")
+		stats, err := rt.codexRelayKeys.GetUsageStats(c.Param("id"), c.Query("range"))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, apiErrorResponse{
+				Error: apiError{Code: "key_usage_failed", Message: err.Error()},
+			})
+			return
+		}
+		c.JSON(http.StatusOK, stats)
 	})
 
 	router.DELETE("/api/admin/codex-keys/:id", originRequired, authRequired, func(c *gin.Context) {

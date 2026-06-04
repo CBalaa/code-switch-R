@@ -31,7 +31,6 @@ export class AppSettings {
     "budget_show_forecast_codex": boolean;
     "budget_forecast_method_codex": string;
     "auto_start": boolean;
-    "auto_update": boolean;
     "auto_connectivity_test": boolean;
 
     /**
@@ -108,9 +107,6 @@ export class AppSettings {
         }
         if (!("auto_start" in $$source)) {
             this["auto_start"] = false;
-        }
-        if (!("auto_update" in $$source)) {
-            this["auto_update"] = false;
         }
         if (!("auto_connectivity_test" in $$source)) {
             this["auto_connectivity_test"] = false;
@@ -1290,6 +1286,17 @@ export class GeminiProvider {
     "level"?: number;
 
     /**
+     * 模型原价列表（美元 / 1M tokens）
+     */
+    "modelPrices"?: ProviderModelPrice[];
+    "modelPriceMultiplier"?: number;
+
+    /**
+     * 供应商余额（美元）。nil 表示不启用余额扣减。
+     */
+    "balance"?: number | null;
+
+    /**
      * .env 配置
      */
     "envConfig"?: { [_ in string]?: string };
@@ -1318,14 +1325,18 @@ export class GeminiProvider {
      * Creates a new GeminiProvider instance from a string or object.
      */
     static createFrom($$source: any = {}): GeminiProvider {
-        const $$createField12_0 = $$createType4;
-        const $$createField13_0 = $$createType5;
+        const $$createField12_0 = $$createType24;
+        const $$createField15_0 = $$createType4;
+        const $$createField16_0 = $$createType5;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("modelPrices" in $$parsedSource) {
+            $$parsedSource["modelPrices"] = $$createField12_0($$parsedSource["modelPrices"]);
+        }
         if ("envConfig" in $$parsedSource) {
-            $$parsedSource["envConfig"] = $$createField12_0($$parsedSource["envConfig"]);
+            $$parsedSource["envConfig"] = $$createField15_0($$parsedSource["envConfig"]);
         }
         if ("settingsConfig" in $$parsedSource) {
-            $$parsedSource["settingsConfig"] = $$createField13_0($$parsedSource["settingsConfig"]);
+            $$parsedSource["settingsConfig"] = $$createField16_0($$parsedSource["settingsConfig"]);
         }
         return new GeminiProvider($$parsedSource as Partial<GeminiProvider>);
     }
@@ -1973,6 +1984,30 @@ export class Prompt {
     }
 }
 
+export class ProviderModelPrice {
+    "model": string;
+    "inputPricePerMillion"?: number;
+    "cachedInputPricePerMillion"?: number;
+    "outputPricePerMillion"?: number;
+
+    /** Creates a new ProviderModelPrice instance. */
+    constructor($$source: Partial<ProviderModelPrice> = {}) {
+        if (!("model" in $$source)) {
+            this["model"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new ProviderModelPrice instance from a string or object.
+     */
+    static createFrom($$source: any = {}): ProviderModelPrice {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new ProviderModelPrice($$parsedSource as Partial<ProviderModelPrice>);
+    }
+}
+
 export class Provider {
     /**
      * 修复：使用 int64 支持大 ID 值
@@ -2011,6 +2046,21 @@ export class Provider {
      * 使用 omitempty 确保零值不序列化，向后兼容
      */
     "level"?: number;
+
+    /**
+     * 模型原价列表（美元 / 1M tokens）。只对精确匹配的模型计费。
+     */
+    "modelPrices"?: ProviderModelPrice[];
+
+    /**
+     * 模型价格倍率。0 或非法值按 1 处理。
+     */
+    "modelPriceMultiplier"?: number;
+
+    /**
+     * 供应商余额（美元）。nil 表示不启用余额扣减。
+     */
+    "balance"?: number | null;
 
     /**
      * 可用性监控开关 - 在可用性页面配置
@@ -2098,6 +2148,7 @@ export class Provider {
     static createFrom($$source: any = {}): Provider {
         const $$createField10_0 = $$createType20;
         const $$createField11_0 = $$createType4;
+        const $$createField13_0 = $$createType24;
         const $$createField15_0 = $$createType22;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("supportedModels" in $$parsedSource) {
@@ -2105,6 +2156,9 @@ export class Provider {
         }
         if ("modelMapping" in $$parsedSource) {
             $$parsedSource["modelMapping"] = $$createField11_0($$parsedSource["modelMapping"]);
+        }
+        if ("modelPrices" in $$parsedSource) {
+            $$parsedSource["modelPrices"] = $$createField13_0($$parsedSource["modelPrices"]);
         }
         if ("availabilityConfig" in $$parsedSource) {
             $$parsedSource["availabilityConfig"] = $$createField15_0($$parsedSource["availabilityConfig"]);
@@ -2305,6 +2359,8 @@ export class ReqeustLog {
      * provider name
      */
     "provider": string;
+    "relay_key_id": string;
+    "relay_key_name": string;
     "http_code": number;
     "input_tokens": number;
     "output_tokens": number;
@@ -2337,6 +2393,12 @@ export class ReqeustLog {
         }
         if (!("provider" in $$source)) {
             this["provider"] = "";
+        }
+        if (!("relay_key_id" in $$source)) {
+            this["relay_key_id"] = "";
+        }
+        if (!("relay_key_name" in $$source)) {
+            this["relay_key_name"] = "";
         }
         if (!("http_code" in $$source)) {
             this["http_code"] = 0;
@@ -2553,152 +2615,6 @@ export class TargetCli {
 }
 
 /**
- * UpdateInfo 更新信息
- */
-export class UpdateInfo {
-    "version": string;
-    "pub_date": time$0.Time;
-    "notes": string;
-    "download_url": string;
-    "sha256": string;
-    "size": number;
-
-    /** Creates a new UpdateInfo instance. */
-    constructor($$source: Partial<UpdateInfo> = {}) {
-        if (!("version" in $$source)) {
-            this["version"] = "";
-        }
-        if (!("pub_date" in $$source)) {
-            this["pub_date"] = null;
-        }
-        if (!("notes" in $$source)) {
-            this["notes"] = "";
-        }
-        if (!("download_url" in $$source)) {
-            this["download_url"] = "";
-        }
-        if (!("sha256" in $$source)) {
-            this["sha256"] = "";
-        }
-        if (!("size" in $$source)) {
-            this["size"] = 0;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new UpdateInfo instance from a string or object.
-     */
-    static createFrom($$source: any = {}): UpdateInfo {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new UpdateInfo($$parsedSource as Partial<UpdateInfo>);
-    }
-}
-
-/**
- * UpdateState 更新状态枚举
- */
-export enum UpdateState {
-    /**
-     * The Go zero value for the underlying type of the enum.
-     */
-    $zero = "",
-
-    /**
-     * 空闲，无更新任务
-     */
-    StateIdle = "idle",
-
-    /**
-     * 正在检查更新
-     */
-    StateChecking = "checking",
-
-    /**
-     * 有可用更新
-     */
-    StateAvailable = "available",
-
-    /**
-     * 正在下载
-     */
-    StateDownloading = "downloading",
-
-    /**
-     * 下载完成，待安装
-     */
-    StateReady = "ready",
-
-    /**
-     * 正在应用更新
-     */
-    StateApplying = "applying",
-
-    /**
-     * 发生错误
-     */
-    StateError = "error",
-};
-
-/**
- * UpdateStateSnapshot 状态快照（返回给前端）
- */
-export class UpdateStateSnapshot {
-    "state": UpdateState;
-    "current_version": string;
-    "latest_version"?: string;
-    "notes"?: string;
-    "download_url"?: string;
-    "downloaded_bytes": number;
-    "total_bytes": number;
-
-    /**
-     * 0-100
-     */
-    "progress": number;
-    "error"?: string;
-
-    /**
-     * "check" | "download" | "apply"
-     */
-    "error_op"?: string;
-    "policy": string;
-
-    /** Creates a new UpdateStateSnapshot instance. */
-    constructor($$source: Partial<UpdateStateSnapshot> = {}) {
-        if (!("state" in $$source)) {
-            this["state"] = UpdateState.$zero;
-        }
-        if (!("current_version" in $$source)) {
-            this["current_version"] = "";
-        }
-        if (!("downloaded_bytes" in $$source)) {
-            this["downloaded_bytes"] = 0;
-        }
-        if (!("total_bytes" in $$source)) {
-            this["total_bytes"] = 0;
-        }
-        if (!("progress" in $$source)) {
-            this["progress"] = 0;
-        }
-        if (!("policy" in $$source)) {
-            this["policy"] = "";
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new UpdateStateSnapshot instance from a string or object.
-     */
-    static createFrom($$source: any = {}): UpdateStateSnapshot {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new UpdateStateSnapshot($$parsedSource as Partial<UpdateStateSnapshot>);
-    }
-}
-
-/**
  * WSLDetection WSL 检测结果
  */
 export class WSLDetection {
@@ -2836,3 +2752,5 @@ const $$createType19 = TargetCli.createFrom;
 const $$createType20 = $Create.Map($Create.Any, $Create.Any);
 const $$createType21 = AvailabilityConfig.createFrom;
 const $$createType22 = $Create.Nullable($$createType21);
+const $$createType23 = ProviderModelPrice.createFrom;
+const $$createType24 = $Create.Array($$createType23);

@@ -7,6 +7,7 @@ CLAUDE.md
 .ace-tool/
 reference/
 codeswitch-web
+/codeswitch
 /.claude/worktrees/
 /.test/
 /build.sh

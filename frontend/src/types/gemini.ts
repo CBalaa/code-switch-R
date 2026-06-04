@@ -1,4 +1,5 @@
 // 本地 Gemini 类型定义，避免 CI 生成绑定缺失类型导致编译失败
+import type { ProviderModelPrice } from '../data/cards'
 
 export type GeminiAuthType = 'oauth-personal' | 'gemini-api-key' | 'packycode' | 'generic'
 
@@ -14,6 +15,10 @@ export interface GeminiProvider {
   category?: string // official, third_party, custom
   partnerPromotionKey?: string
   enabled: boolean
+  level?: number
+  modelPrices?: ProviderModelPrice[]
+  modelPriceMultiplier?: number
+  balance?: number | null
   envConfig?: Record<string, string | undefined>
   settingsConfig?: Record<string, any>
 }

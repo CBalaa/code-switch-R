@@ -76,7 +76,7 @@ func (css *CodexSettingsService) EnableProxy() error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o700); err != nil {
 		return err
 	}
 
@@ -548,7 +548,7 @@ func (css *CodexSettingsService) writeAuthFile() error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(authPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(authPath), 0o700); err != nil {
 		return err
 	}
 

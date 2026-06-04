@@ -238,7 +238,7 @@ func (ms *MCPService) configPath() (string, error) {
 		return "", err
 	}
 	dir := filepath.Join(home, mcpStoreDir)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
 	return filepath.Join(dir, mcpStoreFile), nil
@@ -367,7 +367,7 @@ func (ms *MCPService) saveStore(servers map[string]rawMCPServer, deletedBuiltins
 		return err
 	}
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)
@@ -671,7 +671,7 @@ func (ms *MCPService) syncCodexServers(servers []MCPServer) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644)
+	return os.WriteFile(path, data, 0o600)
 }
 
 func (ms *MCPService) syncGeminiServers(servers []MCPServer) error {
@@ -699,7 +699,7 @@ func (ms *MCPService) syncGeminiServers(servers []MCPServer) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644)
+	return os.WriteFile(path, data, 0o600)
 }
 
 func platformContains(platforms []string, target string) bool {
@@ -776,7 +776,7 @@ func codexConfigPath() (string, error) {
 		return "", err
 	}
 	dir := filepath.Join(home, codexDirName)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
 	return filepath.Join(dir, codexConfigFile), nil
@@ -788,7 +788,7 @@ func geminiConfigPath() (string, error) {
 		return "", err
 	}
 	dir := filepath.Join(home, geminiDirName)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
 	return filepath.Join(dir, geminiConfigFile), nil

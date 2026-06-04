@@ -23,7 +23,6 @@ import * as SettingsService from "./settingsservice.js";
 import * as SkillService from "./skillservice.js";
 import * as SpeedTestService from "./speedtestservice.js";
 import * as SuiStore from "./suistore.js";
-import * as UpdateService from "./updateservice.js";
 export {
     AppSettingsService,
     BlacklistService,
@@ -46,8 +45,7 @@ export {
     SettingsService,
     SkillService,
     SpeedTestService,
-    SuiStore,
-    UpdateService
+    SuiStore
 };
 
 export {
@@ -99,8 +97,5 @@ export {
     RetryConfig,
     Skill,
     TargetCli,
-    UpdateInfo,
-    UpdateState,
-    UpdateStateSnapshot,
     WSLDetection
 } from "./models.js";

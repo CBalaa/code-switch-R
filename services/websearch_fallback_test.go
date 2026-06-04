@@ -593,6 +593,10 @@ func TestClaudeWebSearchFallbackProxyHandlerJSON(t *testing.T) {
 
 	router := gin.New()
 	relayService.registerRoutes(router)
+	relayKey, err := relayService.codexRelayKeys.EnsureDefaultKey()
+	if err != nil {
+		t.Fatalf("EnsureDefaultKey failed: %v", err)
+	}
 
 	body := `{
 		"model":"claude-sonnet-4-6",
@@ -613,7 +617,7 @@ func TestClaudeWebSearchFallbackProxyHandlerJSON(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", "code-switch-r")
+	req.Header.Set("x-api-key", relayKey.Key)
 	req.Header.Set("anthropic-version", "2023-06-01")
 	w := httptest.NewRecorder()
 
@@ -696,6 +700,10 @@ func TestClaudeWebSearchFallbackProxyHandlerSSE(t *testing.T) {
 
 	router := gin.New()
 	relayService.registerRoutes(router)
+	relayKey, err := relayService.codexRelayKeys.EnsureDefaultKey()
+	if err != nil {
+		t.Fatalf("EnsureDefaultKey failed: %v", err)
+	}
 
 	body := `{
 		"model":"claude-sonnet-4-6",
@@ -716,7 +724,7 @@ func TestClaudeWebSearchFallbackProxyHandlerSSE(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", "code-switch-r")
+	req.Header.Set("x-api-key", relayKey.Key)
 	req.Header.Set("anthropic-version", "2023-06-01")
 	w := httptest.NewRecorder()
 

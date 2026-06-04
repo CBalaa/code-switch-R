@@ -26,7 +26,7 @@ func AtomicWriteJSON(path string, data interface{}) error {
 func AtomicWriteBytes(path string, data []byte) error {
 	// 确保目录存在
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("创建目录失败 %s: %w", dir, err)
 	}
 
@@ -149,7 +149,7 @@ func FileExists(path string) bool {
 
 // EnsureDir 确保目录存在
 func EnsureDir(path string) error {
-	return os.MkdirAll(path, 0o755)
+	return os.MkdirAll(path, 0o700)
 }
 
 // FindLatestBackup 按时间戳查找最新的备份文件（*.bak.<timestamp>）

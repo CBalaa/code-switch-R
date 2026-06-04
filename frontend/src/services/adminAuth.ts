@@ -44,6 +44,27 @@ export type CodexRelayKeyCreateResult = {
   createdAt: string
 }
 
+export type CodexRelayKeyUsageRange = '1h' | '5h' | '1d' | '1w' | '1mo'
+
+export type CodexRelayKeyUsagePoint = {
+  bucket: string
+  label: string
+  calls: number
+  inputTokens: number
+  outputTokens: number
+  cacheTokens: number
+  reasoningTokens: number
+  totalTokens: number
+}
+
+export type CodexRelayKeyUsageStats = {
+  keyId: string
+  range: CodexRelayKeyUsageRange
+  totalCalls: number
+  totalTokens: number
+  points: CodexRelayKeyUsagePoint[]
+}
+
 type AdminAuthState = {
   ready: boolean
   loading: boolean
@@ -210,6 +231,22 @@ export async function createCodexRelayKey(name: string): Promise<CodexRelayKeyCr
 export async function getCodexRelayKeySecret(id: string): Promise<string> {
   const response = await adminRequest<{ key?: string }>(`/api/admin/codex-keys/${encodeURIComponent(id)}/secret`)
   return response.key ?? ''
+}
+
+export async function renameCodexRelayKey(id: string, name: string): Promise<void> {
+  await adminRequest<void>(`/api/admin/codex-keys/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ name }),
+  })
+}
+
+export async function fetchCodexRelayKeyUsage(
+  id: string,
+  range: CodexRelayKeyUsageRange,
+): Promise<CodexRelayKeyUsageStats> {
+  return adminRequest<CodexRelayKeyUsageStats>(
+    `/api/admin/codex-keys/${encodeURIComponent(id)}/usage?range=${encodeURIComponent(range)}`,
+  )
 }
 
 export async function deleteCodexRelayKey(id: string): Promise<void> {

@@ -3,28 +3,6 @@
     "title": "我的应用",
     "login": "登录"
   },
-  "update": {
-    "newVersion": "新版本 {version} 可用",
-    "checking": "检查中...",
-    "downloadNow": "立即下载",
-    "downloading": "下载中",
-    "restartNow": "重启更新",
-    "later": "稍后提醒",
-    "cancel": "取消",
-    "retry": "重试",
-    "close": "关闭",
-    "error": "更新出错",
-    "noUpdate": "已是最新版本",
-    "checkFailed": "检查更新失败",
-    "downloadFailed": "下载失败",
-    "applyFailed": "应用更新失败",
-    "releaseNotes": "更新日志",
-    "currentVersion": "当前版本",
-    "latestVersion": "最新版本",
-    "checkUpdate": "检查更新",
-    "autoCheck": "自动检查更新",
-    "ignoredVersion": "已忽略此版本"
-  },
   "settings": {
     "network": {
       "title": "网络设置",
@@ -60,75 +38,11 @@
   },
   "sidebar": {
     "home": "首页",
-    "prompts": "提示词",
-    "mcp": "MCP",
-    "skill": "技能",
     "gemini": "Gemini",
-    "availability": "可用性",
-    "speedtest": "测速",
-    "env": "环境",
     "logs": "日志",
     "console": "控制台",
-    "settings": "设置"
-  },
-  "availability": {
-    "title": "可用性监控",
-    "subtitle": "实时监控 AI 供应商的健康状态",
-    "refreshAll": "全部检测",
-    "refreshing": "检测中...",
-    "check": "检测",
-    "providers": "供应商",
-    "lastUpdate": "最后更新",
-    "nextRefresh": "下次刷新",
-    "notMonitored": "未监控",
-    "noProviders": "暂无供应商，请先添加供应商配置",
-    "stats": {
-      "operational": "正常",
-      "degraded": "延迟",
-      "failed": "故障",
-      "disabled": "未启用"
-    },
-    "settings": {
-      "title": "可用性监控设置",
-      "failureThreshold": "自动拉黑阈值",
-      "failureThresholdHint": "连续检测失败 N 次后触发拉黑",
-      "pollInterval": "检测间隔",
-      "pollIntervalHint": "后台自动检测的时间间隔",
-      "operationalThreshold": "正常状态阈值",
-      "operationalThresholdHint": "响应延迟小于此值判定为正常"
-    },
-    "editConfig": "编辑配置",
-    "enableMonitoring": "启用监控",
-    "enableToMonitor": "请先启用可用性监控",
-    "configTitle": "可用性高级配置",
-    "field": {
-      "testModel": "测试模型",
-      "testEndpoint": "测试端点",
-      "timeout": "超时时间（毫秒）"
-    },
-    "placeholder": {
-      "testModel": "留空使用平台默认模型",
-      "testEndpoint": "留空使用平台默认端点",
-      "timeout": "默认 15000"
-    },
-    "hint": {
-      "timeout": "单位毫秒，留空或 0 将使用默认 15000"
-    },
-    "default": "默认",
-    "currentModel": "当前模型",
-    "currentEndpoint": "当前端点",
-    "currentTimeout": "当前超时",
-    "defaultModel": "平台默认模型",
-    "defaultEndpoint": "平台默认端点",
-    "advancedConfig": {
-      "title": "高级配置",
-      "testModel": "测试模型",
-      "testModelHint": "默认使用低成本模型",
-      "testEndpoint": "测试端点",
-      "testEndpointHint": "留空使用默认端点",
-      "timeout": "超时时间",
-      "timeoutHint": "默认 15 秒"
-    }
+    "settings": "设置",
+    "keys": "密钥"
   },
   "common": {
     "save": "保存",
@@ -183,7 +97,7 @@
       "success": "登录成功"
     },
     "security": {
-      "description": "管理 8080 后台账号与 18100 的 Codex relay key。只有这里生成的 key 才能访问 Codex API。",
+      "description": "管理 8080 后台账号密码。Relay 访问密钥请在侧栏的“密钥”页面管理。",
       "adminCardTitle": "管理员账号",
       "adminCardDescription": "当前登录账号：{username}。新账号或新密码留空时表示保持不变。",
       "update": "更新账号密码",
@@ -215,68 +129,6 @@
       "oneTimeTitle": "完整 key 只显示这一次",
       "oneTimeDescription": "请立即复制并妥善保存，列表里只会显示脱敏后的值。"
     }
-  },
-  "prompts": {
-    "hero": {
-      "eyebrow": "提示词管理",
-      "title": "管理系统提示词",
-      "lead": "为 Claude Code、Codex 和 Gemini 配置自定义系统提示词，增强 AI 编程助手的能力。"
-    },
-    "stats": {
-      "total": "共 {count} 个提示词",
-      "enabled": "已启用"
-    },
-    "empty": "暂无提示词，点击下方按钮创建",
-    "loading": "加载中...",
-    "confirmDelete": "确认删除此提示词？",
-    "actions": {
-      "create": "新增提示词",
-      "import": "从文件导入"
-    },
-    "form": {
-      "createTitle": "新增提示词",
-      "editTitle": "编辑提示词",
-      "name": "名称",
-      "namePlaceholder": "例如：代码审查专家",
-      "description": "描述",
-      "descriptionPlaceholder": "简短描述此提示词的用途",
-      "content": "提示词内容",
-      "cancel": "取消",
-      "save": "保存"
-    }
-  },
-  "speedtest": {
-    "hero": {
-      "eyebrow": "API 速度测试",
-      "title": "测试 API 端点延迟",
-      "lead": "测量各 API 端点的响应速度，帮助选择最优的服务供应商。"
-    },
-    "placeholder": "输入 API 端点 URL",
-    "add": "添加",
-    "endpoints": "端点列表（{count} 个）",
-    "start": "开始测试",
-    "testing": "测试中",
-    "empty": "添加 API 端点开始测试",
-    "failed": "失败",
-    "syncButton": "刷新供应商端点",
-    "syncing": "同步中...",
-    "loadingTip": "正在从首页同步供应商端点...",
-    "syncError": "同步失败，请手动刷新"
-  },
-  "envcheck": {
-    "hero": {
-      "eyebrow": "环境变量检测",
-      "title": "检测环境变量冲突",
-      "lead": "扫描系统环境变量和配置文件，发现可能影响 AI 编程工具的变量冲突。"
-    },
-    "checking": "检测中...",
-    "error": "检测失败",
-    "found": "发现 {count} 个冲突的环境变量",
-    "noConflicts": "未发现环境变量冲突",
-    "value": "值",
-    "source": "来源",
-    "source.system": "系统环境变量",
-    "refresh": "重新检测"
   },
   "components": {
     "home": {},
@@ -383,8 +235,6 @@
         "github": "打开 GitHub",
         "theme": "切换主题",
         "settings": "打开设置",
-        "mcp": "打开 MCP 面板",
-        "skill": "打开 Skill 列表",
         "gemini": "打开 Gemini CLI 管理",
         "import": "导入 cc-switch 配置",
         "duplicate": "复制供应商"
@@ -404,6 +254,7 @@
         "requests": "请求数",
         "tokens": "Tokens",
         "cost": "花费",
+        "balance": "余额",
         "successRate": "成功率",
         "loading": "刷新中...",
         "noData": "今日暂无数据",
@@ -430,6 +281,13 @@
           "icon": "图标",
           "enabled": "启用状态",
           "level": "优先级分组",
+          "modelPrices": "模型价格",
+          "modelName": "模型名",
+          "nonCachedInputPrice": "非缓存输入（$/1M tokens）",
+          "cachedInputPrice": "缓存输入（$/1M tokens）",
+          "outputPrice": "输出（$/1M tokens）",
+          "modelPriceMultiplier": "价格倍率",
+          "providerBalance": "供应商余额（$）",
           "availabilityMonitor": "可用性监控",
           "connectivityAutoBlacklist": "失败自动拉黑",
           "availabilityTestModel": "测试模型（可选）",
@@ -445,6 +303,10 @@
           "apiUrl": "https://api.aicoding.sh",
           "apiKey": "sk-xxxxx",
           "apiEndpoint": "留空使用平台默认，如 Claude 兼容供应商常用 /v1/responses",
+          "modelName": "例如：gpt-5-codex",
+          "pricePerMillion": "每 1M tokens 的美元价格",
+          "modelPriceMultiplier": "默认 1",
+          "providerBalance": "留空表示不扣减余额",
           "officialSite": "https://vendor.com",
           "icon": "例如：aicoding、kimi",
           "availabilityTestModel": "留空则使用平台默认模型",
@@ -458,6 +320,9 @@
         "noIconResults": "未找到匹配的图标",
         "hints": {
           "level": "数字越小优先级越高，Level 1 会被优先尝试，失败后依次尝试 Level 2、Level 3 等",
+          "modelPrices": "只会对这里精确配置过的模型计费；未配置价格的模型费用默认为 0。",
+          "noModelPrices": "还没有模型价格。未配置价格的模型会按 0 计费。",
+          "providerBilling": "填写余额后，成功请求会按模型价格 × 倍率扣减；余额扣到 0 时自动禁用该供应商。",
           "apiEndpoint": "覆盖平台默认端点。留空使用默认（Claude: Anthropic 为 /v1/messages，OpenAI Compatible 为 /v1/responses；Codex: /responses）。GLM 模型请使用 /v1/chat/completions",
           "upstreamProtocol": "指定上游 API 的协议类型。选择 auto 时根据端点自动检测；选择 OpenAI Compatible 时会把 Claude Messages 请求转换到 OpenAI Responses 或 Chat Completions",
           "availabilityMonitor": "启用后会定期进行健康检查，监控此供应商的可用性状态",
@@ -477,7 +342,9 @@
           "saveAndApply": "保存并应用",
           "delete": "删除",
           "testConnectivity": "测试连通性",
-          "testing": "测试中..."
+          "testing": "测试中...",
+          "addModelPrice": "新增模型价格",
+          "removeModelPrice": "删除"
         },
         "connectivity": {
           "success": "连接成功（延迟: {latency}ms）",
@@ -589,7 +456,7 @@
         "tokens": "Token 流量",
         "tokenHint": "输入 + 输出 Tokens",
         "cache": "缓存命中",
-        "cacheHint": "响应中的读取命中数",
+        "cacheHint": "缓存读取 / 总 Token 流量",
         "costHint": "近 24 小时总花费",
         "todayScope": "今日 · {date}"
       },
@@ -597,6 +464,7 @@
         "time": "时间",
         "platform": "平台",
         "provider": "供应商",
+        "relayKey": "调用密钥",
         "model": "模型",
         "httpCode": "HTTP",
         "stream": "传输",
@@ -678,14 +546,6 @@
         "switchNotifyHint": "供应商切换或拉黑时发送系统通知",
         "roundRobin": "同 Level 轮询",
         "roundRobinHint": "启用后同 Level 的供应商轮流处理请求，关闭则始终从第一个开始",
-        "autoUpdate": "自动更新",
-        "lastCheck": "上次检查",
-        "currentVersion": "当前版本",
-        "latestVersion": "最新版本",
-        "checkNow": "立即检查",
-        "manualUpdate": "手动更新",
-        "automatic_up": "自动检查更新",
-        "next_up": "下次启动自动检查更新",
         "autoConnectivityTest": "自动可用性监控",
         "autoConnectivityTestHint": "启用后会每分钟自动检测已启用监控的供应商可用性",
         "blacklistThreshold": "失败次数阈值",
@@ -724,137 +584,6 @@
         "nothingToImport": "没有需要导入的配置（可能已全部导入）",
         "failed": "导入失败",
         "fileNotFound": "配置文件不存在，请检查路径是否正确"
-      }
-    },
-    "mcp": {
-      "hero": {
-        "eyebrow": "MCP 管理",
-        "title": "管理 MCP 服务器",
-        "lead": "集中维护本地 / 远程 MCP Servers，了解各平台的启用状态并快速编辑配置。"
-      },
-      "controls": {
-        "back": "返回主页",
-        "settings": "打开设置",
-        "refresh": "刷新列表",
-        "create": "新增服务器"
-      },
-      "import": {
-        "title": "批量导入 MCP 服务器",
-        "inputDesc": "粘贴 MCP 配置 JSON，支持 Claude Desktop 格式、数组格式或服务器映射格式。",
-        "placeholder": "粘贴 Claude Desktop 或标准 MCP 配置 JSON...",
-        "next": "下一步",
-        "parsing": "解析中...",
-        "back": "上一步",
-        "reviewTitle": "共解析 {count} 个服务器",
-        "selectAll": "全选",
-        "conflictNotice": "{count} 个服务器与现有配置冲突",
-        "strategySkip": "跳过冲突",
-        "strategyOverwrite": "覆盖现有",
-        "status": {
-          "new": "新增",
-          "conflict": "冲突"
-        },
-        "submit": "导入 {count} 个",
-        "importing": "导入中...",
-        "success": "成功导入 {count} 个 MCP 服务器",
-        "allSkipped": "所有服务器均已跳过，未导入任何内容",
-        "noServers": "未找到有效的服务器配置",
-        "needName": "单服务器配置需要提供名称",
-        "parseError": "JSON 解析失败",
-        "importError": "导入失败，请重试"
-      },
-      "section": {
-        "title": "已注册服务器",
-        "subtitle": "数据来自 ~/.code-switch/mcp.json，修改后立即保存"
-      },
-      "list": {
-        "loading": "正在载入服务器...",
-        "empty": "暂无 MCP 服务器，点击下方按钮快速创建",
-        "loadError": "加载 MCP 服务器失败",
-        "saveError": "保存 MCP 服务器失败",
-        "edit": "编辑服务器",
-        "delete": "删除服务器",
-        "placeholderWarning": "请先替换变量：{vars}"
-      },
-      "toast": {
-        "placeholder": "请先替换变量：{vars}"
-      },
-      "status": {
-        "active": "已启用",
-        "inactive": "未启用"
-      },
-      "types": {
-        "stdio": "本地进程 (stdio)",
-        "stdioShort": "本地进程",
-        "http": "远程 HTTP",
-        "httpShort": "HTTP 服务"
-      },
-      "platforms": {
-        "claude": "Claude Code",
-        "codex": "Codex",
-        "gemini": "Gemini CLI"
-      },
-      "form": {
-        "createTitle": "新增 MCP 服务器",
-        "editTitle": "编辑 MCP 服务器",
-        "name": "服务器名称",
-        "type": "类型",
-        "command": "执行命令",
-        "args": "命令参数",
-        "argsHint": "每行一个参数，保存时会自动按顺序传入",
-        "url": "服务地址",
-        "website": "官网地址",
-        "tips": "提示信息",
-        "tipsHint": "例如：请前往 ref.tools 获取 API Key",
-        "jsonEditor": {
-          "title": "JSON 配置",
-          "dirty": "未应用",
-          "lock": "锁定",
-          "unlock": "解锁",
-          "apply": "应用到表单",
-          "reset": "重置",
-          "hint": "此 JSON 不包含 name 与平台。名称、官网、提示与目标平台仍以表单为准。",
-          "toast": {
-            "dirtyNotApplied": "JSON 修改未应用，将按表单内容保存"
-          },
-          "errors": {
-            "empty": "请输入 JSON 内容",
-            "invalidJson": "JSON 格式无效：{message}",
-            "mustBeObject": "JSON 顶层必须是对象",
-            "typeRequired": "缺少 type 字段（必须为 stdio 或 http）",
-            "typeInvalid": "type 必须为 stdio 或 http",
-            "commandRequired": "stdio 类型需要 command",
-            "urlRequired": "http 类型需要 url",
-            "argsInvalid": "args 必须是字符串数组",
-            "envInvalid": "env 必须是对象，且所有值为字符串",
-            "applyFailed": "应用失败，请检查 JSON 内容"
-          }
-        },
-        "env": "环境变量",
-        "envKey": "变量名",
-        "envValue": "变量值",
-        "envAdd": "新增变量",
-        "envRemove": "删除变量",
-        "platforms": {
-          "title": "目标平台"
-        },
-        "actions": {
-          "cancel": "取消",
-          "save": "保存",
-          "delete": "删除"
-        },
-        "errors": {
-          "name": "请输入服务器名称",
-          "command": "stdio 类型需要提供 command",
-          "url": "http 类型需要提供 URL",
-          "duplicate": "名称已存在，请使用其他名称",
-          "noPlatformSelected": "请至少勾选一个平台（Claude Code 或 Codex）"
-        },
-        "warnings": {
-          "savedWithPlaceholders": "✅ 配置已保存，但因包含占位符（{vars}），未同步到 Claude/Codex。请填写占位符后重新保存。"
-        },
-        "deleteTitle": "删除 MCP 服务器",
-        "deleteMessage": "确认删除 {name} 吗？操作不可撤销"
       }
     },
     "gemini": {
@@ -910,80 +639,6 @@
         "cancel": "取消",
         "save": "保存",
         "delete": "删除"
-      }
-    },
-    "skill": {
-      "hero": {
-        "eyebrow": "Skill 仓库",
-        "title": "Claude Skill",
-        "lead": "从 Skill 仓库中获取 Claude Skill，点击右上角按钮可添加更多 Skill 仓库。"
-      },
-      "platform": {
-        "claude": "Claude Code",
-        "codex": "Codex"
-      },
-      "groups": {
-        "project": "项目级技能",
-        "user": "用户级技能",
-        "available": "可用技能"
-      },
-      "actions": {
-        "back": "返回首页",
-        "loading": "处理中...",
-        "refresh": "刷新列表",
-        "view": "查看 GitHub",
-        "install": "安装",
-        "uninstall": "卸载",
-        "installError": "安装 {name} 失败，请重试",
-        "uninstallError": "卸载 {name} 失败，请重试",
-        "toggle": "启用/禁用",
-        "viewContent": "查看内容",
-        "hideContent": "收起内容",
-        "openFolder": "打开文件夹",
-        "loadFailed": "加载内容失败",
-        "toggleError": "切换技能状态失败"
-      },
-      "list": {
-        "title": "可用技能",
-        "subtitle": "描述信息来源于各目录内 SKILL.md 的 front matter。",
-        "loading": "正在加载技能...",
-        "empty": "仓库中没有可用技能。",
-        "error": "技能列表加载失败，请检查网络后重试。",
-        "noDescription": "SKILL.md 未提供描述",
-        "missingRepo": "缺少对应的仓库信息，无法安装",
-        "noInstalled": "当前没有已安装的技能"
-      },
-      "install": {
-        "title": "选择安装位置",
-        "desc": "将 {name} 安装到：",
-        "locationLabel": "安装位置",
-        "userLevel": "用户级（全局）",
-        "userLevelDesc": "~/.{platform}/skills/",
-        "projectLevel": "项目级（当前目录）",
-        "projectLevelDesc": "./.{platform}/skills/",
-        "gitWarning": "项目级技能可能需要添加到 .gitignore",
-        "installing": "安装中...",
-        "confirm": "确认安装"
-      },
-      "license": {
-        "complete": "完整条款见 {file}"
-      },
-      "repos": {
-        "open": "管理仓库",
-        "title": "技能仓库",
-        "subtitle": "维护 GitHub 仓库以加载更多技能来源。",
-        "urlPlaceholder": "https://github.com/owner/repo",
-        "branchPlaceholder": "分支",
-        "addLabel": "新增仓库",
-        "viewLabel": "打开 GitHub",
-        "removeLabel": "删除仓库",
-        "loadError": "仓库列表加载失败",
-        "addError": "新增仓库失败",
-        "removeError": "删除仓库失败",
-        "formError": "请填写所有者和仓库名称",
-        "loading": "正在加载仓库...",
-        "empty": "当前没有配置任何仓库。",
-        "branchLabel": "分支：{branch}"
       }
     },
     "themesetting": {
@@ -1066,6 +721,43 @@
       "savePartialSuccess": "成功 {success} 个，失败 {fail} 个",
       "tabPreview": "预览效果",
       "tabCurrent": "当前磁盘"
+    }
+  },
+  "keys": {
+    "eyebrow": "Relay Keys",
+    "title": "密钥管理",
+    "subtitle": "管理 Code Switch Relay 访问密钥，并查看每个密钥的调用与 token 消耗趋势。",
+    "tabs": {
+      "ariaLabel": "密钥页面标签",
+      "management": "密钥管理",
+      "usage": "用量趋势"
+    },
+    "management": "密钥管理",
+    "managementHint": "创建、复制、重命名或删除 Codex / Claude relay key。",
+    "usage": "用量趋势",
+    "usageAllKeys": "展示所有密钥在当前时间范围内的用量，每个密钥使用独立颜色。",
+    "noSelection": "请选择一个密钥",
+    "rename": "重命名",
+    "renameSuccess": "密钥名称已更新",
+    "loadingUsage": "正在加载用量数据...",
+    "ranges": {
+      "oneHour": "1 小时",
+      "fiveHours": "5 小时",
+      "oneDay": "1 天",
+      "oneWeek": "1 周",
+      "oneMonth": "1 月"
+    },
+    "chart": {
+      "tokens": "Token 消耗",
+      "calls": "调用次数"
+    },
+    "summary": {
+      "totalTokens": "总 tokens",
+      "totalCalls": "总调用"
+    },
+    "errors": {
+      "loadUsage": "加载密钥用量失败",
+      "rename": "重命名密钥失败"
     }
   }
 }

@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/daodao97/xgo/xdb"
 )
 
 const (
@@ -41,6 +43,30 @@ type CodexRelayKeyCreateResult struct {
 	Key       string    `json:"key"`
 	Enabled   bool      `json:"enabled"`
 	CreatedAt time.Time `json:"createdAt"`
+}
+
+type CodexRelayKeyMatch struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type CodexRelayKeyUsagePoint struct {
+	Bucket          string `json:"bucket"`
+	Label           string `json:"label"`
+	Calls           int64  `json:"calls"`
+	InputTokens     int64  `json:"inputTokens"`
+	OutputTokens    int64  `json:"outputTokens"`
+	CacheTokens     int64  `json:"cacheTokens"`
+	ReasoningTokens int64  `json:"reasoningTokens"`
+	TotalTokens     int64  `json:"totalTokens"`
+}
+
+type CodexRelayKeyUsageStats struct {
+	KeyID       string                    `json:"keyId"`
+	Range       string                    `json:"range"`
+	TotalCalls  int64                     `json:"totalCalls"`
+	TotalTokens int64                     `json:"totalTokens"`
+	Points      []CodexRelayKeyUsagePoint `json:"points"`
 }
 
 type codexRelayKeyStore struct {
@@ -161,6 +187,30 @@ func (s *CodexRelayKeyService) DeleteKey(id string) error {
 	return s.saveLocked(store)
 }
 
+func (s *CodexRelayKeyService) RenameKey(id string, name string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return errors.New("密钥名称不能为空")
+	}
+
+	store, err := s.loadLocked()
+	if err != nil {
+		return err
+	}
+
+	for index := range store.Keys {
+		if store.Keys[index].ID == id {
+			store.Keys[index].Name = name
+			return s.saveLocked(store)
+		}
+	}
+
+	return fmt.Errorf("未找到 Codex relay key: %s", id)
+}
+
 func (s *CodexRelayKeyService) GetKeySecret(id string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -216,17 +266,25 @@ func (s *CodexRelayKeyService) EnsureDefaultKey() (*CodexRelayKey, error) {
 }
 
 func (s *CodexRelayKeyService) ValidateKey(candidate string) (bool, error) {
+	match, err := s.ValidateKeyMatch(candidate)
+	if err != nil {
+		return false, err
+	}
+	return match != nil, nil
+}
+
+func (s *CodexRelayKeyService) ValidateKeyMatch(candidate string) (*CodexRelayKeyMatch, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	candidate = strings.TrimSpace(candidate)
 	if candidate == "" {
-		return false, nil
+		return nil, nil
 	}
 
 	store, err := s.loadLocked()
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 
 	for _, key := range store.Keys {
@@ -234,11 +292,107 @@ func (s *CodexRelayKeyService) ValidateKey(candidate string) (bool, error) {
 			continue
 		}
 		if subtle.ConstantTimeCompare([]byte(candidate), []byte(key.Key)) == 1 {
-			return true, nil
+			return &CodexRelayKeyMatch{ID: key.ID, Name: key.Name}, nil
 		}
 	}
 
-	return false, nil
+	return nil, nil
+}
+
+func (s *CodexRelayKeyService) GetUsageStats(id string, rangeKey string) (*CodexRelayKeyUsageStats, error) {
+	rangeKey, start, step := normalizeRelayKeyUsageRange(rangeKey)
+	now := time.Now().UTC().Truncate(step)
+	start = start.Truncate(step)
+
+	points := make([]CodexRelayKeyUsagePoint, 0)
+	pointByUnix := make(map[int64]int)
+	for bucket := start; !bucket.After(now); bucket = bucket.Add(step) {
+		unix := bucket.Unix()
+		pointByUnix[unix] = len(points)
+		points = append(points, CodexRelayKeyUsagePoint{
+			Bucket: bucket.Format(time.RFC3339),
+			Label:  formatRelayKeyUsageLabel(bucket, step),
+		})
+	}
+
+	db, err := xdb.DB("default")
+	if err != nil {
+		return nil, err
+	}
+
+	rows, err := db.Query(`
+		SELECT
+			(CAST(strftime('%s', created_at) AS INTEGER) / ?) * ? AS bucket_unix,
+			COUNT(*) AS calls,
+			COALESCE(SUM(input_tokens), 0) AS input_tokens,
+			COALESCE(SUM(output_tokens), 0) AS output_tokens,
+			COALESCE(SUM(cache_create_tokens + cache_read_tokens), 0) AS cache_tokens,
+			COALESCE(SUM(reasoning_tokens), 0) AS reasoning_tokens
+		FROM request_log
+		WHERE relay_key_id = ?
+			AND created_at >= ?
+		GROUP BY bucket_unix
+		ORDER BY bucket_unix
+	`, int64(step.Seconds()), int64(step.Seconds()), id, start.Format("2006-01-02 15:04:05"))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	stats := &CodexRelayKeyUsageStats{
+		KeyID:  id,
+		Range:  rangeKey,
+		Points: points,
+	}
+
+	for rows.Next() {
+		var bucketUnix int64
+		var calls, inputTokens, outputTokens, cacheTokens, reasoningTokens int64
+		if err := rows.Scan(&bucketUnix, &calls, &inputTokens, &outputTokens, &cacheTokens, &reasoningTokens); err != nil {
+			return nil, err
+		}
+		index, ok := pointByUnix[bucketUnix]
+		if !ok {
+			continue
+		}
+		point := &stats.Points[index]
+		point.Calls = calls
+		point.InputTokens = inputTokens
+		point.OutputTokens = outputTokens
+		point.CacheTokens = cacheTokens
+		point.ReasoningTokens = reasoningTokens
+		point.TotalTokens = inputTokens + outputTokens + cacheTokens + reasoningTokens
+		stats.TotalCalls += calls
+		stats.TotalTokens += point.TotalTokens
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return stats, nil
+}
+
+func normalizeRelayKeyUsageRange(rangeKey string) (string, time.Time, time.Duration) {
+	now := time.Now().UTC()
+	switch strings.TrimSpace(rangeKey) {
+	case "5h":
+		return "5h", now.Add(-5 * time.Hour), 15 * time.Minute
+	case "1d":
+		return "1d", now.Add(-24 * time.Hour), time.Hour
+	case "1w":
+		return "1w", now.Add(-7 * 24 * time.Hour), 6 * time.Hour
+	case "1mo":
+		return "1mo", now.Add(-30 * 24 * time.Hour), 24 * time.Hour
+	default:
+		return "1h", now.Add(-time.Hour), 5 * time.Minute
+	}
+}
+
+func formatRelayKeyUsageLabel(value time.Time, step time.Duration) string {
+	if step >= 24*time.Hour {
+		return value.Format("01-02")
+	}
+	return value.Format("15:04")
 }
 
 func (s *CodexRelayKeyService) loadLocked() (*codexRelayKeyStore, error) {

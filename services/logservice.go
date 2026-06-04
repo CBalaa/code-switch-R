@@ -16,7 +16,8 @@ import (
 const timeLayout = "2006-01-02 15:04:05"
 
 type LogService struct {
-	pricing *modelpricing.Service
+	pricing   *modelpricing.Service
+	relayKeys *CodexRelayKeyService
 }
 
 func (ls *LogService) CostSince(start string, platform string) (float64, error) {
@@ -66,7 +67,10 @@ func NewLogService() *LogService {
 	if err != nil {
 		log.Printf("pricing service init failed: %v", err)
 	}
-	return &LogService{pricing: svc}
+	return &LogService{
+		pricing:   svc,
+		relayKeys: NewCodexRelayKeyService(),
+	}
 }
 
 func (ls *LogService) ListRequestLogs(platform string, provider string, limit int) ([]ReqeustLog, error) {
@@ -91,13 +95,17 @@ func (ls *LogService) ListRequestLogs(platform string, provider string, limit in
 	if err != nil {
 		return nil, err
 	}
+	keyNames := ls.relayKeyNameMap()
 	logs := make([]ReqeustLog, 0, len(records))
 	for _, record := range records {
+		relayKeyID := strings.TrimSpace(record.GetString("relay_key_id"))
 		logEntry := ReqeustLog{
 			ID:                record.GetInt64("id"),
 			Platform:          record.GetString("platform"),
 			Model:             record.GetString("model"),
 			Provider:          record.GetString("provider"),
+			RelayKeyID:        relayKeyID,
+			RelayKeyName:      relayKeyDisplayName(relayKeyID, keyNames),
 			HttpCode:          record.GetInt("http_code"),
 			InputTokens:       record.GetInt("input_tokens"),
 			OutputTokens:      record.GetInt("output_tokens"),
@@ -107,11 +115,43 @@ func (ls *LogService) ListRequestLogs(platform string, provider string, limit in
 			CreatedAt:         record.GetString("created_at"),
 			IsStream:          record.GetBool("is_stream"),
 			DurationSec:       record.GetFloat64("duration_sec"),
+			UpstreamHeaderSec: record.GetFloat64("upstream_header_sec"),
+			FirstEventSec:     record.GetFloat64("first_event_sec"),
+			FirstTextSec:      record.GetFloat64("first_text_sec"),
 		}
 		ls.decorateCost(&logEntry)
 		logs = append(logs, logEntry)
 	}
 	return logs, nil
+}
+
+func (ls *LogService) relayKeyNameMap() map[string]string {
+	if ls == nil || ls.relayKeys == nil {
+		return nil
+	}
+	keys, err := ls.relayKeys.ListKeys()
+	if err != nil {
+		return nil
+	}
+	names := make(map[string]string, len(keys))
+	for _, key := range keys {
+		id := strings.TrimSpace(key.ID)
+		if id != "" {
+			names[id] = strings.TrimSpace(key.Name)
+		}
+	}
+	return names
+}
+
+func relayKeyDisplayName(id string, names map[string]string) string {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return ""
+	}
+	if name := strings.TrimSpace(names[id]); name != "" {
+		return name
+	}
+	return id
 }
 
 func (ls *LogService) ListProviders(platform string) ([]string, error) {
@@ -604,17 +644,17 @@ type LogStats struct {
 }
 
 type ProviderDailyStat struct {
-	Provider          string  `json:"provider"`
-	TotalRequests     int64   `json:"total_requests"`
+	Provider           string  `json:"provider"`
+	TotalRequests      int64   `json:"total_requests"`
 	SuccessfulRequests int64   `json:"successful_requests"`
-	FailedRequests    int64   `json:"failed_requests"`
-	SuccessRate       float64 `json:"success_rate"`
-	InputTokens       int64   `json:"input_tokens"`
-	OutputTokens      int64   `json:"output_tokens"`
-	ReasoningTokens   int64   `json:"reasoning_tokens"`
-	CacheCreateTokens int64   `json:"cache_create_tokens"`
-	CacheReadTokens   int64   `json:"cache_read_tokens"`
-	CostTotal         float64 `json:"cost_total"`
+	FailedRequests     int64   `json:"failed_requests"`
+	SuccessRate        float64 `json:"success_rate"`
+	InputTokens        int64   `json:"input_tokens"`
+	OutputTokens       int64   `json:"output_tokens"`
+	ReasoningTokens    int64   `json:"reasoning_tokens"`
+	CacheCreateTokens  int64   `json:"cache_create_tokens"`
+	CacheReadTokens    int64   `json:"cache_read_tokens"`
+	CostTotal          float64 `json:"cost_total"`
 }
 
 type LogStatsSeries struct {

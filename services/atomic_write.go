@@ -13,7 +13,7 @@ func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
 	dir := filepath.Dir(path)
 
 	// 确保目录存在
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("创建目录失败 %s（目标文件: %s）: %w", dir, path, err)
 	}
 

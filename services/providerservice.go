@@ -18,6 +18,13 @@ type AvailabilityConfig struct {
 	Timeout      int    `json:"timeout,omitempty"`      // 覆盖默认超时（毫秒）
 }
 
+type ProviderModelPrice struct {
+	Model                      string  `json:"model"`
+	InputPricePerMillion       float64 `json:"inputPricePerMillion,omitempty"`
+	CachedInputPricePerMillion float64 `json:"cachedInputPricePerMillion,omitempty"`
+	OutputPricePerMillion      float64 `json:"outputPricePerMillion,omitempty"`
+}
+
 type Provider struct {
 	ID      int64  `json:"id"` // 修复：使用 int64 支持大 ID 值
 	Name    string `json:"name"`
@@ -45,6 +52,15 @@ type Provider struct {
 	// 优先级分组 - 数字越小优先级越高（1-10，默认 1）
 	// 使用 omitempty 确保零值不序列化，向后兼容
 	Level int `json:"level,omitempty"`
+
+	// 模型原价列表（美元 / 1M tokens）。只对精确匹配的模型计费。
+	ModelPrices []ProviderModelPrice `json:"modelPrices,omitempty"`
+
+	// 模型价格倍率。0 或非法值按 1 处理。
+	ModelPriceMultiplier float64 `json:"modelPriceMultiplier,omitempty"`
+
+	// 供应商余额（美元）。nil 表示不启用余额扣减。
+	Balance *float64 `json:"balance,omitempty"`
 
 	// ========== 可用性监控字段（新增 v0.5.0） ==========
 
@@ -120,7 +136,7 @@ func providerFilePath(kind string) (string, error) {
 		return "", err
 	}
 	dir := filepath.Join(home, ".code-switch")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
 	var filename string
@@ -138,7 +154,7 @@ func providerFilePath(kind string) (string, error) {
 			}
 			// 存储在 providers 子目录下
 			providersDir := filepath.Join(dir, "providers")
-			if err := os.MkdirAll(providersDir, 0o755); err != nil {
+			if err := os.MkdirAll(providersDir, 0o700); err != nil {
 				return "", err
 			}
 			return filepath.Join(providersDir, toolId+".json"), nil
@@ -219,6 +235,7 @@ func (ps *ProviderService) saveProvidersLocked(kind string, providers []Provider
 
 		// 清除旧连通性字段，确保保存时不再写入
 		p.clearLegacyFields()
+		p.normalizeBillingFields()
 	}
 
 	// 如果有验证错误，返回汇总错误
@@ -232,7 +249,7 @@ func (ps *ProviderService) saveProvidersLocked(kind string, providers []Provider
 	}
 
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)
@@ -285,6 +302,43 @@ func (ps *ProviderService) LoadProviders(kind string) ([]Provider, error) {
 	}
 
 	return envelope.Providers, nil
+}
+
+func (ps *ProviderService) ApplyProviderUsageCharge(kind string, providerID int64, cost float64) (float64, bool, error) {
+	if cost <= 0 {
+		return 0, false, nil
+	}
+
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+
+	providers, err := ps.loadProvidersNoLock(kind)
+	if err != nil {
+		return 0, false, err
+	}
+
+	for i := range providers {
+		p := &providers[i]
+		if p.ID != providerID || p.Balance == nil {
+			continue
+		}
+
+		next := *p.Balance - cost
+		disabled := false
+		if next <= 0 {
+			next = 0
+			p.Enabled = false
+			disabled = true
+		}
+		p.Balance = &next
+
+		if err := ps.saveProvidersLocked(kind, providers); err != nil {
+			return 0, false, err
+		}
+		return next, disabled, nil
+	}
+
+	return 0, false, nil
 }
 
 // loadProvidersNoLock 内部加载方法，在持有锁的情况下调用（避免递归加锁）
@@ -361,6 +415,43 @@ func (p *Provider) migrateFromLegacy() bool {
 	}
 
 	return migrated
+}
+
+func (p *Provider) normalizeBillingFields() {
+	normalizedPrices := make([]ProviderModelPrice, 0, len(p.ModelPrices))
+	seenModels := make(map[string]bool, len(p.ModelPrices))
+	for _, price := range p.ModelPrices {
+		price.Model = strings.TrimSpace(price.Model)
+		if price.Model == "" || seenModels[price.Model] {
+			continue
+		}
+		if price.InputPricePerMillion < 0 {
+			price.InputPricePerMillion = 0
+		}
+		if price.CachedInputPricePerMillion < 0 {
+			price.CachedInputPricePerMillion = 0
+		}
+		if price.OutputPricePerMillion < 0 {
+			price.OutputPricePerMillion = 0
+		}
+		seenModels[price.Model] = true
+		normalizedPrices = append(normalizedPrices, price)
+	}
+	p.ModelPrices = normalizedPrices
+
+	if p.ModelPriceMultiplier < 0 {
+		p.ModelPriceMultiplier = 0
+	}
+	if p.Balance != nil {
+		balance := *p.Balance
+		if balance < 0 {
+			balance = 0
+		}
+		p.Balance = &balance
+		if balance <= 0 {
+			p.Enabled = false
+		}
+	}
 }
 
 // clearLegacyFields 清除旧字段值，使其在序列化时被 omitempty 跳过

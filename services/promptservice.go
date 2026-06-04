@@ -385,7 +385,7 @@ func (s *PromptService) getPromptFilePath(platform string) (string, error) {
 
 	// 确保目录存在
 	dir := filepath.Dir(filePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("创建目录失败: %w", err)
 	}
 
@@ -396,13 +396,13 @@ func (s *PromptService) getPromptFilePath(platform string) (string, error) {
 func (s *PromptService) writePromptFile(path, content string) error {
 	// 确保目录存在
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("创建目录失败: %w", err)
 	}
 
 	// 原子写入
 	tmpPath := path + ".tmp"
-	if err := os.WriteFile(tmpPath, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(tmpPath, []byte(content), 0o600); err != nil {
 		return fmt.Errorf("写入临时文件失败: %w", err)
 	}
 
@@ -542,7 +542,7 @@ func (s *PromptService) save() error {
 	}
 
 	configDir := filepath.Join(home, ".code-switch")
-	if err := os.MkdirAll(configDir, 0755); err != nil {
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		return err
 	}
 
@@ -555,7 +555,7 @@ func (s *PromptService) save() error {
 
 	// 原子写入
 	tmpPath := configPath + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
+	if err := os.WriteFile(tmpPath, data, 0o600); err != nil {
 		return err
 	}
 

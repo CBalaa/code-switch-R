@@ -164,7 +164,7 @@ func (ns *NetworkService) SaveNetworkSettings(settings NetworkSettings) error {
 	settings.CurrentAddress = ns.computeListenAddress(settings)
 
 	dir := filepath.Dir(ns.settingsPath)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 

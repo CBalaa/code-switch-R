@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, watch } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { fetchCurrentVersion } from '../services/version'
@@ -20,45 +20,14 @@ onMounted(async () => {
 
 // 侧边栏收起状态
 const SIDEBAR_COLLAPSED_KEY = 'sidebar-collapsed'
-const VISITED_PAGES_KEY = 'visited-pages'
 const isCollapsed = ref(false)
-const visitedPages = ref<Set<string>>(new Set())
 
 onMounted(() => {
-  // 加载侧边栏状态
   const saved = localStorage.getItem(SIDEBAR_COLLAPSED_KEY)
   if (saved !== null) {
     isCollapsed.value = saved === 'true'
   }
-  // 加载已访问页面
-  const visitedJson = localStorage.getItem(VISITED_PAGES_KEY)
-  if (visitedJson) {
-    try {
-      visitedPages.value = new Set(JSON.parse(visitedJson))
-    } catch {
-      visitedPages.value = new Set()
-    }
-  }
-  // 标记当前页面为已访问
-  markAsVisited(route.path)
 })
-
-// 监听路由变化，标记为已访问
-watch(() => route.path, (newPath) => {
-  markAsVisited(newPath)
-})
-
-function markAsVisited(path: string) {
-  if (!visitedPages.value.has(path)) {
-    visitedPages.value.add(path)
-    localStorage.setItem(VISITED_PAGES_KEY, JSON.stringify([...visitedPages.value]))
-  }
-}
-
-// 判断是否显示 NEW 徽章（仅在未访问时显示）
-function shouldShowNew(item: NavItem): boolean {
-  return item.isNew === true && !visitedPages.value.has(item.path)
-}
 
 const toggleCollapse = () => {
   isCollapsed.value = !isCollapsed.value
@@ -69,19 +38,13 @@ interface NavItem {
   path: string
   icon: string
   labelKey: string
-  isNew?: boolean
 }
 
 const navItems: NavItem[] = [
   { path: '/', icon: 'home', labelKey: 'sidebar.home' },
-  { path: '/prompts', icon: 'file-text', labelKey: 'sidebar.prompts', isNew: true },
-  { path: '/mcp', icon: 'plug', labelKey: 'sidebar.mcp' },
-  { path: '/skill', icon: 'tool', labelKey: 'sidebar.skill' },
-  { path: '/availability', icon: 'activity', labelKey: 'sidebar.availability', isNew: true },
-  { path: '/speedtest', icon: 'zap', labelKey: 'sidebar.speedtest', isNew: true },
-  { path: '/env', icon: 'search', labelKey: 'sidebar.env', isNew: true },
   { path: '/logs', icon: 'bar-chart', labelKey: 'sidebar.logs' },
   { path: '/console', icon: 'terminal', labelKey: 'sidebar.console' },
+  { path: '/keys', icon: 'key', labelKey: 'sidebar.keys' },
   { path: '/settings', icon: 'settings', labelKey: 'sidebar.settings' },
 ]
 
@@ -119,44 +82,6 @@ const navigate = (path: string) => {
           <polyline points="9 22 9 12 15 12 15 22"></polyline>
         </svg>
 
-        <!-- File Text -->
-        <svg v-else-if="item.icon === 'file-text'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-          <polyline points="14 2 14 8 20 8"></polyline>
-          <line x1="16" y1="13" x2="8" y2="13"></line>
-          <line x1="16" y1="17" x2="8" y2="17"></line>
-          <polyline points="10 9 9 9 8 9"></polyline>
-        </svg>
-
-        <!-- Plug -->
-        <svg v-else-if="item.icon === 'plug'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M12 22v-5"></path>
-          <path d="M9 8V2"></path>
-          <path d="M15 8V2"></path>
-          <path d="M18 8v5a6 6 0 0 1-12 0V8h12z"></path>
-        </svg>
-
-        <!-- Tool -->
-        <svg v-else-if="item.icon === 'tool'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>
-        </svg>
-
-        <!-- Activity -->
-        <svg v-else-if="item.icon === 'activity'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
-        </svg>
-
-        <!-- Zap -->
-        <svg v-else-if="item.icon === 'zap'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-        </svg>
-
-        <!-- Search -->
-        <svg v-else-if="item.icon === 'search'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="11" cy="11" r="8"></circle>
-          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-        </svg>
-
         <!-- Bar Chart -->
         <svg v-else-if="item.icon === 'bar-chart'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="12" y1="20" x2="12" y2="10"></line>
@@ -170,6 +95,14 @@ const navigate = (path: string) => {
           <line x1="12" y1="19" x2="20" y2="19"></line>
         </svg>
 
+        <!-- Key -->
+        <svg v-else-if="item.icon === 'key'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="7.5" cy="14.5" r="3.5"></circle>
+          <path d="M10 12l8-8"></path>
+          <path d="M15 5l3 3"></path>
+          <path d="M13 7l2 2"></path>
+        </svg>
+
         <!-- Settings -->
         <svg v-else-if="item.icon === 'settings'" class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="3"></circle>
@@ -177,7 +110,6 @@ const navigate = (path: string) => {
         </svg>
 
         <span class="nav-label" v-if="!isCollapsed">{{ t(item.labelKey) }}</span>
-        <span v-if="shouldShowNew(item) && !isCollapsed" class="new-badge">NEW</span>
       </button>
     </div>
 
@@ -351,22 +283,6 @@ html.dark .nav-item:hover {
 
 .nav-label {
   flex: 1;
-}
-
-.new-badge {
-  font-size: 0.6rem;
-  font-weight: 700;
-  padding: 2px 5px;
-  border-radius: 4px;
-  background: rgba(16, 185, 129, 0.15);
-  color: #10b981;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.nav-item.active .new-badge {
-  background: rgba(255, 255, 255, 0.2);
-  color: #fff;
 }
 
 .sidebar-footer {

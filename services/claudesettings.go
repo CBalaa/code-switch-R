@@ -80,7 +80,7 @@ func (css *ClaudeSettingsService) EnableProxy() error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o700); err != nil {
 		return err
 	}
 

@@ -7,6 +7,8 @@ export type RequestLog = {
   platform: LogPlatform | ''
   model: string
   provider: string
+  relay_key_id?: string
+  relay_key_name?: string
   http_code: number
   input_tokens: number
   output_tokens: number
@@ -15,6 +17,9 @@ export type RequestLog = {
   reasoning_tokens: number
   is_stream?: boolean | number
   duration_sec?: number
+  upstream_header_sec?: number
+  first_event_sec?: number
+  first_text_sec?: number
   created_at: string
   total_cost?: number
   input_cost?: number

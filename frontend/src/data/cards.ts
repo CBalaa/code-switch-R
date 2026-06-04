@@ -14,10 +14,14 @@ export type AutomationCard = {
   modelMapping?: Record<string, string>
   // 优先级分组：数字越小优先级越高（1-10，默认 1）
   level?: number
+  // 模型原价列表（美元 / 1M tokens）
+  modelPrices?: ProviderModelPrice[]
+  // 模型价格倍率
+  modelPriceMultiplier?: number
+  // 供应商余额（美元）；null/undefined 表示不启用余额扣减
+  balance?: number | null
   // API 端点路径（可选）：覆盖平台默认端点
   apiEndpoint?: string
-  // CLI 配置：存储供应商关联的 CLI 可编辑配置
-  cliConfig?: Record<string, any>
 
   // === 可用性监控配置（新） ===
   // 可用性监控开关：是否启用后台健康检查
@@ -42,6 +46,13 @@ export type AutomationCard = {
   connectivityAuthType?: string
   // 上游协议类型（anthropic / openai）
   upstreamProtocol?: string
+}
+
+export type ProviderModelPrice = {
+  model: string
+  inputPricePerMillion?: number
+  cachedInputPricePerMillion?: number
+  outputPricePerMillion?: number
 }
 
 export const automationCardGroups: Record<'claude' | 'codex', AutomationCard[]> = {
@@ -110,5 +121,7 @@ export function createAutomationCards(data: AutomationCard[] = []): AutomationCa
   return data.map((item) => ({
     ...item,
     officialSite: item.officialSite ?? '',
+    modelPrices: Array.isArray(item.modelPrices) ? item.modelPrices : [],
+    modelPriceMultiplier: item.modelPriceMultiplier && item.modelPriceMultiplier > 0 ? item.modelPriceMultiplier : 1,
   }))
 }

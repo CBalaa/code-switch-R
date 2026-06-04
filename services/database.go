@@ -24,7 +24,7 @@ func InitDatabase() error {
 
 	// 1. 确保配置目录存在（SQLite 不会自动创建父目录）
 	configDir := filepath.Join(home, ".code-switch")
-	if err := os.MkdirAll(configDir, 0755); err != nil {
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		return fmt.Errorf("创建配置目录失败: %w", err)
 	}
 
@@ -66,6 +66,7 @@ func InitDatabase() error {
 	if err := ensureBlacklistTables(); err != nil {
 		return fmt.Errorf("初始化黑名单表失败: %w", err)
 	}
+	hardenDatabaseFilePermissions(configDir)
 
 	// 5. 预热连接池：强制建立数据库连接，避免首次写入时失败
 	var count int
@@ -76,6 +77,12 @@ func InitDatabase() error {
 	}
 
 	return nil
+}
+
+func hardenDatabaseFilePermissions(configDir string) {
+	for _, name := range []string{"app.db", "app.db-wal", "app.db-shm"} {
+		_ = os.Chmod(filepath.Join(configDir, name), 0o600)
+	}
 }
 
 // ensureBlacklistTables 确保黑名单相关表存在

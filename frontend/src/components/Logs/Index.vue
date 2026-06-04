@@ -67,6 +67,7 @@
             <th class="col-time">{{ t('components.logs.table.time') }}</th>
             <th class="col-platform">{{ t('components.logs.table.platform') }}</th>
             <th class="col-provider">{{ t('components.logs.table.provider') }}</th>
+            <th class="col-relay-key">{{ t('components.logs.table.relayKey') }}</th>
             <th class="col-model">{{ t('components.logs.table.model') }}</th>
             <th class="col-http">{{ t('components.logs.table.httpCode') }}</th>
             <th class="col-stream">{{ t('components.logs.table.stream') }}</th>
@@ -80,6 +81,7 @@
             <td>{{ formatTime(item.created_at) }}</td>
             <td>{{ item.platform || '—' }}</td>
             <td>{{ item.provider || '—' }}</td>
+            <td>{{ formatRelayKey(item) }}</td>
             <td>{{ item.model || '—' }}</td>
             <td :class="['code', httpCodeClass(item.http_code)]">{{ item.http_code }}</td>
             <td><span :class="['stream-tag', item.is_stream ? 'on' : 'off']">{{ formatStream(item.is_stream) }}</span></td>
@@ -109,7 +111,7 @@
             </td>
           </tr>
           <tr v-if="!pagedLogs.length && !loading">
-            <td colspan="9" class="empty">{{ t('components.logs.empty') }}</td>
+            <td colspan="10" class="empty">{{ t('components.logs.empty') }}</td>
           </tr>
         </tbody>
       </table>
@@ -538,6 +540,13 @@ const formatStream = (value?: boolean | number) => {
   return isOn ? t('components.logs.streamOn') : t('components.logs.streamOff')
 }
 
+const formatRelayKey = (item: RequestLog) => {
+  const name = String(item.relay_key_name ?? '').trim()
+  if (name) return name
+  const id = String(item.relay_key_id ?? '').trim()
+  return id || '—'
+}
+
 const formatDuration = (value?: number) => {
   if (!value || Number.isNaN(value)) return '—'
   return `${value.toFixed(2)}s`
@@ -586,18 +595,17 @@ const formatTokenNumber = (value?: number) => {
 /**
  * 计算缓存命中率
  * @param cacheRead 缓存读取 token 数
- * @param inputTokens 输入 token 数
+ * @param totalTokens 页面展示的总 token 流量
  * @returns 命中率百分比字符串
  * @author sm
  */
-const formatCacheHitRate = (cacheRead?: number, inputTokens?: number) => {
+const formatCacheHitRate = (cacheRead?: number, totalTokens?: number) => {
   const read = cacheRead ?? 0
-  const input = inputTokens ?? 0
-  const total = read + input
+  const total = totalTokens ?? 0
 
   if (total === 0) return '0%'
 
-  const rate = (read / total) * 100
+  const rate = Math.min(100, (read / total) * 100)
   return `${rate.toFixed(1)}%`
 }
 
@@ -643,7 +651,7 @@ const statsCards = computed(() => {
       label: t('components.logs.summary.cache'),
       hint: t('components.logs.summary.cacheHint'),
       value: data ? formatTokenNumber(data.cache_read_tokens) : '—',
-      subValue: data ? formatCacheHitRate(data.cache_read_tokens, data.input_tokens) : '',
+      subValue: data ? formatCacheHitRate(data.cache_read_tokens, totalTokens) : '',
     },
     {
       key: 'cost',

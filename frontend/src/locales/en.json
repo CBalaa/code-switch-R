@@ -3,28 +3,6 @@
     "title": "My App",
     "login": "Login"
   },
-  "update": {
-    "newVersion": "Version {version} available",
-    "checking": "Checking...",
-    "downloadNow": "Download Now",
-    "downloading": "Downloading",
-    "restartNow": "Restart to Update",
-    "later": "Later",
-    "cancel": "Cancel",
-    "retry": "Retry",
-    "close": "Close",
-    "error": "Update error",
-    "noUpdate": "You're up to date",
-    "checkFailed": "Failed to check for updates",
-    "downloadFailed": "Download failed",
-    "applyFailed": "Failed to apply update",
-    "releaseNotes": "Release Notes",
-    "currentVersion": "Current version",
-    "latestVersion": "Latest version",
-    "checkUpdate": "Check for updates",
-    "autoCheck": "Auto-check for updates",
-    "ignoredVersion": "This version is ignored"
-  },
   "settings": {
     "network": {
       "title": "Network Settings",
@@ -60,75 +38,11 @@
   },
   "sidebar": {
     "home": "Home",
-    "prompts": "Prompts",
-    "mcp": "MCP",
-    "skill": "Skills",
     "gemini": "Gemini",
-    "availability": "Availability",
-    "speedtest": "Speed Test",
-    "env": "Env Check",
     "logs": "Logs",
     "console": "Console",
-    "settings": "Settings"
-  },
-  "availability": {
-    "title": "Availability Monitor",
-    "subtitle": "Real-time health monitoring for AI providers",
-    "refreshAll": "Check All",
-    "refreshing": "Checking...",
-    "check": "Check",
-    "providers": "Providers",
-    "lastUpdate": "Last update",
-    "nextRefresh": "Next refresh",
-    "notMonitored": "Not monitored",
-    "noProviders": "No providers yet. Please add provider configuration first.",
-    "stats": {
-      "operational": "Operational",
-      "degraded": "Degraded",
-      "failed": "Failed",
-      "disabled": "Disabled"
-    },
-    "settings": {
-      "title": "Availability Monitor Settings",
-      "failureThreshold": "Auto-blacklist threshold",
-      "failureThresholdHint": "Trigger blacklist after N consecutive failures",
-      "pollInterval": "Poll interval",
-      "pollIntervalHint": "Background check interval",
-      "operationalThreshold": "Operational threshold",
-      "operationalThresholdHint": "Response latency below this is considered operational"
-    },
-    "editConfig": "Edit Config",
-    "enableMonitoring": "Enable Monitoring",
-    "enableToMonitor": "Please enable availability monitoring first",
-    "configTitle": "Advanced Availability Config",
-    "field": {
-      "testModel": "Test Model",
-      "testEndpoint": "Test Endpoint",
-      "timeout": "Timeout (ms)"
-    },
-    "placeholder": {
-      "testModel": "Leave blank to use platform default model",
-      "testEndpoint": "Leave blank to use platform default endpoint",
-      "timeout": "Default 15000"
-    },
-    "hint": {
-      "timeout": "Milliseconds; blank or 0 will use default 15000"
-    },
-    "default": "default",
-    "currentModel": "Current Model",
-    "currentEndpoint": "Current Endpoint",
-    "currentTimeout": "Current Timeout",
-    "defaultModel": "Platform default model",
-    "defaultEndpoint": "Platform default endpoint",
-    "advancedConfig": {
-      "title": "Advanced Config",
-      "testModel": "Test model",
-      "testModelHint": "Uses low-cost model by default",
-      "testEndpoint": "Test endpoint",
-      "testEndpointHint": "Leave empty for default endpoint",
-      "timeout": "Timeout",
-      "timeoutHint": "Default 15 seconds"
-    }
+    "settings": "Settings",
+    "keys": "Keys"
   },
   "common": {
     "save": "Save",
@@ -183,7 +97,7 @@
       "success": "Signed in successfully"
     },
     "security": {
-      "description": "Manage the 8080 admin account and the Codex relay keys for 18100. Only keys created here can access the Codex API.",
+      "description": "Manage the 8080 admin account credentials. Relay access keys are managed from the Keys page in the sidebar.",
       "adminCardTitle": "Admin account",
       "adminCardDescription": "Current signed-in account: {username}. Leave the new username or password blank to keep the current value.",
       "update": "Update credentials",
@@ -215,68 +129,6 @@
       "oneTimeTitle": "The full key is shown only once",
       "oneTimeDescription": "Copy and store it now. The list only shows a masked value afterwards."
     }
-  },
-  "prompts": {
-    "hero": {
-      "eyebrow": "Prompt Manager",
-      "title": "Manage System Prompts",
-      "lead": "Configure custom system prompts for Claude Code, Codex, and Gemini to enhance your AI coding assistant."
-    },
-    "stats": {
-      "total": "{count} prompts total",
-      "enabled": "Enabled"
-    },
-    "empty": "No prompts yet. Click below to create one.",
-    "loading": "Loading...",
-    "confirmDelete": "Are you sure you want to delete this prompt?",
-    "actions": {
-      "create": "New Prompt",
-      "import": "Import from File"
-    },
-    "form": {
-      "createTitle": "New Prompt",
-      "editTitle": "Edit Prompt",
-      "name": "Name",
-      "namePlaceholder": "e.g., Code Review Expert",
-      "description": "Description",
-      "descriptionPlaceholder": "Brief description of this prompt",
-      "content": "Prompt Content",
-      "cancel": "Cancel",
-      "save": "Save"
-    }
-  },
-  "speedtest": {
-    "hero": {
-      "eyebrow": "API Speed Test",
-      "title": "Test API Endpoint Latency",
-      "lead": "Measure the response time of various API endpoints to help choose the best provider."
-    },
-    "placeholder": "Enter API endpoint URL",
-    "add": "Add",
-    "endpoints": "Endpoints ({count})",
-    "start": "Start Test",
-    "testing": "Testing",
-    "empty": "Add API endpoints to start testing",
-    "failed": "Failed",
-    "syncButton": "Refresh Provider Endpoints",
-    "syncing": "Syncing...",
-    "loadingTip": "Syncing provider endpoints from home page...",
-    "syncError": "Sync failed, please refresh manually"
-  },
-  "envcheck": {
-    "hero": {
-      "eyebrow": "Environment Check",
-      "title": "Detect Environment Variable Conflicts",
-      "lead": "Scan system environment variables and config files to find conflicts that may affect AI coding tools."
-    },
-    "checking": "Checking...",
-    "error": "Check failed",
-    "found": "Found {count} conflicting environment variables",
-    "noConflicts": "No environment variable conflicts found",
-    "value": "Value",
-    "source": "Source",
-    "source.system": "System environment variable",
-    "refresh": "Recheck"
   },
   "components": {
     "provider": {
@@ -382,8 +234,6 @@
         "github": "Open project GitHub",
         "theme": "Toggle theme",
         "settings": "Open settings",
-        "mcp": "Open MCP panel",
-        "skill": "Open skill catalog",
         "gemini": "Open Gemini CLI manager",
         "import": "Import cc-switch config",
         "duplicate": "Duplicate provider"
@@ -403,6 +253,7 @@
         "requests": "Requests",
         "tokens": "Tokens",
         "cost": "Cost",
+        "balance": "Balance",
         "successRate": "Success rate",
         "loading": "Refreshing...",
         "noData": "No data yet today",
@@ -429,6 +280,13 @@
           "icon": "Icon",
           "enabled": "Enabled",
           "level": "Priority Level",
+          "modelPrices": "Model prices",
+          "modelName": "Model name",
+          "nonCachedInputPrice": "Non-cached input ($/1M tokens)",
+          "cachedInputPrice": "Cached input ($/1M tokens)",
+          "outputPrice": "Output ($/1M tokens)",
+          "modelPriceMultiplier": "Price multiplier",
+          "providerBalance": "Provider balance ($)",
           "availabilityMonitor": "Availability Monitoring",
           "connectivityAutoBlacklist": "Auto-Blacklist on Failure",
           "availabilityTestModel": "Test Model (optional)",
@@ -444,6 +302,10 @@
           "apiUrl": "https://api.aicoding.sh",
           "apiKey": "sk-xxxxx",
           "apiEndpoint": "Leave blank for the platform default, for example /v1/responses on Claude-compatible OpenAI relays",
+          "modelName": "e.g. gpt-5-codex",
+          "pricePerMillion": "USD per 1M tokens",
+          "modelPriceMultiplier": "Default 1",
+          "providerBalance": "Leave blank to skip balance deduction",
           "officialSite": "https://vendor.com",
           "icon": "e.g. aicoding, kimi",
           "availabilityTestModel": "Leave empty to use platform default",
@@ -457,6 +319,9 @@
         "noIconResults": "No matching icons found",
         "hints": {
           "level": "Lower numbers = higher priority. Level 1 providers are tried first, then Level 2, etc.",
+          "modelPrices": "Only models configured here are billed. Models without a configured price cost 0.",
+          "noModelPrices": "No model prices yet. Models without configured prices cost 0.",
+          "providerBilling": "When balance is set, successful requests deduct model price times multiplier. The provider is disabled automatically once the balance reaches 0.",
           "apiEndpoint": "Override the platform default endpoint. Leave blank for default (Claude: /v1/messages for Anthropic, /v1/responses for OpenAI Compatible; Codex: /responses). For GLM models use /v1/chat/completions",
           "upstreamProtocol": "Specify the upstream API protocol. Auto detects from the endpoint; OpenAI Compatible converts Claude Messages requests to OpenAI Responses or Chat Completions",
           "availabilityMonitor": "Enable background health checks for this provider. Checks are performed periodically to monitor availability.",
@@ -476,7 +341,9 @@
           "saveAndApply": "Save & Apply",
           "delete": "Delete",
           "testConnectivity": "Test Connectivity",
-          "testing": "Testing..."
+          "testing": "Testing...",
+          "addModelPrice": "Add model price",
+          "removeModelPrice": "Remove"
         },
         "connectivity": {
           "success": "Connected (latency: {latency}ms)",
@@ -588,7 +455,7 @@
         "tokens": "Tokens moved",
         "tokenHint": "Input + output tokens",
         "cache": "Cache reads",
-        "cacheHint": "Read hits across responses",
+        "cacheHint": "Cache reads / total token traffic",
         "costHint": "24h total cost",
         "todayScope": "Today · {date}"
       },
@@ -596,6 +463,7 @@
         "time": "Time",
         "platform": "Platform",
         "provider": "Provider",
+        "relayKey": "Relay key",
         "model": "Model",
         "httpCode": "HTTP",
         "stream": "Stream",
@@ -637,10 +505,8 @@
       },
       "label": {
         "assistant_access": "Accessibility permissions",
-        "automatic_up": "Automatically check for updates",
         "disk_access": "Full disk access",
         "language": "Interface language",
-        "next_up": "Automatically check for updates next time",
         "startup": "Started when logged in",
         "theme": "Theme mode",
         "heatmap": "Show dashboard heatmap",
@@ -679,14 +545,8 @@
         "switchNotifyHint": "Send system notification when provider switches or gets blacklisted",
         "roundRobin": "Same-Level Round Robin",
         "roundRobinHint": "When enabled, providers at the same Level take turns handling requests; when disabled, always starts from the first",
-        "autoUpdate": "Automatic update",
         "autoConnectivityTest": "Auto Availability Monitoring",
         "autoConnectivityTestHint": "Automatically check availability of monitored providers every minute",
-        "lastCheck": "Last check",
-        "currentVersion": "Current version",
-        "latestVersion": "Latest version",
-        "checkNow": "Check now",
-        "manualUpdate": "Manual update",
         "blacklistThreshold": "Failure threshold",
         "blacklistDuration": "Blacklist duration",
         "saveBlacklist": "Save settings",
@@ -723,137 +583,6 @@
         "nothingToImport": "Nothing to import (all may have been imported)",
         "failed": "Import failed",
         "fileNotFound": "Config file not found, please check the path"
-      }
-    },
-    "mcp": {
-      "hero": {
-        "eyebrow": "MCP Manager",
-        "title": "Manage MCP Servers",
-        "lead": "Keep every stdio or HTTP MCP server in one place and track which platform currently loads it."
-      },
-      "controls": {
-        "back": "Back to home",
-        "settings": "Open settings",
-        "refresh": "Refresh",
-        "create": "New server"
-      },
-      "import": {
-        "title": "Batch Import MCP Servers",
-        "inputDesc": "Paste MCP configuration JSON. Supports Claude Desktop format, array format, or server map format.",
-        "placeholder": "{\n  \"mcpServers\": {\n    \"server-name\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@modelcontextprotocol/server-xxx\"]\n    }\n  }\n}",
-        "next": "Next",
-        "parsing": "Parsing...",
-        "back": "Back",
-        "reviewTitle": "Found {count} servers",
-        "selectAll": "Select All",
-        "conflictNotice": "{count} server(s) conflict with existing configuration",
-        "strategySkip": "Skip conflicts",
-        "strategyOverwrite": "Overwrite existing",
-        "status": {
-          "new": "New",
-          "conflict": "Conflict"
-        },
-        "submit": "Import {count}",
-        "importing": "Importing...",
-        "success": "Successfully imported {count} MCP server(s)",
-        "allSkipped": "All servers were skipped, nothing imported",
-        "noServers": "No valid server configuration found",
-        "needName": "Single server config requires a name",
-        "parseError": "Failed to parse JSON",
-        "importError": "Import failed. Please try again."
-      },
-      "section": {
-        "title": "Registered servers",
-        "subtitle": "Synced from ~/.code-switch/mcp.json and saved immediately"
-      },
-      "list": {
-        "loading": "Loading servers...",
-        "empty": "No MCP servers yet. Use the button below to create one.",
-        "loadError": "Failed to load MCP servers",
-        "saveError": "Failed to save MCP servers",
-        "edit": "Edit server",
-        "delete": "Delete server",
-        "placeholderWarning": "Replace placeholders first: {vars}"
-      },
-      "toast": {
-        "placeholder": "Replace placeholders first: {vars}"
-      },
-      "status": {
-        "active": "Enabled",
-        "inactive": "Disabled"
-      },
-      "types": {
-        "stdio": "Local stdio process",
-        "stdioShort": "Local process",
-        "http": "Remote HTTP",
-        "httpShort": "HTTP service"
-      },
-      "platforms": {
-        "claude": "Claude Code",
-        "codex": "Codex",
-        "gemini": "Gemini CLI"
-      },
-      "form": {
-        "createTitle": "Create MCP server",
-        "editTitle": "Edit MCP server",
-        "name": "Server name",
-        "type": "Type",
-        "command": "Command",
-        "args": "Arguments",
-        "argsHint": "One argument per line. They will be passed in order.",
-        "url": "Service URL",
-        "website": "Website",
-        "tips": "Helper note",
-        "tipsHint": "Example: Visit ref.tools to get your API key",
-        "jsonEditor": {
-          "title": "JSON Config",
-          "dirty": "Not applied",
-          "lock": "Lock",
-          "unlock": "Unlock",
-          "apply": "Apply to form",
-          "reset": "Reset",
-          "hint": "This JSON does not include name or platforms. Name, website, tips, and platforms are controlled by the form.",
-          "toast": {
-            "dirtyNotApplied": "JSON changes are not applied. Saving will use the form values."
-          },
-          "errors": {
-            "empty": "Please enter JSON content",
-            "invalidJson": "Invalid JSON: {message}",
-            "mustBeObject": "JSON root must be an object",
-            "typeRequired": "Missing type (must be stdio or http)",
-            "typeInvalid": "type must be stdio or http",
-            "commandRequired": "command is required for stdio servers",
-            "urlRequired": "url is required for http servers",
-            "argsInvalid": "args must be an array of strings",
-            "envInvalid": "env must be an object with string values",
-            "applyFailed": "Failed to apply JSON. Please check the content."
-          }
-        },
-        "env": "Environment variables",
-        "envKey": "Key",
-        "envValue": "Value",
-        "envAdd": "Add variable",
-        "envRemove": "Delete variable",
-        "platforms": {
-          "title": "Target platforms"
-        },
-        "actions": {
-          "cancel": "Cancel",
-          "save": "Save",
-          "delete": "Delete"
-        },
-        "errors": {
-          "name": "Please enter a server name",
-          "command": "Command is required for stdio servers",
-          "url": "HTTP servers require a URL",
-          "duplicate": "This name already exists",
-          "noPlatformSelected": "Please select at least one platform (Claude Code or Codex)"
-        },
-        "warnings": {
-          "savedWithPlaceholders": "✅ Config saved, but not synced to Claude/Codex due to placeholders ({vars}). Please fill placeholders and save again."
-        },
-        "deleteTitle": "Delete MCP server",
-        "deleteMessage": "Are you sure you want to delete {name}? This action cannot be undone."
       }
     },
     "gemini": {
@@ -909,80 +638,6 @@
         "cancel": "Cancel",
         "save": "Save",
         "delete": "Delete"
-      }
-    },
-    "skill": {
-      "hero": {
-        "eyebrow": "Skill Library",
-        "title": "Claude Skill",
-        "lead": "Fetch Claude skills from the managed repositories. Click the top-right button to add more sources."
-      },
-      "platform": {
-        "claude": "Claude Code",
-        "codex": "Codex"
-      },
-      "groups": {
-        "project": "Project Skills",
-        "user": "User Skills",
-        "available": "Available Skills"
-      },
-      "actions": {
-        "back": "Back to home",
-        "loading": "Processing...",
-        "refresh": "Refresh list",
-        "view": "View on GitHub",
-        "install": "Install",
-        "uninstall": "Uninstall",
-        "installError": "Failed to install {name}. Please retry",
-        "uninstallError": "Failed to uninstall {name}. Please retry",
-        "toggle": "Enable/Disable",
-        "viewContent": "View Content",
-        "hideContent": "Hide Content",
-        "openFolder": "Open Folder",
-        "loadFailed": "Failed to load content",
-        "toggleError": "Failed to toggle skill status"
-      },
-      "list": {
-        "title": "Available skills",
-        "subtitle": "Metadata is parsed from each SKILL.md front matter.",
-        "loading": "Loading skills...",
-        "empty": "No skills detected in the repository.",
-        "error": "Failed to load skills. Please check your network and retry.",
-        "noDescription": "SKILL.md does not include a description",
-        "missingRepo": "Missing repository information for this skill",
-        "noInstalled": "No installed skills"
-      },
-      "install": {
-        "title": "Choose Install Location",
-        "desc": "Install {name} to:",
-        "locationLabel": "Install Location",
-        "userLevel": "User Level (Global)",
-        "userLevelDesc": "~/.{platform}/skills/",
-        "projectLevel": "Project Level (Current Directory)",
-        "projectLevelDesc": "./.{platform}/skills/",
-        "gitWarning": "Project skills may need to be added to .gitignore",
-        "installing": "Installing...",
-        "confirm": "Confirm Install"
-      },
-      "license": {
-        "complete": "Complete terms in {file}"
-      },
-      "repos": {
-        "open": "Manage repositories",
-        "title": "Skill sources",
-        "subtitle": "Add GitHub repositories to control where skills are fetched from.",
-        "urlPlaceholder": "https://github.com/owner/repo",
-        "branchPlaceholder": "Branch",
-        "addLabel": "Add repository",
-        "viewLabel": "Open on GitHub",
-        "removeLabel": "Remove repository",
-        "loadError": "Failed to load repositories",
-        "addError": "Failed to add repository",
-        "removeError": "Failed to remove repository",
-        "formError": "Owner and repository are required",
-        "loading": "Loading repositories...",
-        "empty": "No repositories configured.",
-        "branchLabel": "Branch: {branch}"
       }
     },
     "themesetting": {
@@ -1065,6 +720,43 @@
       "savePartialSuccess": "{success} saved, {fail} failed",
       "tabPreview": "Preview",
       "tabCurrent": "Current"
+    }
+  },
+  "keys": {
+    "eyebrow": "Relay Keys",
+    "title": "Key Management",
+    "subtitle": "Manage Code Switch relay keys and inspect call and token usage trends for each key.",
+    "tabs": {
+      "ariaLabel": "Key page tabs",
+      "management": "Key management",
+      "usage": "Usage trends"
+    },
+    "management": "Key management",
+    "managementHint": "Create, copy, rename, or delete Codex / Claude relay keys.",
+    "usage": "Usage trends",
+    "usageAllKeys": "Shows usage for every key in the selected time range, with a separate color per key.",
+    "noSelection": "Select a key",
+    "rename": "Rename",
+    "renameSuccess": "Key name updated",
+    "loadingUsage": "Loading usage data...",
+    "ranges": {
+      "oneHour": "1 hour",
+      "fiveHours": "5 hours",
+      "oneDay": "1 day",
+      "oneWeek": "1 week",
+      "oneMonth": "1 month"
+    },
+    "chart": {
+      "tokens": "Token usage",
+      "calls": "Calls"
+    },
+    "summary": {
+      "totalTokens": "Total tokens",
+      "totalCalls": "Total calls"
+    },
+    "errors": {
+      "loadUsage": "Failed to load key usage",
+      "rename": "Failed to rename key"
     }
   }
 }

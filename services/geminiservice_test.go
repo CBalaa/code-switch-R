@@ -113,8 +113,8 @@ func TestParseEnvFile(t *testing.T) {
 		expected map[string]string
 	}{
 		{
-			name:    "Empty file",
-			content: "",
+			name:     "Empty file",
+			content:  "",
 			expected: map[string]string{},
 		},
 		{
@@ -182,10 +182,10 @@ func TestIsValidEnvKey(t *testing.T) {
 		{"GOOGLE_GEMINI_BASE_URL", true},
 		{"KEY123", true},
 		{"_KEY", true},
-		{"KEY-NAME", false},  // hyphen not allowed
-		{"KEY.NAME", false},  // dot not allowed
-		{"KEY NAME", false},  // space not allowed
-		{"", true},           // empty is technically valid (no invalid chars)
+		{"KEY-NAME", false}, // hyphen not allowed
+		{"KEY.NAME", false}, // dot not allowed
+		{"KEY NAME", false}, // space not allowed
+		{"", true},          // empty is technically valid (no invalid chars)
 	}
 
 	for _, tt := range tests {
@@ -258,5 +258,39 @@ func TestGeminiPreset_Fields(t *testing.T) {
 		if !validCategories[p.Category] {
 			t.Errorf("Preset %q has invalid Category: %q", p.Name, p.Category)
 		}
+	}
+}
+
+func TestGeminiServiceApplyProviderUsageChargeDisablesDepletedProvider(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	balance := 0.01
+	svc := NewGeminiService("127.0.0.1:18100")
+	if err := svc.AddProvider(GeminiProvider{
+		ID:      "gemini-test",
+		Name:    "Gemini Test",
+		BaseURL: "https://example.com",
+		Enabled: true,
+		Balance: &balance,
+	}); err != nil {
+		t.Fatalf("add provider: %v", err)
+	}
+
+	nextBalance, disabled, err := svc.ApplyProviderUsageCharge("gemini-test", 0.02)
+	if err != nil {
+		t.Fatalf("apply charge: %v", err)
+	}
+	if nextBalance != 0 {
+		t.Fatalf("expected balance 0, got %.12f", nextBalance)
+	}
+	if !disabled {
+		t.Fatal("expected provider to be disabled")
+	}
+
+	providers := svc.GetProviders()
+	if len(providers) != 1 {
+		t.Fatalf("expected 1 provider, got %d", len(providers))
+	}
+	if providers[0].Enabled {
+		t.Fatal("expected provider enabled=false after depletion")
 	}
 }

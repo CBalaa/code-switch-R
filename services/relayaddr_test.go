@@ -2,9 +2,9 @@ package services
 
 import "testing"
 
-func TestRelayListenAddrDefaultsToPublicBind(t *testing.T) {
-	if got := RelayListenAddr(""); got != "0.0.0.0:18100" {
-		t.Fatalf("expected default relay bind addr 0.0.0.0:18100, got %q", got)
+func TestRelayListenAddrDefaultsToLocalhost(t *testing.T) {
+	if got := RelayListenAddr(""); got != "127.0.0.1:18100" {
+		t.Fatalf("expected default relay bind addr 127.0.0.1:18100, got %q", got)
 	}
 }
 

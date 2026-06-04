@@ -16,7 +16,7 @@ func GetBlacklistLevelConfigPath() (string, error) {
 
 	configDir := filepath.Join(home, ".code-switch")
 	// 确保目录存在
-	if err := os.MkdirAll(configDir, 0755); err != nil {
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		return "", fmt.Errorf("创建配置目录失败: %w", err)
 	}
 
@@ -85,7 +85,7 @@ func (ss *SettingsService) SaveBlacklistLevelConfig(config *BlacklistLevelConfig
 
 	// 原子写入：先写临时文件，再重命名
 	tmpPath := configPath + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
+	if err := os.WriteFile(tmpPath, data, 0o600); err != nil {
 		return fmt.Errorf("写入临时配置文件失败: %w", err)
 	}
 

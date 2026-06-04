@@ -3,7 +3,6 @@ import { computed, onBeforeUnmount, onMounted } from 'vue'
 import { RouterView, useRoute } from 'vue-router'
 import AdminAccessGate from './components/Auth/AdminAccessGate.vue'
 import Sidebar from './components/Sidebar.vue'
-import UpdateNotification from './components/common/UpdateNotification.vue'
 import { refreshAdminAuthStatus, useAdminAuthState } from './services/adminAuth'
 
 const applyTheme = () => {
@@ -70,7 +69,6 @@ onBeforeUnmount(() => {
         </keep-alive>
       </RouterView>
     </main>
-    <UpdateNotification />
   </div>
 </template>
 
