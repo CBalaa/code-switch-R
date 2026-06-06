@@ -92,6 +92,17 @@ const formatDateTime = (value: string) => {
   return date.toLocaleString()
 }
 
+const padTimeUnit = (value: number) => value.toString().padStart(2, '0')
+
+const formatUsageBucketLabel = (bucket: string) => {
+  const date = new Date(bucket)
+  if (Number.isNaN(date.getTime())) return bucket
+  if (usageRange.value === '1w' || usageRange.value === '1mo') {
+    return `${padTimeUnit(date.getMonth() + 1)}-${padTimeUnit(date.getDate())}`
+  }
+  return `${padTimeUnit(date.getHours())}:${padTimeUnit(date.getMinutes())}`
+}
+
 const formatNumber = (value?: number) => {
   const numeric = Number(value ?? 0)
   return new Intl.NumberFormat().format(numeric)
@@ -247,16 +258,16 @@ const chartData = computed(() => {
     .map((key) => usageStatsByKey.value[key.id])
     .find((stats) => stats?.points?.length)
   const points = firstStats?.points ?? []
-  const labels = points.map((point) => point.label)
+  const buckets = points.map((point) => point.bucket || point.label)
   return {
-    labels,
+    labels: points.map((point) => formatUsageBucketLabel(point.bucket || point.label)),
     datasets: keys.value.map((key, index) => {
       const stats = usageStatsByKey.value[key.id]
       const color = chartColors[index % chartColors.length]
       return {
         label: key.name,
-        data: labels.map((label) => {
-          const point = (stats?.points ?? []).find((item) => item.label === label)
+        data: buckets.map((bucket) => {
+          const point = (stats?.points ?? []).find((item) => (item.bucket || item.label) === bucket)
           if (!point) return 0
           return usageMetric.value === 'tokens' ? point.totalTokens : point.calls
         }),
