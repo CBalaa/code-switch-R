@@ -22,23 +22,20 @@ const (
 
 // GeminiProvider Gemini 供应商配置
 type GeminiProvider struct {
-	ID                   string               `json:"id"`
-	Name                 string               `json:"name"`
-	WebsiteURL           string               `json:"websiteUrl,omitempty"`
-	APIKeyURL            string               `json:"apiKeyUrl,omitempty"`
-	BaseURL              string               `json:"baseUrl,omitempty"`
-	APIKey               string               `json:"apiKey,omitempty"`
-	Model                string               `json:"model,omitempty"`
-	Description          string               `json:"description,omitempty"`
-	Category             string               `json:"category,omitempty"`            // official, third_party, custom
-	PartnerPromotionKey  string               `json:"partnerPromotionKey,omitempty"` // 用于识别供应商类型
-	Enabled              bool                 `json:"enabled"`
-	Level                int                  `json:"level,omitempty"`       // 优先级分组 (1-10, 默认 1)
-	ModelPrices          []ProviderModelPrice `json:"modelPrices,omitempty"` // 模型原价列表（美元 / 1M tokens）
-	ModelPriceMultiplier float64              `json:"modelPriceMultiplier,omitempty"`
-	Balance              *float64             `json:"balance,omitempty"`        // 供应商余额（美元）。nil 表示不启用余额扣减。
-	EnvConfig            map[string]string    `json:"envConfig,omitempty"`      // .env 配置
-	SettingsConfig       map[string]any       `json:"settingsConfig,omitempty"` // settings.json 配置
+	ID                  string            `json:"id"`
+	Name                string            `json:"name"`
+	WebsiteURL          string            `json:"websiteUrl,omitempty"`
+	APIKeyURL           string            `json:"apiKeyUrl,omitempty"`
+	BaseURL             string            `json:"baseUrl,omitempty"`
+	APIKey              string            `json:"apiKey,omitempty"`
+	Model               string            `json:"model,omitempty"`
+	Description         string            `json:"description,omitempty"`
+	Category            string            `json:"category,omitempty"`            // official, third_party, custom
+	PartnerPromotionKey string            `json:"partnerPromotionKey,omitempty"` // 用于识别供应商类型
+	Enabled             bool              `json:"enabled"`
+	Level               int               `json:"level,omitempty"`          // 优先级分组 (1-10, 默认 1)
+	EnvConfig           map[string]string `json:"envConfig,omitempty"`      // .env 配置
+	SettingsConfig      map[string]any    `json:"settingsConfig,omitempty"` // settings.json 配置
 }
 
 // GeminiPreset 预设供应商
@@ -164,7 +161,6 @@ func (s *GeminiService) AddProvider(provider GeminiProvider) error {
 		provider.ID = fmt.Sprintf("gemini-%d", len(s.providers)+1)
 	}
 
-	provider.normalizeBillingFields()
 	s.providers = append(s.providers, provider)
 	return s.saveProviders()
 }
@@ -180,44 +176,11 @@ func (s *GeminiService) UpdateProvider(provider GeminiProvider) error {
 			if strings.TrimSpace(provider.APIKey) == "" {
 				provider.APIKey = p.APIKey
 			}
-			provider.normalizeBillingFields()
 			s.providers[i] = provider
 			return s.saveProviders()
 		}
 	}
 	return fmt.Errorf("未找到 ID 为 '%s' 的供应商", provider.ID)
-}
-
-func (s *GeminiService) ApplyProviderUsageCharge(providerID string, cost float64) (float64, bool, error) {
-	if cost <= 0 {
-		return 0, false, nil
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	for i := range s.providers {
-		p := &s.providers[i]
-		if p.ID != providerID || p.Balance == nil {
-			continue
-		}
-
-		next := *p.Balance - cost
-		disabled := false
-		if next <= 0 {
-			next = 0
-			p.Enabled = false
-			disabled = true
-		}
-		p.Balance = &next
-
-		if err := s.saveProviders(); err != nil {
-			return 0, false, err
-		}
-		return next, disabled, nil
-	}
-
-	return 0, false, nil
 }
 
 // DeleteProvider 删除供应商
@@ -669,9 +632,6 @@ func (s *GeminiService) loadProviders() error {
 	if err := json.Unmarshal(data, &s.providers); err != nil {
 		return err
 	}
-	for i := range s.providers {
-		s.providers[i].normalizeBillingFields()
-	}
 	return nil
 }
 
@@ -681,10 +641,6 @@ func (s *GeminiService) saveProviders() error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
-	}
-
-	for i := range s.providers {
-		s.providers[i].normalizeBillingFields()
 	}
 
 	data, err := json.MarshalIndent(s.providers, "", "  ")
@@ -697,43 +653,6 @@ func (s *GeminiService) saveProviders() error {
 		return err
 	}
 	return os.Rename(tmpPath, path)
-}
-
-func (p *GeminiProvider) normalizeBillingFields() {
-	normalizedPrices := make([]ProviderModelPrice, 0, len(p.ModelPrices))
-	seenModels := make(map[string]bool, len(p.ModelPrices))
-	for _, price := range p.ModelPrices {
-		price.Model = strings.TrimSpace(price.Model)
-		if price.Model == "" || seenModels[price.Model] {
-			continue
-		}
-		if price.InputPricePerMillion < 0 {
-			price.InputPricePerMillion = 0
-		}
-		if price.CachedInputPricePerMillion < 0 {
-			price.CachedInputPricePerMillion = 0
-		}
-		if price.OutputPricePerMillion < 0 {
-			price.OutputPricePerMillion = 0
-		}
-		seenModels[price.Model] = true
-		normalizedPrices = append(normalizedPrices, price)
-	}
-	p.ModelPrices = normalizedPrices
-
-	if p.ModelPriceMultiplier < 0 {
-		p.ModelPriceMultiplier = 0
-	}
-	if p.Balance != nil {
-		balance := *p.Balance
-		if balance < 0 {
-			balance = 0
-		}
-		p.Balance = &balance
-		if balance <= 0 {
-			p.Enabled = false
-		}
-	}
 }
 
 // CreateProviderFromPreset 从预设创建供应商
@@ -1017,24 +936,18 @@ func (s *GeminiService) DuplicateProvider(sourceID string) (*GeminiProvider, err
 
 	// 3. 克隆配置（深拷贝）
 	cloned := GeminiProvider{
-		ID:                   newID,
-		Name:                 source.Name + " (副本)",
-		WebsiteURL:           source.WebsiteURL,
-		APIKeyURL:            source.APIKeyURL,
-		BaseURL:              source.BaseURL,
-		APIKey:               source.APIKey,
-		Model:                source.Model,
-		Description:          source.Description,
-		Category:             source.Category,
-		PartnerPromotionKey:  source.PartnerPromotionKey,
-		Enabled:              false, // 默认禁用，避免与源供应商冲突
-		Level:                source.Level,
-		ModelPrices:          source.ModelPrices,
-		ModelPriceMultiplier: source.ModelPriceMultiplier,
-	}
-	if source.Balance != nil {
-		balance := *source.Balance
-		cloned.Balance = &balance
+		ID:                  newID,
+		Name:                source.Name + " (副本)",
+		WebsiteURL:          source.WebsiteURL,
+		APIKeyURL:           source.APIKeyURL,
+		BaseURL:             source.BaseURL,
+		APIKey:              source.APIKey,
+		Model:               source.Model,
+		Description:         source.Description,
+		Category:            source.Category,
+		PartnerPromotionKey: source.PartnerPromotionKey,
+		Enabled:             false, // 默认禁用，避免与源供应商冲突
+		Level:               source.Level,
 	}
 
 	// 4. 深拷贝 map（避免共享引用）

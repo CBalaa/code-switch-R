@@ -370,13 +370,6 @@
                 <span v-if="card.level" class="level-badge scheduling-level" :class="`level-${card.level}`">
                   L{{ card.level }}
                 </span>
-                <span
-                  v-if="hasProviderBalance(card)"
-                  class="balance-badge"
-                  :class="{ depleted: Number(card.balance ?? 0) <= 0 }"
-                >
-                  {{ t('components.main.providers.balance') }} {{ formatProviderBalance(card) }}
-                </span>
                 <!-- 黑名单等级徽章（始终显示，包括 L0） -->
                 <span
                   v-if="getProviderBlacklistStatus(card.name)"
@@ -757,98 +750,6 @@
                   <span class="field-hint">{{ t('components.main.form.hints.level') }}</span>
                 </div>
 
-                <div class="billing-section">
-                  <div class="billing-toolbar">
-                    <div>
-                      <span class="billing-title">{{ t('components.main.form.labels.modelPrices') }}</span>
-                      <span class="field-hint">{{ t('components.main.form.hints.modelPrices') }}</span>
-                    </div>
-                    <button class="billing-add-btn" type="button" @click="addModelPrice">
-                      {{ t('components.main.form.actions.addModelPrice') }}
-                    </button>
-                  </div>
-
-                  <div v-if="!modalState.form.modelPrices?.length" class="billing-empty">
-                    {{ t('components.main.form.hints.noModelPrices') }}
-                  </div>
-                  <div
-                    v-for="(price, index) in modalState.form.modelPrices"
-                    :key="index"
-                    class="model-price-row"
-                  >
-                    <label class="form-field">
-                      <span>{{ t('components.main.form.labels.modelName') }}</span>
-                      <input
-                        v-model="price.model"
-                        type="text"
-                        :placeholder="t('components.main.form.placeholders.modelName')"
-                      />
-                    </label>
-                    <label class="form-field">
-                      <span>{{ t('components.main.form.labels.nonCachedInputPrice') }}</span>
-                      <input
-                        v-model.number="price.inputPricePerMillion"
-                        type="number"
-                        min="0"
-                        step="0.000001"
-                        :placeholder="t('components.main.form.placeholders.pricePerMillion')"
-                      />
-                    </label>
-                    <label class="form-field">
-                      <span>{{ t('components.main.form.labels.cachedInputPrice') }}</span>
-                      <input
-                        v-model.number="price.cachedInputPricePerMillion"
-                        type="number"
-                        min="0"
-                        step="0.000001"
-                        :placeholder="t('components.main.form.placeholders.pricePerMillion')"
-                      />
-                    </label>
-                    <label class="form-field">
-                      <span>{{ t('components.main.form.labels.outputPrice') }}</span>
-                      <input
-                        v-model.number="price.outputPricePerMillion"
-                        type="number"
-                        min="0"
-                        step="0.000001"
-                        :placeholder="t('components.main.form.placeholders.pricePerMillion')"
-                      />
-                    </label>
-                    <button
-                      class="billing-remove-btn"
-                      type="button"
-                      :title="t('components.main.form.actions.removeModelPrice')"
-                      @click="removeModelPrice(index)"
-                    >
-                      ×
-                    </button>
-                  </div>
-
-                  <div class="billing-grid">
-                    <label class="form-field">
-                      <span>{{ t('components.main.form.labels.modelPriceMultiplier') }}</span>
-                      <input
-                        v-model.number="modalState.form.modelPriceMultiplier"
-                        type="number"
-                        min="0.000001"
-                        step="0.01"
-                        :placeholder="t('components.main.form.placeholders.modelPriceMultiplier')"
-                      />
-                    </label>
-                    <label class="form-field">
-                      <span>{{ t('components.main.form.labels.providerBalance') }}</span>
-                      <input
-                        v-model.number="modalState.form.balance"
-                        type="number"
-                        min="0"
-                        step="0.000001"
-                        :placeholder="t('components.main.form.placeholders.providerBalance')"
-                      />
-                    </label>
-                  </div>
-                  <span class="field-hint billing-hint">{{ t('components.main.form.hints.providerBilling') }}</span>
-                </div>
-
                 <div class="form-field">
                   <ModelWhitelistEditor v-model="modalState.form.supportedModels" />
                 </div>
@@ -1111,7 +1012,7 @@ import { Listbox, ListboxButton, ListboxOptions, ListboxOption } from '@headless
 import { Browser, Call, Events } from '@wailsio/runtime'
 import { type UsageHeatmapDay } from '../../data/usageHeatmap'
 import { useAdaptiveHeatmap } from '../../composables/useAdaptiveHeatmap'
-import { automationCardGroups, createAutomationCards, type AutomationCard, type ProviderModelPrice } from '../../data/cards'
+import { automationCardGroups, createAutomationCards, type AutomationCard } from '../../data/cards'
 import lobeIcons from '../../icons/lobeIconMap'
 import BaseButton from '../common/BaseButton.vue'
 import BaseModal from '../common/BaseModal.vue'
@@ -1585,9 +1486,6 @@ interface GeminiProvider {
   partnerPromotionKey?: string
   enabled: boolean
   level?: number // 优先级分组 (1-10, 默认 1)
-  modelPrices?: ProviderModelPrice[]
-  modelPriceMultiplier?: number
-  balance?: number | null
   envConfig?: Record<string, string | undefined>
   settingsConfig?: Record<string, any>
 }
@@ -1621,9 +1519,6 @@ const geminiToCard = (provider: GeminiProvider, index: number): AutomationCard =
   accent: '#fb923c',
   enabled: provider.enabled,
   level: provider.level || 1,
-  modelPrices: normalizeModelPrices(provider.modelPrices),
-  modelPriceMultiplier: normalizeMultiplier(provider.modelPriceMultiplier),
-  balance: normalizeMoney(provider.balance),
   // 可用性监控配置（Gemini 暂不支持，使用默认值）
   availabilityMonitorEnabled: false,
   connectivityAutoBlacklist: false,
@@ -1639,18 +1534,12 @@ const cardToGemini = (card: AutomationCard, original: GeminiProvider): GeminiPro
   websiteUrl: card.officialSite,
   enabled: card.enabled,
   level: card.level || 1,
-  modelPrices: normalizeModelPrices(card.modelPrices),
-  modelPriceMultiplier: normalizeMultiplier(card.modelPriceMultiplier),
-  balance: normalizeMoney(card.balance),
   // 注意：Gemini 不支持可用性监控配置，这些字段不会保存
 })
 
 const serializeProviders = (providers: AutomationCard[]) =>
   providers.map((provider) => ({
     ...provider,
-    modelPrices: normalizeModelPrices(provider.modelPrices),
-    modelPriceMultiplier: normalizeMultiplier(provider.modelPriceMultiplier),
-    balance: normalizeMoney(provider.balance),
     // 确保可用性配置正确序列化
     availabilityMonitorEnabled: !!provider.availabilityMonitorEnabled,
     connectivityAutoBlacklist: !!provider.connectivityAutoBlacklist,
@@ -2563,9 +2452,6 @@ type VendorForm = {
   supportedModels?: Record<string, boolean>
   modelMapping?: Record<string, string>
   level?: number
-  modelPrices?: ProviderModelPrice[]
-  modelPriceMultiplier?: number
-  balance?: number | null
   apiEndpoint?: string
   // === 可用性监控配置（新） ===
   availabilityMonitorEnabled?: boolean
@@ -2607,9 +2493,6 @@ const defaultFormValues = (platform?: string): VendorForm => ({
   icon: defaultIconKey,
   level: 1,
   enabled: true,
-  modelPrices: [],
-  modelPriceMultiplier: 1,
-  balance: null,
   supportedModels: {},
   modelMapping: {},
   apiEndpoint: '', // API 端点（可选）
@@ -2652,59 +2535,6 @@ const normalizeLevel = (level: number | string | undefined): number => {
   if (!Number.isFinite(num) || num < 1) return 1
   if (num > 10) return 10
   return Math.floor(num)  // 确保返回整数
-}
-
-const normalizeMoney = (value: number | string | null | undefined): number | null => {
-  if (value === null || value === undefined || value === '') return null
-  const numeric = Number(value)
-  if (!Number.isFinite(numeric)) return null
-  return Math.max(0, numeric)
-}
-
-const normalizeModelPrices = (prices: ProviderModelPrice[] | undefined): ProviderModelPrice[] => {
-  const seen = new Set<string>()
-  const result: ProviderModelPrice[] = []
-  for (const price of prices ?? []) {
-    const model = String(price.model ?? '').trim()
-    if (!model || seen.has(model)) continue
-    seen.add(model)
-    result.push({
-      model,
-      inputPricePerMillion: normalizeMoney(price.inputPricePerMillion) ?? 0,
-      cachedInputPricePerMillion: normalizeMoney(price.cachedInputPricePerMillion) ?? 0,
-      outputPricePerMillion: normalizeMoney(price.outputPricePerMillion) ?? 0,
-    })
-  }
-  return result
-}
-
-const addModelPrice = () => {
-  if (!modalState.form.modelPrices) {
-    modalState.form.modelPrices = []
-  }
-  modalState.form.modelPrices.push({
-    model: '',
-    inputPricePerMillion: 0,
-    cachedInputPricePerMillion: 0,
-    outputPricePerMillion: 0,
-  })
-}
-
-const removeModelPrice = (index: number) => {
-  modalState.form.modelPrices?.splice(index, 1)
-}
-
-const normalizeMultiplier = (value: number | string | null | undefined): number => {
-  const numeric = Number(value)
-  if (!Number.isFinite(numeric) || numeric <= 0) return 1
-  return numeric
-}
-
-const hasProviderBalance = (card: AutomationCard) => card.balance !== null && card.balance !== undefined
-
-const formatProviderBalance = (card: AutomationCard) => {
-  if (!hasProviderBalance(card)) return ''
-  return currencyFormatter.value.format(Math.max(Number(card.balance ?? 0), 0))
 }
 
 // 按 enabled 和 level 排序：启用的排在前面，同启用状态下按 level 升序排序
@@ -2776,9 +2606,6 @@ const openEditModal = (card: AutomationCard) => {
     icon: card.icon,
     level: card.level || 1,
     enabled: card.enabled,
-    modelPrices: normalizeModelPrices(card.modelPrices),
-    modelPriceMultiplier: normalizeMultiplier(card.modelPriceMultiplier),
-    balance: normalizeMoney(card.balance),
     supportedModels: card.supportedModels || {},
     modelMapping: card.modelMapping || {},
     apiEndpoint: card.apiEndpoint || '',
@@ -2861,17 +2688,13 @@ const submitModal = async (): Promise<boolean> => {
     // 仅当 level 变化时才重新排序，避免破坏同级拖拽顺序
     const prevLevel = normalizeLevel(editingCard.value.level)
     const nextLevel = normalizeLevel(modalState.form.level)
-    const nextBalance = normalizeMoney(modalState.form.balance)
     Object.assign(editingCard.value, {
       apiUrl: apiUrl || editingCard.value.apiUrl,
       apiKey,
       officialSite,
       icon,
       level: nextLevel,
-      enabled: nextBalance !== null && nextBalance <= 0 ? false : modalState.form.enabled,
-      modelPrices: normalizeModelPrices(modalState.form.modelPrices),
-      modelPriceMultiplier: normalizeMultiplier(modalState.form.modelPriceMultiplier),
-      balance: nextBalance,
+      enabled: modalState.form.enabled,
       supportedModels: modalState.form.supportedModels || {},
       modelMapping: modalState.form.modelMapping || {},
       apiEndpoint: modalState.form.apiEndpoint || '',
@@ -2911,10 +2734,7 @@ const submitModal = async (): Promise<boolean> => {
       accent: '#0a84ff',
       tint: 'rgba(15, 23, 42, 0.12)',
       level: normalizeLevel(modalState.form.level),
-      enabled: normalizeMoney(modalState.form.balance) !== null && normalizeMoney(modalState.form.balance)! <= 0 ? false : modalState.form.enabled,
-      modelPrices: normalizeModelPrices(modalState.form.modelPrices),
-      modelPriceMultiplier: normalizeMultiplier(modalState.form.modelPriceMultiplier),
-      balance: normalizeMoney(modalState.form.balance),
+      enabled: modalState.form.enabled,
       supportedModels: modalState.form.supportedModels || {},
       modelMapping: modalState.form.modelMapping || {},
       apiEndpoint: modalState.form.apiEndpoint || '',
@@ -3515,107 +3335,6 @@ const confirmDeleteCliTool = async () => {
   margin-left: 8px;
 }
 
-.balance-badge {
-  display: inline-flex;
-  align-items: center;
-  height: 22px;
-  margin-left: 4px;
-  padding: 0 8px;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--mac-accent) 10%, var(--mac-surface-strong));
-  color: var(--mac-text);
-  font-size: 11px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.balance-badge.depleted {
-  background: rgba(244, 63, 94, 0.12);
-  color: rgb(225, 29, 72);
-}
-
-.billing-section {
-  display: grid;
-  gap: 12px;
-  padding: 14px;
-  border: 1px solid var(--mac-border);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--mac-surface-strong) 72%, transparent);
-}
-
-.billing-toolbar {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.billing-title {
-  display: block;
-  margin-bottom: 4px;
-  font-weight: 700;
-  color: var(--mac-text);
-}
-
-.billing-add-btn,
-.billing-remove-btn {
-  min-height: 34px;
-  border: none;
-  border-radius: 8px;
-  padding: 0 10px;
-  font-weight: 700;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.billing-add-btn {
-  background: color-mix(in srgb, var(--mac-accent) 12%, var(--mac-surface));
-  color: var(--mac-text);
-}
-
-.billing-remove-btn {
-  align-self: end;
-  width: 34px;
-  padding: 0;
-  background: rgba(244, 63, 94, 0.14);
-  color: rgb(225, 29, 72);
-  font-size: 18px;
-  line-height: 1;
-}
-
-.billing-empty {
-  padding: 12px;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--mac-surface) 74%, transparent);
-  color: var(--mac-text-secondary);
-}
-
-.model-price-row {
-  display: grid;
-  grid-template-columns: minmax(150px, 1.1fr) repeat(3, minmax(120px, 0.8fr)) auto;
-  gap: 10px;
-  align-items: end;
-  padding: 12px;
-  border: 1px solid var(--mac-border);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--mac-surface) 78%, transparent);
-}
-
-.billing-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-}
-
-.billing-section .form-field,
-.billing-grid .form-field {
-  margin: 0;
-}
-
-.billing-hint {
-  grid-column: 1 / -1;
-}
-
 /* 黑名单等级徽章与调度等级徽章的间距 */
 .card-title-row .blacklist-level-badge {
   margin-left: 4px;
@@ -3721,22 +3440,6 @@ const confirmDeleteCliTool = async () => {
 :global(.dark) .level-badge.level-10 {
   background: rgba(159, 18, 57, 0.18);
   color: rgb(236, 72, 153);
-}
-
-@media (max-width: 760px) {
-  .billing-toolbar,
-  .model-price-row,
-  .billing-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .billing-toolbar {
-    display: grid;
-  }
-
-  .billing-remove-btn {
-    width: 100%;
-  }
 }
 
 /* Level Select Dropdown 样式 */

@@ -1040,7 +1040,6 @@ func (prs *ProviderRelayService) forwardRequest(
 		if copyErr != nil {
 			fmt.Printf("[WARN] 复制响应到客户端失败（不影响provider成功判定）: %v\n", copyErr)
 		}
-		prs.recordProviderBilling(kind, provider, requestLog)
 		return true, nil
 	}
 
@@ -1059,7 +1058,6 @@ func (prs *ProviderRelayService) forwardRequest(
 		if copyErr != nil {
 			fmt.Printf("[WARN] 复制响应到客户端失败（不影响provider成功判定）: %v\n", copyErr)
 		}
-		prs.recordProviderBilling(kind, provider, requestLog)
 		// 只要provider返回了2xx状态码，就算成功（复制失败是客户端问题，不是provider问题）
 		return true, nil
 	}
@@ -1112,90 +1110,6 @@ func (prs *ProviderRelayService) doProviderRequest(ctx context.Context, targetUR
 		return nil, lastErr
 	}
 	return nil, fmt.Errorf("provider request failed")
-}
-
-func (prs *ProviderRelayService) recordProviderBilling(kind string, provider Provider, requestLog *ReqeustLog) {
-	if prs == nil || prs.providerService == nil || requestLog == nil || provider.Balance == nil {
-		return
-	}
-
-	cost := calculateProviderUsageCost(provider, requestLog)
-	if cost <= 0 {
-		return
-	}
-
-	balance, disabled, err := prs.providerService.ApplyProviderUsageCharge(kind, provider.ID, cost)
-	if err != nil {
-		fmt.Printf("[WARN] Provider %s 扣减余额失败: %v\n", provider.Name, err)
-		return
-	}
-	if disabled {
-		fmt.Printf("[INFO] Provider %s 余额已耗尽，已自动禁用\n", provider.Name)
-	} else {
-		fmt.Printf("[INFO] Provider %s 扣费 %.6f，剩余余额 %.6f\n", provider.Name, cost, balance)
-	}
-}
-
-func calculateProviderUsageCost(provider Provider, requestLog *ReqeustLog) float64 {
-	if requestLog == nil {
-		return 0
-	}
-
-	var price *ProviderModelPrice
-	for i := range provider.ModelPrices {
-		if strings.TrimSpace(provider.ModelPrices[i].Model) == strings.TrimSpace(requestLog.Model) {
-			price = &provider.ModelPrices[i]
-			break
-		}
-	}
-	if price == nil {
-		return 0
-	}
-
-	multiplier := provider.ModelPriceMultiplier
-	if multiplier <= 0 {
-		multiplier = 1
-	}
-
-	cachedInputTokens := requestLog.CacheReadTokens
-	nonCachedInputTokens := requestLog.InputTokens + requestLog.CacheCreateTokens
-	if requestLog.inputTokensIncludeCacheRead {
-		nonCachedInputTokens = requestLog.InputTokens - requestLog.CacheReadTokens + requestLog.CacheCreateTokens
-		if nonCachedInputTokens < 0 {
-			nonCachedInputTokens = requestLog.CacheCreateTokens
-		}
-	}
-	outputTokens := requestLog.OutputTokens + requestLog.ReasoningTokens
-
-	inputCost := float64(nonCachedInputTokens) * price.InputPricePerMillion / 1_000_000
-	cachedInputCost := float64(cachedInputTokens) * price.CachedInputPricePerMillion / 1_000_000
-	outputCost := float64(outputTokens) * price.OutputPricePerMillion / 1_000_000
-	return (inputCost + cachedInputCost + outputCost) * multiplier
-}
-
-func (prs *ProviderRelayService) recordGeminiProviderBilling(provider *GeminiProvider, requestLog *ReqeustLog) {
-	if prs == nil || prs.geminiService == nil || provider == nil || requestLog == nil || provider.Balance == nil {
-		return
-	}
-
-	cost := calculateProviderUsageCost(Provider{
-		ModelPrices:          provider.ModelPrices,
-		ModelPriceMultiplier: provider.ModelPriceMultiplier,
-	}, requestLog)
-	if cost <= 0 {
-		return
-	}
-
-	balance, disabled, err := prs.geminiService.ApplyProviderUsageCharge(provider.ID, cost)
-	if err != nil {
-		fmt.Printf("[Gemini][WARN] Provider %s 扣减余额失败: %v\n", provider.Name, err)
-		return
-	}
-	if disabled {
-		fmt.Printf("[Gemini][INFO] Provider %s 余额已耗尽，已自动禁用\n", provider.Name)
-	} else {
-		fmt.Printf("[Gemini][INFO] Provider %s 扣费 %.6f，剩余余额 %.6f\n", provider.Name, cost, balance)
-	}
 }
 
 func newProviderHTTPRequest(ctx context.Context, targetURL string, headers map[string]string, query map[string]string, bodyBytes []byte) (*http.Request, error) {
@@ -2309,7 +2223,6 @@ func (prs *ProviderRelayService) forwardGeminiRequest(
 		c.Data(resp.StatusCode, resp.Header.Get("Content-Type"), body)
 	}
 
-	prs.recordGeminiProviderBilling(provider, requestLog)
 	return true, "", true
 }
 

@@ -260,37 +260,3 @@ func TestGeminiPreset_Fields(t *testing.T) {
 		}
 	}
 }
-
-func TestGeminiServiceApplyProviderUsageChargeDisablesDepletedProvider(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	balance := 0.01
-	svc := NewGeminiService("127.0.0.1:18100")
-	if err := svc.AddProvider(GeminiProvider{
-		ID:      "gemini-test",
-		Name:    "Gemini Test",
-		BaseURL: "https://example.com",
-		Enabled: true,
-		Balance: &balance,
-	}); err != nil {
-		t.Fatalf("add provider: %v", err)
-	}
-
-	nextBalance, disabled, err := svc.ApplyProviderUsageCharge("gemini-test", 0.02)
-	if err != nil {
-		t.Fatalf("apply charge: %v", err)
-	}
-	if nextBalance != 0 {
-		t.Fatalf("expected balance 0, got %.12f", nextBalance)
-	}
-	if !disabled {
-		t.Fatal("expected provider to be disabled")
-	}
-
-	providers := svc.GetProviders()
-	if len(providers) != 1 {
-		t.Fatalf("expected 1 provider, got %d", len(providers))
-	}
-	if providers[0].Enabled {
-		t.Fatal("expected provider enabled=false after depletion")
-	}
-}
