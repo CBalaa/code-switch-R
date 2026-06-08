@@ -13,42 +13,34 @@ export function CostSince(start: string, platform: string): $CancellablePromise<
     return $Call.ByID(445919367, start, platform);
 }
 
-export function HeatmapStats(days: number): $CancellablePromise<$models.HeatmapStat[]> {
-    return $Call.ByID(1056815029, days).then(($result: any) => {
-        return $$createType1($result);
-    });
-}
-
 export function ListProviders(platform: string): $CancellablePromise<string[]> {
     return $Call.ByID(790916236, platform).then(($result: any) => {
-        return $$createType2($result);
+        return $$createType0($result);
     });
 }
 
 export function ListRequestLogs(platform: string, provider: string, limit: number): $CancellablePromise<$models.ReqeustLog[]> {
     return $Call.ByID(1199056012, platform, provider, limit).then(($result: any) => {
-        return $$createType4($result);
+        return $$createType2($result);
     });
 }
 
 export function ProviderDailyStats(platform: string): $CancellablePromise<$models.ProviderDailyStat[]> {
     return $Call.ByID(974013659, platform).then(($result: any) => {
-        return $$createType6($result);
+        return $$createType4($result);
     });
 }
 
 export function StatsSince(platform: string): $CancellablePromise<$models.LogStats> {
     return $Call.ByID(2831143405, platform).then(($result: any) => {
-        return $$createType7($result);
+        return $$createType5($result);
     });
 }
 
 // Private type creation functions
-const $$createType0 = $models.HeatmapStat.createFrom;
-const $$createType1 = $Create.Array($$createType0);
-const $$createType2 = $Create.Array($Create.Any);
-const $$createType3 = $models.ReqeustLog.createFrom;
+const $$createType0 = $Create.Array($Create.Any);
+const $$createType1 = $models.ReqeustLog.createFrom;
+const $$createType2 = $Create.Array($$createType1);
+const $$createType3 = $models.ProviderDailyStat.createFrom;
 const $$createType4 = $Create.Array($$createType3);
-const $$createType5 = $models.ProviderDailyStat.createFrom;
-const $$createType6 = $Create.Array($$createType5);
-const $$createType7 = $models.LogStats.createFrom;
+const $$createType5 = $models.LogStats.createFrom;

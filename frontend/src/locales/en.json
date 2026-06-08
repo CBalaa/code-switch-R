@@ -164,20 +164,7 @@
       "hero": {
         "eyebrow": "Claude & Codex vendor overview",
         "title": "Stay on top of AI coding supply.",
-        "lead": "The green heatmap highlights daily compute and token usage so we can monitor each vendor's load."
-      },
-      "heatmap": {
-        "ariaLabel": "Daily compute consumption heatmap",
-        "legendLow": "Low",
-        "legendHigh": "High",
-        "cellTitle": "{label}: {count} requests",
-        "metrics": {
-          "requests": "Requests",
-          "inputTokens": "Input tokens",
-          "outputTokens": "Output tokens",
-          "reasoningTokens": "Reasoning tokens",
-          "cost": "Cost"
-        }
+        "lead": "Review provider status, relay switches, and today's usage in one place."
       },
       "tabs": {
         "ariaLabel": "AI vendor switcher",
@@ -405,7 +392,6 @@
       },
       "errors": {
         "loadAppSettingsFailed": "Failed to load application settings",
-        "loadHeatmapFailed": "Failed to load usage heatmap",
         "loadProvidersFailed": "Failed to load providers for {tab} tab"
       }
     },
@@ -492,7 +478,6 @@
         "language": "Interface language",
         "startup": "Started when logged in",
         "theme": "Theme mode",
-        "heatmap": "Show dashboard heatmap",
         "homeTitle": "Show home title",
         "budgetTotal": "Budget total",
         "budgetTotalHint": "Used for tray menu progress (USD)",

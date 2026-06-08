@@ -178,88 +178,6 @@ func (ls *LogService) ListProviders(platform string) ([]string, error) {
 	return providers, nil
 }
 
-func (ls *LogService) HeatmapStats(days int) ([]HeatmapStat, error) {
-	if days <= 0 {
-		days = 30
-	}
-	totalHours := days * 24
-	if totalHours <= 0 {
-		totalHours = 24
-	}
-	rangeStart := startOfHour(time.Now())
-	if totalHours > 1 {
-		rangeStart = rangeStart.Add(-time.Duration(totalHours-1) * time.Hour)
-	}
-	model := xdb.New("request_log")
-	options := []xdb.Option{
-		xdb.WhereGe("created_at", rangeStart.Format(timeLayout)),
-		xdb.Field(
-			"model",
-			"input_tokens",
-			"output_tokens",
-			"reasoning_tokens",
-			"cache_create_tokens",
-			"cache_read_tokens",
-			"created_at",
-		),
-		xdb.OrderByDesc("created_at"),
-	}
-	records, err := model.Selects(options...)
-	if err != nil {
-		if errors.Is(err, xdb.ErrNotFound) || isNoSuchTableErr(err) {
-			return []HeatmapStat{}, nil
-		}
-		return nil, err
-	}
-	hourBuckets := map[int64]*HeatmapStat{}
-	for _, record := range records {
-		createdAt, _ := parseCreatedAt(record)
-		if createdAt.IsZero() {
-			continue
-		}
-		hourStart := startOfHour(createdAt)
-		hourKey := hourStart.Unix()
-		bucket := hourBuckets[hourKey]
-		if bucket == nil {
-			bucket = &HeatmapStat{Day: hourStart.Format("01-02 15")}
-			hourBuckets[hourKey] = bucket
-		}
-		bucket.TotalRequests++
-		input := record.GetInt("input_tokens")
-		output := record.GetInt("output_tokens")
-		reasoning := record.GetInt("reasoning_tokens")
-		cacheCreate := record.GetInt("cache_create_tokens")
-		cacheRead := record.GetInt("cache_read_tokens")
-		bucket.InputTokens += int64(input)
-		bucket.OutputTokens += int64(output)
-		bucket.ReasoningTokens += int64(reasoning)
-		usage := modelpricing.UsageSnapshot{
-			InputTokens:       input,
-			OutputTokens:      output,
-			ReasoningTokens:   reasoning,
-			CacheCreateTokens: cacheCreate,
-			CacheReadTokens:   cacheRead,
-		}
-		cost := ls.calculateCost(record.GetString("model"), usage)
-		bucket.TotalCost += cost.TotalCost
-	}
-	if len(hourBuckets) == 0 {
-		return []HeatmapStat{}, nil
-	}
-	hourKeys := make([]int64, 0, len(hourBuckets))
-	for key := range hourBuckets {
-		hourKeys = append(hourKeys, key)
-	}
-	sort.Slice(hourKeys, func(i, j int) bool {
-		return hourKeys[i] < hourKeys[j]
-	})
-	stats := make([]HeatmapStat, 0, min(len(hourKeys), totalHours))
-	for i := len(hourKeys) - 1; i >= 0 && len(stats) < totalHours; i-- {
-		stats = append(stats, *hourBuckets[hourKeys[i]])
-	}
-	return stats, nil
-}
-
 func (ls *LogService) StatsSince(platform string) (LogStats, error) {
 	const seriesHours = 24
 
@@ -617,15 +535,6 @@ func isNoSuchTableErr(err error) bool {
 		return false
 	}
 	return strings.Contains(err.Error(), "no such table")
-}
-
-type HeatmapStat struct {
-	Day             string  `json:"day"`
-	TotalRequests   int64   `json:"total_requests"`
-	InputTokens     int64   `json:"input_tokens"`
-	OutputTokens    int64   `json:"output_tokens"`
-	ReasoningTokens int64   `json:"reasoning_tokens"`
-	TotalCost       float64 `json:"total_cost"`
 }
 
 type LogStats struct {

@@ -10,7 +10,6 @@ import { Create as $Create } from "@wailsio/runtime";
 import * as time$0 from "../../time/models.js";
 
 export class AppSettings {
-    "show_heatmap": boolean;
     "show_home_title": boolean;
     "budget_total": number;
     "budget_used_adjustment": number;
@@ -45,9 +44,6 @@ export class AppSettings {
 
     /** Creates a new AppSettings instance. */
     constructor($$source: Partial<AppSettings> = {}) {
-        if (!("show_heatmap" in $$source)) {
-            this["show_heatmap"] = false;
-        }
         if (!("show_home_title" in $$source)) {
             this["show_home_title"] = false;
         }
@@ -1532,47 +1528,6 @@ export class HealthCheckResult {
     static createFrom($$source: any = {}): HealthCheckResult {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         return new HealthCheckResult($$parsedSource as Partial<HealthCheckResult>);
-    }
-}
-
-export class HeatmapStat {
-    "day": string;
-    "total_requests": number;
-    "input_tokens": number;
-    "output_tokens": number;
-    "reasoning_tokens": number;
-    "total_cost": number;
-
-    /** Creates a new HeatmapStat instance. */
-    constructor($$source: Partial<HeatmapStat> = {}) {
-        if (!("day" in $$source)) {
-            this["day"] = "";
-        }
-        if (!("total_requests" in $$source)) {
-            this["total_requests"] = 0;
-        }
-        if (!("input_tokens" in $$source)) {
-            this["input_tokens"] = 0;
-        }
-        if (!("output_tokens" in $$source)) {
-            this["output_tokens"] = 0;
-        }
-        if (!("reasoning_tokens" in $$source)) {
-            this["reasoning_tokens"] = 0;
-        }
-        if (!("total_cost" in $$source)) {
-            this["total_cost"] = 0;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new HeatmapStat instance from a string or object.
-     */
-    static createFrom($$source: any = {}): HeatmapStat {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new HeatmapStat($$parsedSource as Partial<HeatmapStat>);
     }
 }
 

@@ -32,7 +32,6 @@ const getCachedString = (key: string, defaultValue: string): string => {
   const cached = localStorage.getItem(`app-settings-${key}`)
   return cached !== null ? cached : defaultValue
 }
-const heatmapEnabled = ref(getCachedValue('heatmap', true))
 const homeTitleVisible = ref(getCachedValue('homeTitle', true))
 const autoStartEnabled = ref(getCachedValue('autoStart', false))
 const autoConnectivityTestEnabled = ref(getCachedValue('autoConnectivityTest', false))
@@ -89,7 +88,6 @@ const loadAppSettings = async () => {
   settingsLoading.value = true
   try {
     const data = await fetchAppSettings()
-    heatmapEnabled.value = data?.show_heatmap ?? true
     homeTitleVisible.value = data?.show_home_title ?? true
     budgetTotal.value = Number(data?.budget_total ?? 0)
     budgetUsedAdjustment.value = Number(data?.budget_used_adjustment ?? 0)
@@ -115,7 +113,6 @@ const loadAppSettings = async () => {
     roundRobinEnabled.value = data?.enable_round_robin ?? false
 
     // 缓存到 localStorage，下次打开时直接显示正确状态
-    localStorage.setItem('app-settings-heatmap', String(heatmapEnabled.value))
     localStorage.setItem('app-settings-homeTitle', String(homeTitleVisible.value))
     localStorage.setItem('app-settings-budgetTotal', String(budgetTotal.value))
     localStorage.setItem('app-settings-budgetUsedAdjustment', String(budgetUsedAdjustment.value))
@@ -141,7 +138,6 @@ const loadAppSettings = async () => {
     localStorage.setItem('app-settings-roundRobin', String(roundRobinEnabled.value))
   } catch (error) {
     console.error('failed to load app settings', error)
-    heatmapEnabled.value = true
     homeTitleVisible.value = true
     budgetTotal.value = 0
     budgetUsedAdjustment.value = 0
@@ -205,7 +201,6 @@ const persistAppSettings = async () => {
     const normalizedBudgetCycleModeCodex = budgetCycleModeCodex.value === 'weekly' ? 'weekly' : 'daily'
     budgetCycleModeCodex.value = normalizedBudgetCycleModeCodex
     const payload: AppSettings = {
-      show_heatmap: heatmapEnabled.value,
       show_home_title: homeTitleVisible.value,
       budget_total: normalizedBudgetTotal,
       budget_used_adjustment: normalizedBudgetUsedAdjustment,
@@ -239,7 +234,6 @@ const persistAppSettings = async () => {
     )
 
     // 更新缓存
-    localStorage.setItem('app-settings-heatmap', String(heatmapEnabled.value))
     localStorage.setItem('app-settings-homeTitle', String(homeTitleVisible.value))
     localStorage.setItem('app-settings-budgetTotal', String(budgetTotal.value))
     localStorage.setItem('app-settings-budgetUsedAdjustment', String(budgetUsedAdjustment.value))
@@ -428,17 +422,6 @@ onMounted(async () => {
       <section>
         <h2 class="mac-section-title">{{ $t('components.general.title.application') }}</h2>
         <div class="mac-panel">
-          <ListItem :label="$t('components.general.label.heatmap')">
-            <label class="mac-switch">
-              <input
-                type="checkbox"
-                :disabled="settingsLoading || saveBusy"
-                v-model="heatmapEnabled"
-                @change="persistAppSettings"
-              />
-              <span></span>
-            </label>
-          </ListItem>
           <ListItem :label="$t('components.general.label.homeTitle')">
             <label class="mac-switch">
               <input

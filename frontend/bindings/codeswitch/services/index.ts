@@ -79,7 +79,6 @@ export {
     GeminiStatus,
     HealthCheckHistory,
     HealthCheckResult,
-    HeatmapStat,
     Hotkey,
     ListenMode,
     LogStats,

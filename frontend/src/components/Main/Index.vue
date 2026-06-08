@@ -125,52 +125,6 @@
         </p> -->
       </section>
 
-      <section
-        v-if="showHeatmap"
-        ref="heatmapContainerRef"
-        class="contrib-wall"
-        :aria-label="t('components.main.heatmap.ariaLabel')"
-      >
-        <div class="contrib-legend">
-          <span>{{ t('components.main.heatmap.legendLow') }}</span>
-          <span v-for="level in 5" :key="level" :class="['legend-box', intensityClass(level - 1)]" />
-          <span>{{ t('components.main.heatmap.legendHigh') }}</span>
-        </div>
-
-        <div class="contrib-grid">
-          <div
-            v-for="(week, weekIndex) in usageHeatmap"
-            :key="weekIndex"
-            class="contrib-column"
-          >
-            <div
-              v-for="(day, dayIndex) in week"
-              :key="dayIndex"
-              class="contrib-cell"
-              :class="intensityClass(day.intensity)"
-              @mouseenter="showUsageTooltip(day, $event)"
-              @mousemove="showUsageTooltip(day, $event)"
-              @mouseleave="hideUsageTooltip"
-            />
-          </div>
-        </div>
-        <div
-          v-if="usageTooltip.visible"
-          ref="tooltipRef"
-          class="contrib-tooltip"
-          :class="usageTooltip.placement"
-          :style="{ left: `${usageTooltip.left}px`, top: `${usageTooltip.top}px` }"
-        >
-          <p class="tooltip-heading">{{ formattedTooltipLabel }}</p>
-          <ul class="tooltip-metrics">
-            <li v-for="metric in usageTooltipMetrics" :key="metric.key">
-              <span class="metric-label">{{ metric.label }}</span>
-              <span class="metric-value">{{ metric.value }}</span>
-            </li>
-          </ul>
-        </div>
-      </section>
-
       <section class="automation-section">
       <div class="section-header">
         <div class="tab-group" role="tablist" :aria-label="t('components.main.tabs.ariaLabel')">
@@ -1010,8 +964,6 @@ import { computed, reactive, ref, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Listbox, ListboxButton, ListboxOptions, ListboxOption } from '@headlessui/vue'
 import { Browser, Call, Events } from '@wailsio/runtime'
-import { type UsageHeatmapDay } from '../../data/usageHeatmap'
-import { useAdaptiveHeatmap } from '../../composables/useAdaptiveHeatmap'
 import { automationCardGroups, createAutomationCards, type AutomationCard } from '../../data/cards'
 import lobeIcons from '../../icons/lobeIconMap'
 import BaseButton from '../common/BaseButton.vue'
@@ -1073,15 +1025,6 @@ const themeIcon = computed(() => (resolvedTheme.value === 'dark' ? 'moon' : 'sun
 const releasePageUrl = 'https://github.com/Rogers-F/code-switch-R/releases'
 const releaseApiUrl = 'https://api.github.com/repos/Rogers-F/code-switch-R/releases/latest'
 
-const heatmapContainerRef = ref<HTMLElement | null>(null)
-// 使用自适应热力图 composable
-const {
-  displayData: usageHeatmap,
-  init: initHeatmap,
-  cleanup: cleanupHeatmap,
-  reload: reloadHeatmap,
-} = useAdaptiveHeatmap(heatmapContainerRef)
-const tooltipRef = ref<HTMLElement | null>(null)
 const proxyStates = reactive<Record<ProviderTab, boolean>>({
   claude: false,
   codex: false,
@@ -1175,7 +1118,6 @@ const providerStatsLoaded = reactive<Record<ProviderTab, boolean>>({
   others: false,
 })
 let providerStatsTimer: number | undefined
-const showHeatmap = ref(true)
 const showHomeTitle = ref(true)
 const appVersion = ref('')
 const importStatus = ref<ConfigImportStatus | null>(null)
@@ -1261,24 +1203,6 @@ const importButtonTooltip = computed(() => {
   })
 })
 
-const intensityClass = (value: number) => `gh-level-${value}`
-
-type TooltipPlacement = 'above' | 'below'
-
-const usageTooltip = reactive({
-  visible: false,
-  label: '',
-  dateKey: '',
-  left: 0,
-  top: 0,
-  placement: 'above' as TooltipPlacement,
-  requests: 0,
-  inputTokens: 0,
-  outputTokens: 0,
-  reasoningTokens: 0,
-  cost: 0,
-})
-
 const formatMetric = (value: number) => value.toLocaleString()
 
 /**
@@ -1298,15 +1222,6 @@ const formatTokenNumber = (value: number) => {
   return value.toLocaleString()
 }
 
-const tooltipDateFormatter = computed(() =>
-  new Intl.DateTimeFormat(locale.value || 'en', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-)
-
 const currencyFormatter = computed(() =>
   new Intl.NumberFormat(locale.value || 'en', {
     style: 'currency',
@@ -1316,126 +1231,17 @@ const currencyFormatter = computed(() =>
   })
 )
 
-const formattedTooltipLabel = computed(() => {
-  if (!usageTooltip.dateKey) return usageTooltip.label
-  const date = new Date(usageTooltip.dateKey)
-  if (Number.isNaN(date.getTime())) {
-    return usageTooltip.label
-  }
-  return tooltipDateFormatter.value.format(date)
-})
-
-const formattedTooltipAmount = computed(() =>
-  currencyFormatter.value.format(Math.max(usageTooltip.cost, 0))
-)
-
-const usageTooltipMetrics = computed(() => [
-  {
-    key: 'cost',
-    label: t('components.main.heatmap.metrics.cost'),
-    value: formattedTooltipAmount.value,
-  },
-  {
-    key: 'requests',
-    label: t('components.main.heatmap.metrics.requests'),
-    value: formatMetric(usageTooltip.requests),
-  },
-  {
-    key: 'inputTokens',
-    label: t('components.main.heatmap.metrics.inputTokens'),
-    value: formatTokenNumber(usageTooltip.inputTokens),
-  },
-  {
-    key: 'outputTokens',
-    label: t('components.main.heatmap.metrics.outputTokens'),
-    value: formatTokenNumber(usageTooltip.outputTokens),
-  },
-  {
-    key: 'reasoningTokens',
-    label: t('components.main.heatmap.metrics.reasoningTokens'),
-    value: formatTokenNumber(usageTooltip.reasoningTokens),
-  },
-])
-
 const clamp = (value: number, min: number, max: number) => {
   if (max <= min) return min
   return Math.min(Math.max(value, min), max)
 }
 
-const TOOLTIP_DEFAULT_WIDTH = 220
-const TOOLTIP_DEFAULT_HEIGHT = 120
-const TOOLTIP_VERTICAL_OFFSET = 12
-const TOOLTIP_HORIZONTAL_MARGIN = 20
-const TOOLTIP_VERTICAL_MARGIN = 24
-
-const getTooltipSize = () => {
-  const rect = tooltipRef.value?.getBoundingClientRect()
-  return {
-    width: rect?.width ?? TOOLTIP_DEFAULT_WIDTH,
-    height: rect?.height ?? TOOLTIP_DEFAULT_HEIGHT,
-  }
-}
-
-const viewportSize = () => {
-  if (typeof window !== 'undefined') {
-    return { width: window.innerWidth, height: window.innerHeight }
-  }
-  if (typeof document !== 'undefined' && document.documentElement) {
-    return {
-      width: document.documentElement.clientWidth,
-      height: document.documentElement.clientHeight,
-    }
-  }
-  return {
-    width: heatmapContainerRef.value?.clientWidth ?? 0,
-    height: heatmapContainerRef.value?.clientHeight ?? 0,
-  }
-}
-
-const showUsageTooltip = (day: UsageHeatmapDay, event: MouseEvent) => {
-  const target = event.currentTarget as HTMLElement | null
-  const cellRect = target?.getBoundingClientRect()
-  if (!cellRect) return
-  usageTooltip.label = day.label
-  usageTooltip.dateKey = day.dateKey
-  usageTooltip.requests = day.requests
-  usageTooltip.inputTokens = day.inputTokens
-  usageTooltip.outputTokens = day.outputTokens
-  usageTooltip.reasoningTokens = day.reasoningTokens
-  usageTooltip.cost = day.cost
-  const { width: tooltipWidth, height: tooltipHeight } = getTooltipSize()
-  const { width: viewportWidth, height: viewportHeight } = viewportSize()
-  const centerX = cellRect.left + cellRect.width / 2
-  const halfWidth = tooltipWidth / 2
-  const minLeft = TOOLTIP_HORIZONTAL_MARGIN + halfWidth
-  const maxLeft = viewportWidth > 0 ? viewportWidth - halfWidth - TOOLTIP_HORIZONTAL_MARGIN : centerX
-  usageTooltip.left = clamp(centerX, minLeft, maxLeft)
-
-  const anchorTop = cellRect.top
-  const anchorBottom = cellRect.bottom
-  const canShowAbove = anchorTop - tooltipHeight - TOOLTIP_VERTICAL_OFFSET >= TOOLTIP_VERTICAL_MARGIN
-  const viewportBottomLimit = viewportHeight > 0 ? viewportHeight - tooltipHeight - TOOLTIP_VERTICAL_MARGIN : anchorBottom
-  const shouldPlaceBelow = !canShowAbove
-  usageTooltip.placement = shouldPlaceBelow ? 'below' : 'above'
-  const desiredTop = shouldPlaceBelow
-    ? anchorBottom + TOOLTIP_VERTICAL_OFFSET
-    : anchorTop - tooltipHeight - TOOLTIP_VERTICAL_OFFSET
-  usageTooltip.top = clamp(desiredTop, TOOLTIP_VERTICAL_MARGIN, viewportBottomLimit)
-  usageTooltip.visible = true
-}
-
-const hideUsageTooltip = () => {
-  usageTooltip.visible = false
-}
-
 const loadAppSettings = async () => {
   try {
     const data: AppSettings = await fetchAppSettings()
-    showHeatmap.value = data?.show_heatmap ?? true
     showHomeTitle.value = data?.show_home_title ?? true
   } catch (error) {
     console.error('failed to load app settings', error)
-    showHeatmap.value = true
     showHomeTitle.value = true
     // 加载应用设置失败时提示用户
     showToast(t('components.main.errors.loadAppSettingsFailed'), 'warning')
@@ -2004,7 +1810,6 @@ const refreshAllData = async () => {
   refreshing.value = true
   try {
     await Promise.all([
-      reloadHeatmap(),
       loadProvidersFromDisk(),
       ...providerTabIds.map(refreshProxyState),
       ...providerTabIds.map((tab) => refreshDirectAppliedStatus(tab)),
@@ -2207,7 +2012,6 @@ let unsubscribeSwitched: (() => void) | undefined
 let unsubscribeBlacklisted: (() => void) | undefined
 
 onMounted(async () => {
-  void initHeatmap()
   await loadProvidersFromDisk()
   await Promise.all(providerTabIds.map(refreshProxyState))
   await Promise.all(providerTabIds.map((tab) => refreshDirectAppliedStatus(tab)))
@@ -2271,7 +2075,6 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  cleanupHeatmap()
   stopProviderStatsTimer()
   window.removeEventListener('app-settings-updated', handleAppSettingsUpdated)
 

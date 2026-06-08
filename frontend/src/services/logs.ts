@@ -101,17 +101,3 @@ export const fetchProviderDailyStats = async (
 ): Promise<ProviderDailyStat[]> => {
   return Call.ByName('codeswitch/services.LogService.ProviderDailyStats', platform)
 }
-
-export type HeatmapStat = {
-  day: string
-  total_requests: number
-  input_tokens: number
-  output_tokens: number
-  reasoning_tokens: number
-  total_cost: number
-}
-
-export const fetchHeatmapStats = async (days: number): Promise<HeatmapStat[]> => {
-  const range = Number.isFinite(days) && days > 0 ? Math.floor(days) : 30
-  return Call.ByName('codeswitch/services.LogService.HeatmapStats', range)
-}

@@ -18,7 +18,6 @@ const (
 )
 
 type AppSettings struct {
-	ShowHeatmap               bool    `json:"show_heatmap"`
 	ShowHomeTitle             bool    `json:"show_home_title"`
 	BudgetTotal               float64 `json:"budget_total"`
 	BudgetUsedAdjustment      float64 `json:"budget_used_adjustment"`
@@ -169,7 +168,6 @@ func (as *AppSettingsService) defaultSettings() AppSettings {
 	}
 
 	return AppSettings{
-		ShowHeatmap:               true,
 		ShowHomeTitle:             true,
 		BudgetTotal:               0,
 		BudgetUsedAdjustment:      0,
@@ -188,9 +186,9 @@ func (as *AppSettingsService) defaultSettings() AppSettings {
 		BudgetRefreshDayCodex:     1,
 		BudgetShowCountdownCodex:  false,
 		BudgetShowForecastCodex:   false,
-			BudgetForecastMethodCodex: "cycle",
-			AutoStart:                 autoStartEnabled,
-			AutoConnectivityTest:      true,  // 默认开启自动可用性监控（开箱即用）
+		BudgetForecastMethodCodex: "cycle",
+		AutoStart:                 autoStartEnabled,
+		AutoConnectivityTest:      true,  // 默认开启自动可用性监控（开箱即用）
 		EnableSwitchNotify:        true,  // 默认开启切换通知
 		EnableRoundRobin:          false, // 默认关闭轮询（使用顺序降级）
 	}

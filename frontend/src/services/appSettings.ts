@@ -1,7 +1,6 @@
 import { Call } from '@wailsio/runtime'
 
 export type AppSettings = {
-  show_heatmap: boolean
   show_home_title: boolean
   budget_total: number
   budget_used_adjustment: number
@@ -28,7 +27,6 @@ export type AppSettings = {
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
-  show_heatmap: true,
   show_home_title: true,
   budget_total: 0,
   budget_used_adjustment: 0,

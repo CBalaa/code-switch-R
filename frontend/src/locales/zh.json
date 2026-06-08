@@ -165,20 +165,7 @@
       "hero": {
         "eyebrow": "Claude & Codex 供应商总览",
         "title": "实时掌握 AI 编程供给",
-        "lead": "下方绿砖墙展示每日算力与额度消耗情况，帮助我们快速洞察不同供应商的负载趋势"
-      },
-      "heatmap": {
-        "ariaLabel": "每日算力消耗热力图",
-        "legendLow": "低",
-        "legendHigh": "高",
-        "cellTitle": "{label}：{count} 次请求",
-        "metrics": {
-          "requests": "请求次数",
-          "inputTokens": "输入 Token",
-          "outputTokens": "输出 Token",
-          "reasoningTokens": "推理 Token",
-          "cost": "金额"
-        }
+        "lead": "集中查看供应商状态、代理开关与今日使用情况"
       },
       "tabs": {
         "ariaLabel": "AI 供应商切换",
@@ -406,7 +393,6 @@
       },
       "errors": {
         "loadAppSettingsFailed": "加载应用设置失败",
-        "loadHeatmapFailed": "加载使用热力图失败",
         "loadProvidersFailed": "加载 {tab} 标签页的供应商失败"
       }
     },
@@ -493,7 +479,6 @@
         "startup": "登录时启动",
         "language": "界面语言",
         "theme": "主题模式",
-        "heatmap": "显示主界面热力墙",
         "homeTitle": "显示首页标题",
         "budgetTotal": "预算总额",
         "budgetTotalHint": "用于托盘菜单进度条（USD）",
