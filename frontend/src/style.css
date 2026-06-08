@@ -1626,6 +1626,196 @@ html.dark .secondary-btn:active:not(:disabled) {
   width: 100%;
 }
 
+@media (max-width: 760px) {
+  html,
+  body,
+  #app {
+    min-height: 100dvh;
+    overflow-x: hidden;
+  }
+
+  .main-shell {
+    min-height: 100dvh;
+    padding-bottom: 24px;
+  }
+
+  .global-actions {
+    padding: 10px 12px 0;
+    gap: 8px;
+  }
+
+  .global-eyebrow {
+    max-width: calc(100vw - 120px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .contrib-page,
+  .general-page {
+    padding: 16px 12px 88px;
+    gap: 18px;
+    max-width: none;
+  }
+
+  .contrib-hero {
+    max-width: 100%;
+  }
+
+  .contrib-hero h1 {
+    font-size: 2rem;
+    line-height: 1.15;
+    margin: 6px 0 8px;
+  }
+
+  .section-header {
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .tab-group {
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 2px 2px 6px;
+    scrollbar-width: none;
+  }
+
+  .tab-group::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tab-pill {
+    padding: 9px 14px;
+    font-size: 0.9rem;
+  }
+
+  .section-controls {
+    justify-content: flex-end;
+  }
+
+  .automation-list {
+    gap: 12px;
+  }
+
+  .automation-card {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px;
+    border-radius: 14px;
+  }
+
+  .automation-card.is-last-used {
+    border-width: 1px;
+  }
+
+  .last-used-badge {
+    top: -8px;
+    right: 10px;
+  }
+
+  .card-leading {
+    align-items: flex-start;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .card-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+  }
+
+  .card-icon .provider-favicon {
+    width: 24px;
+    height: 24px;
+  }
+
+  .card-text {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .card-title-row {
+    align-items: center;
+    gap: 6px;
+  }
+
+  .card-title {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  .card-site,
+  .card-metrics {
+    overflow-wrap: anywhere;
+  }
+
+  .card-metrics {
+    line-height: 1.45;
+  }
+
+  .card-actions {
+    width: 100%;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .ghost-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 9px;
+  }
+
+  .relay-tooltip-content,
+  .ghost-icon[data-tooltip]::after {
+    display: none;
+  }
+
+  .modal-wrapper {
+    align-items: flex-end;
+    padding: 10px;
+  }
+
+  .modal {
+    width: 100%;
+    max-height: 92dvh;
+    border-radius: 18px;
+  }
+
+  .modal-header {
+    padding: 18px 16px 10px;
+  }
+
+  .modal-body {
+    padding: 0 16px 18px;
+  }
+
+  .form-row,
+  .switch-field {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .form-actions {
+    justify-content: stretch;
+  }
+
+  .form-actions .btn {
+    flex: 1 1 auto;
+  }
+
+  .mac-select,
+  .mac-input,
+  .address-display {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+}
+
 /* 全局按钮样式修复 - 防止 Tailwind Preflight 导致的布局问题 */
 button:where(:not(.ghost-icon):not(.mac-switch):not(.nav-item):not(.platform-tab):not(.tab-pill):not(.collapse-btn):not(.toggle-switch):not(.action-btn):not(.remove-btn):not(.icon-select-button):not(.level-select-button)) {
   display: inline-flex !important;

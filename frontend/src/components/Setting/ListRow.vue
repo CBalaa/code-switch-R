@@ -47,4 +47,19 @@ defineProps<{
   align-items: center;
   justify-content: flex-end;
 }
+
+@media (max-width: 760px) {
+  .mac-list-row {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px;
+  }
+
+  .mac-list-control {
+    justify-content: flex-start;
+    width: 100%;
+    min-width: 0;
+  }
+}
 </style>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onBeforeUnmount, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { fetchCurrentVersion } from '../services/version'
@@ -10,6 +10,9 @@ const { t } = useI18n()
 
 // 动态版本号（从后端获取）
 const appVersion = ref('...')
+const isMobile = ref(false)
+let mobileQuery: MediaQueryList | null = null
+let handleMobileChange: (() => void) | null = null
 onMounted(async () => {
   try {
     appVersion.value = await fetchCurrentVersion()
@@ -26,6 +29,19 @@ onMounted(() => {
   const saved = localStorage.getItem(SIDEBAR_COLLAPSED_KEY)
   if (saved !== null) {
     isCollapsed.value = saved === 'true'
+  }
+
+  mobileQuery = window.matchMedia('(max-width: 760px)')
+  handleMobileChange = () => {
+    isMobile.value = Boolean(mobileQuery?.matches)
+  }
+  handleMobileChange()
+  mobileQuery.addEventListener('change', handleMobileChange)
+})
+
+onBeforeUnmount(() => {
+  if (mobileQuery && handleMobileChange) {
+    mobileQuery.removeEventListener('change', handleMobileChange)
   }
 })
 
@@ -56,9 +72,9 @@ const navigate = (path: string) => {
 </script>
 
 <template>
-  <nav class="mac-sidebar" :class="{ collapsed: isCollapsed }">
+  <nav class="mac-sidebar" :class="{ collapsed: isCollapsed && !isMobile }">
     <div class="sidebar-header">
-      <span class="sidebar-title" v-if="!isCollapsed">Code Switch R</span>
+      <span class="sidebar-title" v-if="!isCollapsed || isMobile">Code Switch R</span>
       <button class="collapse-btn" @click="toggleCollapse" :title="isCollapsed ? 'Expand' : 'Collapse'">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polyline v-if="isCollapsed" points="9 18 15 12 9 6"></polyline>
@@ -109,11 +125,11 @@ const navigate = (path: string) => {
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
         </svg>
 
-        <span class="nav-label" v-if="!isCollapsed">{{ t(item.labelKey) }}</span>
+        <span class="nav-label" v-if="!isCollapsed || isMobile">{{ t(item.labelKey) }}</span>
       </button>
     </div>
 
-    <div class="sidebar-footer" v-if="!isCollapsed">
+    <div class="sidebar-footer" v-if="!isCollapsed && !isMobile">
       <span class="version">{{ appVersion }}</span>
     </div>
   </nav>
@@ -294,5 +310,71 @@ html.dark .nav-item:hover {
   font-size: 0.75rem;
   color: var(--mac-text-secondary);
   opacity: 0.6;
+}
+
+@media (max-width: 760px) {
+  .mac-sidebar,
+  .mac-sidebar.collapsed {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1200;
+    width: 100%;
+    min-width: 0;
+    height: 64px;
+    border-right: none;
+    border-top: 1px solid var(--mac-border);
+    background: color-mix(in srgb, var(--mac-surface) 92%, transparent);
+    backdrop-filter: blur(18px);
+    flex-direction: row;
+    align-items: stretch;
+    overflow: hidden;
+  }
+
+  .sidebar-header {
+    display: none;
+  }
+
+  .nav-list,
+  .mac-sidebar.collapsed .nav-list {
+    flex: 1;
+    min-width: 0;
+    padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
+    flex-direction: row;
+    align-items: stretch;
+    justify-content: space-around;
+    gap: 4px;
+    overflow: hidden;
+  }
+
+  .nav-item,
+  .mac-sidebar.collapsed .nav-item {
+    width: auto;
+    min-width: 0;
+    flex: 1 1 0;
+    margin: 0;
+    padding: 6px 2px;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+    border-radius: 10px;
+  }
+
+  .nav-icon {
+    width: 18px;
+    height: 18px;
+  }
+
+  .nav-label {
+    flex: 0 1 auto;
+    width: 100%;
+    font-size: 11px;
+    line-height: 1.1;
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 </style>

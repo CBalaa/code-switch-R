@@ -188,4 +188,18 @@ onMounted(async () => {
 :global(.dark) .warning-text {
   color: #fcd34d;
 }
+
+@media (max-width: 760px) {
+  .mac-input,
+  .mac-select,
+  .address-display {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  .security-warning {
+    padding: 12px;
+  }
+}
 </style>

@@ -443,4 +443,23 @@ onMounted(async () => {
 :global(.dark) .mac-input {
   background: var(--mac-surface-strong);
 }
+
+@media (max-width: 760px) {
+  .mac-input {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  .toggle-with-hint {
+    align-items: flex-start;
+    width: 100%;
+  }
+
+  .hint-text {
+    max-width: 100%;
+    text-align: left;
+    white-space: normal;
+  }
+}
 </style>

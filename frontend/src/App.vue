@@ -91,5 +91,21 @@ onBeforeUnmount(() => {
   flex: 1;
   overflow-y: auto;
   background: var(--mac-bg);
+  min-width: 0;
+}
+
+@media (max-width: 760px) {
+  .app-layout {
+    display: block;
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  .main-content {
+    height: 100dvh;
+    padding-bottom: 72px;
+    box-sizing: border-box;
+    -webkit-overflow-scrolling: touch;
+  }
 }
 </style>
