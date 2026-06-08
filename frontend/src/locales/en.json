@@ -231,11 +231,6 @@
         "empty": "Everything from cc-switch is already in sync",
         "error": "Failed to import cc-switch config"
       },
-      "firstRun": {
-        "message": "Welcome to Code Switch R! If you have cc-switch config, you can import it from Settings.",
-        "goToSettings": "Go to Settings",
-        "dismiss": "Later"
-      },
       "providers": {
         "requests": "Requests",
         "tokens": "Tokens",
