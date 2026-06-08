@@ -424,8 +424,6 @@
       "tokenLabels": {
         "input": "Input",
         "output": "Output",
-        "reasoning": "Reasoning",
-        "cacheWrite": "Cache write",
         "cacheRead": "Cache read"
       },
       "streamOn": "Streaming",

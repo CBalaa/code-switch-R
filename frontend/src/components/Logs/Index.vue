@@ -95,14 +95,6 @@
                 <span class="token-value">{{ formatTokenNumber(item.output_tokens) }}</span>
               </div>
               <div>
-                <span class="token-label">{{ t('components.logs.tokenLabels.reasoning') }}</span>
-                <span class="token-value">{{ formatTokenNumber(item.reasoning_tokens) }}</span>
-              </div>
-              <div>
-                <span class="token-label">{{ t('components.logs.tokenLabels.cacheWrite') }}</span>
-                <span class="token-value">{{ formatTokenNumber(item.cache_create_tokens) }}</span>
-              </div>
-              <div>
                 <span class="token-label">{{ t('components.logs.tokenLabels.cacheRead') }}</span>
                 <span class="token-value">{{ formatTokenNumber(item.cache_read_tokens) }}</span>
               </div>
@@ -257,22 +249,6 @@ const chartData = computed(() => {
         backgroundColor: 'rgba(96, 165, 250, 0.2)',
         tension: 0.35,
         fill: true,
-      },
-      {
-        label: t('components.logs.tokenLabels.reasoning'),
-        data: series.map((item) => item.reasoning_tokens ?? 0),
-        borderColor: '#f472b6',
-        backgroundColor: 'rgba(244, 114, 182, 0.2)',
-        tension: 0.35,
-        fill: true,
-      },
-      {
-        label: t('components.logs.tokenLabels.cacheWrite'),
-        data: series.map((item) => item.cache_create_tokens ?? 0),
-        borderColor: '#fbbf24',
-        backgroundColor: 'rgba(251, 191, 36, 0.2)',
-        tension: 0.35,
-        fill: false,
       },
       {
         label: t('components.logs.tokenLabels.cacheRead'),
@@ -532,8 +508,7 @@ const startOfTodayLocal = () => {
 const statsCards = computed(() => {
   const data = stats.value
   const summaryDate = summaryDateLabel.value
-  const totalTokens =
-    (data?.input_tokens ?? 0) + (data?.output_tokens ?? 0) + (data?.reasoning_tokens ?? 0)
+  const totalTokens = (data?.input_tokens ?? 0) + (data?.output_tokens ?? 0)
   return [
     {
       key: 'requests',

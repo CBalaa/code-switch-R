@@ -425,8 +425,6 @@
       "tokenLabels": {
         "input": "输入",
         "output": "输出",
-        "reasoning": "推理",
-        "cacheWrite": "缓存写入",
         "cacheRead": "缓存读取"
       },
       "streamOn": "流式",
