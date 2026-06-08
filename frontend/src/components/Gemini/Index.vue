@@ -268,7 +268,7 @@ import { useRouter } from 'vue-router'
 import BaseButton from '../common/BaseButton.vue'
 import BaseModal from '../common/BaseModal.vue'
 import BaseInput from '../common/BaseInput.vue'
-import lobeIcons from '../../icons/lobeIconMap'
+import { fallbackIconMap, loadLobeIcon } from '../../icons/lobeIconMap'
 import {
   GetPresets,
   GetProviders,
@@ -283,7 +283,8 @@ import {
 const { t } = useI18n()
 const router = useRouter()
 
-const geminiIcon = lobeIcons['gemini'] ?? ''
+const geminiIcon = ref(fallbackIconMap.gemini ?? '')
+const googleIcon = ref(fallbackIconMap.google ?? '')
 
 type BindingGeminiStatus = Awaited<ReturnType<typeof GetStatus>>
 type BindingGeminiProvider = Awaited<ReturnType<typeof GetProviders>> extends (infer P)[] ? P : any
@@ -367,9 +368,9 @@ const categoryLabel = (category: string) => {
 
 const getPresetIcon = (preset: BindingGeminiPreset) => {
   if (preset.category === 'official') {
-    return lobeIcons['google'] ?? geminiIcon
+    return googleIcon.value || geminiIcon.value
   }
-  return geminiIcon
+  return geminiIcon.value
 }
 
 const openPresetModal = (preset: BindingGeminiPreset) => {
@@ -502,8 +503,14 @@ const confirmDelete = async () => {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   reload()
+  const [loadedGeminiIcon, loadedGoogleIcon] = await Promise.all([
+    loadLobeIcon('gemini'),
+    loadLobeIcon('google'),
+  ])
+  if (loadedGeminiIcon) geminiIcon.value = loadedGeminiIcon
+  if (loadedGoogleIcon) googleIcon.value = loadedGoogleIcon
 })
 </script>
 

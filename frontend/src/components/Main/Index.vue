@@ -957,7 +957,7 @@ import { useI18n } from 'vue-i18n'
 import { Listbox, ListboxButton, ListboxOptions, ListboxOption } from '@headlessui/vue'
 import { Browser, Call, Events } from '@wailsio/runtime'
 import { automationCardGroups, createAutomationCards, type AutomationCard } from '../../data/cards'
-import lobeIcons from '../../icons/lobeIconMap'
+import { fallbackIconMap, iconNames, loadLobeIcon } from '../../icons/lobeIconMap'
 import BaseButton from '../common/BaseButton.vue'
 import BaseModal from '../common/BaseModal.vue'
 import BaseInput from '../common/BaseInput.vue'
@@ -2238,8 +2238,32 @@ type VendorForm = {
   upstreamProtocol?: string
 }
 
-const iconOptions = Object.keys(lobeIcons).sort((a, b) => a.localeCompare(b))
+const iconOptions = iconNames
 const defaultIconKey = iconOptions[0] ?? 'aicoding'
+const loadedIconSvgs = reactive<Record<string, string>>({ ...fallbackIconMap })
+const loadingIconNames = new Set<string>()
+
+const ensureIconLoaded = async (name: string) => {
+  const normalized = name?.trim().toLowerCase()
+  if (!normalized || loadedIconSvgs[normalized] || loadingIconNames.has(normalized)) return
+  loadingIconNames.add(normalized)
+  try {
+    const svg = await loadLobeIcon(normalized)
+    if (svg) {
+      loadedIconSvgs[normalized] = svg
+    }
+  } catch (error) {
+    console.warn(`failed to load icon ${normalized}`, error)
+  } finally {
+    loadingIconNames.delete(normalized)
+  }
+}
+
+const ensureIconsLoaded = (names: string[]) => {
+  for (const name of names) {
+    void ensureIconLoaded(name)
+  }
+}
 
 // 图标搜索筛选
 const iconSearchQuery = ref('')
@@ -2323,6 +2347,30 @@ const modalState = reactive({
     apiUrl: '',
   },
 })
+
+watch(
+  () => activeCards.value.map(card => card.icon).join('|'),
+  () => {
+    ensureIconsLoaded(activeCards.value.map(card => card.icon))
+  },
+  { immediate: true },
+)
+
+watch(
+  () => modalState.form.icon,
+  (icon) => {
+    void ensureIconLoaded(icon)
+  },
+  { immediate: true },
+)
+
+watch(
+  () => (modalState.open ? filteredIconOptions.value.slice(0, 80).join('|') : ''),
+  () => {
+    if (!modalState.open) return
+    ensureIconsLoaded(filteredIconOptions.value.slice(0, 80))
+  },
+)
 
 // 认证方式相关状态
 const selectedAuthType = ref<string>('bearer')
@@ -2671,7 +2719,9 @@ const onDragEnd = () => {
 
 const iconSvg = (name: string) => {
   if (!name) return ''
-  return lobeIcons[name.toLowerCase()] ?? ''
+  const normalized = name.toLowerCase()
+  void ensureIconLoaded(normalized)
+  return loadedIconSvgs[normalized] ?? ''
 }
 
 const vendorInitials = (name: string) => {

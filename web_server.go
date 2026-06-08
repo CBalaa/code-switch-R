@@ -299,11 +299,21 @@ func registerStaticRoutes(router *gin.Engine, staticDir string) {
 		if relativePath != "" && relativePath != "." {
 			target := filepath.Join(staticDir, relativePath)
 			if info, err := os.Stat(target); err == nil && !info.IsDir() {
+				setStaticAssetCacheHeaders(c, relativePath)
 				c.File(target)
 				return
 			}
 		}
 
+		c.Header("Cache-Control", "no-store")
 		c.File(indexPath)
 	})
+}
+
+func setStaticAssetCacheHeaders(c *gin.Context, relativePath string) {
+	if strings.HasPrefix(relativePath, "assets/") {
+		c.Header("Cache-Control", "public, max-age=31536000, immutable")
+		return
+	}
+	c.Header("Cache-Control", "public, max-age=3600")
 }
