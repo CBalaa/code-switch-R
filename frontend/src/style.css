@@ -977,13 +977,15 @@ html.dark .mac-sidebar-item:hover {
   letter-spacing: 0.02em;
 }
 
-.card-icon .icon-fallback {
-  text-transform: uppercase;
+.card-icon.empty {
+  background: transparent;
 }
 
-.card-icon .icon-svg svg {
-  width: 24px;
-  height: 24px;
+.card-icon .provider-favicon {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  border-radius: 6px;
 }
 
 .card-text {

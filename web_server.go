@@ -3,12 +3,18 @@ package main
 import (
 	"bytes"
 	"codeswitch/services"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"time"
 
@@ -16,6 +22,10 @@ import (
 )
 
 var errorType = reflect.TypeOf((*error)(nil)).Elem()
+
+const maxFaviconBytes = 512 * 1024
+
+var faviconLinkPattern = regexp.MustCompile(`(?is)<link\b[^>]*>`)
 
 type rpcRegistry struct {
 	services map[string]any
@@ -205,6 +215,7 @@ func newAdminServer(rt *appRuntime) *http.Server {
 	router.GET("/api/wails/events", authRequired, func(c *gin.Context) {
 		streamEvents(c, rt.eventHub)
 	})
+	router.GET("/provider-favicon", authRequired, serveProviderFavicon)
 
 	registerStaticRoutes(router, rt.staticDir)
 
@@ -216,6 +227,207 @@ func newAdminServer(rt *appRuntime) *http.Server {
 		IdleTimeout:       120 * time.Second,
 		MaxHeaderBytes:    1 << 20,
 	}
+}
+
+func serveProviderFavicon(c *gin.Context) {
+	siteURL, err := normalizeProviderSiteURL(c.Query("url"))
+	if err != nil {
+		c.Status(http.StatusNoContent)
+		return
+	}
+
+	cachePath, err := faviconCachePath(siteURL)
+	if err == nil {
+		if data, readErr := os.ReadFile(cachePath); readErr == nil && len(data) > 0 {
+			c.Header("Cache-Control", "public, max-age=604800")
+			c.Data(http.StatusOK, detectFaviconContentType(data, cachePath, ""), data)
+			return
+		}
+	}
+
+	data, contentType, err := fetchProviderFavicon(c.Request.Context(), siteURL)
+	if err != nil || len(data) == 0 {
+		c.Status(http.StatusNoContent)
+		return
+	}
+
+	if cachePath != "" {
+		if mkdirErr := os.MkdirAll(filepath.Dir(cachePath), 0o700); mkdirErr == nil {
+			_ = os.WriteFile(cachePath, data, 0o600)
+		}
+	}
+
+	c.Header("Cache-Control", "public, max-age=604800")
+	c.Data(http.StatusOK, contentType, data)
+}
+
+func normalizeProviderSiteURL(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", fmt.Errorf("empty url")
+	}
+	if !strings.Contains(raw, "://") {
+		raw = "https://" + raw
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return "", err
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", fmt.Errorf("unsupported scheme")
+	}
+	if strings.TrimSpace(parsed.Host) == "" {
+		return "", fmt.Errorf("missing host")
+	}
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	if parsed.Path == "" {
+		parsed.Path = "/"
+	}
+	return parsed.String(), nil
+}
+
+func faviconCachePath(siteURL string) (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256([]byte(siteURL))
+	return filepath.Join(home, ".code-switch", "favicons", hex.EncodeToString(sum[:])+".bin"), nil
+}
+
+func fetchProviderFavicon(ctx context.Context, siteURL string) ([]byte, string, error) {
+	parsed, err := url.Parse(siteURL)
+	if err != nil {
+		return nil, "", err
+	}
+	origin := parsed.Scheme + "://" + parsed.Host
+
+	if data, contentType, err := fetchFaviconCandidate(ctx, origin+"/favicon.ico"); err == nil {
+		return data, contentType, nil
+	}
+
+	html, err := fetchURLBytes(ctx, siteURL, "text/html,*/*", 256*1024)
+	if err != nil {
+		return nil, "", err
+	}
+	for _, href := range extractFaviconHrefs(string(html)) {
+		candidate, err := resolveURL(siteURL, href)
+		if err != nil {
+			continue
+		}
+		if data, contentType, err := fetchFaviconCandidate(ctx, candidate); err == nil {
+			return data, contentType, nil
+		}
+	}
+	return nil, "", fmt.Errorf("favicon not found")
+}
+
+func fetchFaviconCandidate(ctx context.Context, candidateURL string) ([]byte, string, error) {
+	data, err := fetchURLBytes(ctx, candidateURL, "image/*,*/*", maxFaviconBytes)
+	if err != nil {
+		return nil, "", err
+	}
+	contentType := detectFaviconContentType(data, candidateURL, "")
+	if contentType == "" {
+		return nil, "", fmt.Errorf("not an image")
+	}
+	return data, contentType, nil
+}
+
+func fetchURLBytes(ctx context.Context, targetURL string, accept string, limit int64) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, targetURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", accept)
+	req.Header.Set("User-Agent", "CodeSwitch/1.0 favicon fetcher")
+
+	client := &http.Client{Timeout: 4 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("upstream status %d", resp.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("response too large")
+	}
+	return data, nil
+}
+
+func extractFaviconHrefs(html string) []string {
+	hrefs := []string{}
+	for _, tag := range faviconLinkPattern.FindAllString(html, -1) {
+		rel := strings.ToLower(extractHTMLAttr(tag, "rel"))
+		if !strings.Contains(rel, "icon") {
+			continue
+		}
+		if href := strings.TrimSpace(extractHTMLAttr(tag, "href")); href != "" {
+			hrefs = append(hrefs, href)
+		}
+	}
+	return hrefs
+}
+
+func extractHTMLAttr(tag string, name string) string {
+	pattern := regexp.MustCompile(`(?is)\b` + regexp.QuoteMeta(name) + `\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))`)
+	match := pattern.FindStringSubmatch(tag)
+	if len(match) == 0 {
+		return ""
+	}
+	for i := 2; i < len(match); i++ {
+		if match[i] != "" {
+			return match[i]
+		}
+	}
+	return ""
+}
+
+func resolveURL(baseURL string, href string) (string, error) {
+	base, err := url.Parse(baseURL)
+	if err != nil {
+		return "", err
+	}
+	ref, err := url.Parse(strings.TrimSpace(href))
+	if err != nil {
+		return "", err
+	}
+	resolved := base.ResolveReference(ref)
+	if resolved.Scheme != "http" && resolved.Scheme != "https" {
+		return "", fmt.Errorf("unsupported scheme")
+	}
+	return resolved.String(), nil
+}
+
+func detectFaviconContentType(data []byte, source string, fallback string) string {
+	if len(data) == 0 {
+		return ""
+	}
+	prefixLen := len(data)
+	if prefixLen > 256 {
+		prefixLen = 256
+	}
+	trimmed := strings.TrimSpace(string(data[:prefixLen]))
+	lowerPrefix := strings.ToLower(trimmed)
+	lowerSource := strings.ToLower(source)
+	if strings.HasPrefix(lowerPrefix, "<svg") || strings.Contains(lowerPrefix, "<svg") || strings.HasSuffix(lowerSource, ".svg") {
+		return "image/svg+xml"
+	}
+	detected := http.DetectContentType(data)
+	if strings.HasPrefix(strings.ToLower(detected), "image/") {
+		return detected
+	}
+	if strings.HasSuffix(lowerSource, ".ico") {
+		return "image/x-icon"
+	}
+	return fallback
 }
 
 func streamEvents(c *gin.Context, hub *services.EventHub) {

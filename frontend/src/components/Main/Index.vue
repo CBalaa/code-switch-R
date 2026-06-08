@@ -275,19 +275,20 @@
             ✓ {{ t('components.main.providers.lastUsed') }}
           </span>
           <div class="card-leading">
-            <div class="card-icon" :style="{ backgroundColor: card.tint, color: card.accent }">
-              <span
-                v-if="!iconSvg(card.icon)"
-                class="icon-fallback"
-              >
-                {{ vendorInitials(card.name) }}
-              </span>
-              <span
-                v-else
-                class="icon-svg"
-                v-html="iconSvg(card.icon)"
+            <div
+              :class="['card-icon', { empty: !providerFaviconUrl(card.officialSite) }]"
+              :style="{ backgroundColor: providerFaviconUrl(card.officialSite) ? card.tint : 'transparent', color: card.accent }"
+            >
+              <img
+                v-if="providerFaviconUrl(card.officialSite)"
+                class="provider-favicon"
+                :src="providerFaviconUrl(card.officialSite)"
+                :alt="`${card.name} icon`"
+                loading="lazy"
+                decoding="async"
+                @error="markFaviconFailed(card.officialSite)"
                 aria-hidden="true"
-              ></span>
+              />
             </div>
             <div class="card-text">
               <div class="card-title-row">
@@ -623,47 +624,6 @@
                 </div>
 
                 <div class="form-field">
-                  <span>{{ t('components.main.form.labels.icon') }}</span>
-                  <Listbox v-model="modalState.form.icon" v-slot="{ open }" class="w-full">
-                    <div class="icon-select">
-                      <ListboxButton class="icon-select-button">
-                        <span class="icon-preview" v-html="iconSvg(modalState.form.icon)" aria-hidden="true"></span>
-                        <span class="icon-select-label">{{ modalState.form.icon }}</span>
-                        <svg viewBox="0 0 20 20" aria-hidden="true">
-                          <path d="M6 8l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" />
-                        </svg>
-                      </ListboxButton>
-                      <ListboxOptions v-if="open" class="icon-select-options">
-                        <div class="icon-search-wrapper">
-                          <input
-                            v-model="iconSearchQuery"
-                            type="text"
-                            class="icon-search-input"
-                            :placeholder="t('components.main.form.placeholders.searchIcon')"
-                            @click.stop
-                            @keydown.stop
-                          />
-                        </div>
-                        <ListboxOption
-                          v-for="iconName in filteredIconOptions"
-                          :key="iconName"
-                          :value="iconName"
-                          v-slot="{ active, selected }"
-                        >
-                          <div :class="['icon-option', { active, selected }]">
-                            <span class="icon-preview" v-html="iconSvg(iconName)" aria-hidden="true"></span>
-                            <span class="icon-name">{{ iconName }}</span>
-                          </div>
-                        </ListboxOption>
-                        <div v-if="filteredIconOptions.length === 0" class="icon-no-results">
-                          {{ t('components.main.form.noIconResults') }}
-                        </div>
-                      </ListboxOptions>
-                    </div>
-                  </Listbox>
-                </div>
-
-                <div class="form-field">
                   <span>{{ t('components.main.form.labels.level') }}</span>
                   <Listbox v-model="modalState.form.level" v-slot="{ open }">
                     <div class="level-select">
@@ -957,7 +917,6 @@ import { useI18n } from 'vue-i18n'
 import { Listbox, ListboxButton, ListboxOptions, ListboxOption } from '@headlessui/vue'
 import { Browser, Call, Events } from '@wailsio/runtime'
 import { automationCardGroups, createAutomationCards, type AutomationCard } from '../../data/cards'
-import { fallbackIconMap, iconNames, loadLobeIcon } from '../../icons/lobeIconMap'
 import BaseButton from '../common/BaseButton.vue'
 import BaseModal from '../common/BaseModal.vue'
 import BaseInput from '../common/BaseInput.vue'
@@ -2238,47 +2197,29 @@ type VendorForm = {
   upstreamProtocol?: string
 }
 
-const iconOptions = iconNames
-const defaultIconKey = iconOptions[0] ?? 'aicoding'
-const loadedIconSvgs = reactive<Record<string, string>>({ ...fallbackIconMap })
-const loadingIconNames = new Set<string>()
+const failedFaviconSites = reactive<Record<string, boolean>>({})
 
-const ensureIconLoaded = async (name: string) => {
-  const normalized = name?.trim().toLowerCase()
-  if (!normalized || loadedIconSvgs[normalized] || loadingIconNames.has(normalized)) return
-  loadingIconNames.add(normalized)
-  try {
-    const svg = await loadLobeIcon(normalized)
-    if (svg) {
-      loadedIconSvgs[normalized] = svg
-    }
-  } catch (error) {
-    console.warn(`failed to load icon ${normalized}`, error)
-  } finally {
-    loadingIconNames.delete(normalized)
-  }
+const normalizeFaviconSite = (site?: string) => site?.trim() ?? ''
+
+const providerFaviconUrl = (site?: string) => {
+  const normalized = normalizeFaviconSite(site)
+  if (!normalized || failedFaviconSites[normalized]) return ''
+  return `/provider-favicon?url=${encodeURIComponent(normalized)}`
 }
 
-const ensureIconsLoaded = (names: string[]) => {
-  for (const name of names) {
-    void ensureIconLoaded(name)
+const markFaviconFailed = (site?: string) => {
+  const normalized = normalizeFaviconSite(site)
+  if (normalized) {
+    failedFaviconSites[normalized] = true
   }
 }
-
-// 图标搜索筛选
-const iconSearchQuery = ref('')
-const filteredIconOptions = computed(() => {
-  const query = iconSearchQuery.value.toLowerCase().trim()
-  if (!query) return iconOptions
-  return iconOptions.filter(name => name.toLowerCase().includes(query))
-})
 
 const defaultFormValues = (platform?: string): VendorForm => ({
   name: '',
   apiUrl: '',
   apiKey: '',
   officialSite: '',
-  icon: defaultIconKey,
+  icon: '',
   level: 1,
   enabled: true,
   supportedModels: {},
@@ -2347,30 +2288,6 @@ const modalState = reactive({
     apiUrl: '',
   },
 })
-
-watch(
-  () => activeCards.value.map(card => card.icon).join('|'),
-  () => {
-    ensureIconsLoaded(activeCards.value.map(card => card.icon))
-  },
-  { immediate: true },
-)
-
-watch(
-  () => modalState.form.icon,
-  (icon) => {
-    void ensureIconLoaded(icon)
-  },
-  { immediate: true },
-)
-
-watch(
-  () => (modalState.open ? filteredIconOptions.value.slice(0, 80).join('|') : ''),
-  () => {
-    if (!modalState.open) return
-    ensureIconsLoaded(filteredIconOptions.value.slice(0, 80))
-  },
-)
 
 // 认证方式相关状态
 const selectedAuthType = ref<string>('bearer')
@@ -2486,7 +2403,6 @@ const submitModal = async (): Promise<boolean> => {
   const apiUrl = modalState.form.apiUrl.trim()
   const apiKey = modalState.form.apiKey.trim()
   const officialSite = modalState.form.officialSite.trim()
-  const icon = (modalState.form.icon || defaultIconKey).toString().trim().toLowerCase() || defaultIconKey
   modalState.errors.apiUrl = ''
   try {
     const parsed = new URL(apiUrl)
@@ -2504,7 +2420,7 @@ const submitModal = async (): Promise<boolean> => {
       apiUrl: apiUrl || editingCard.value.apiUrl,
       apiKey,
       officialSite,
-      icon,
+      icon: '',
       level: nextLevel,
       enabled: modalState.form.enabled,
       supportedModels: modalState.form.supportedModels || {},
@@ -2542,7 +2458,7 @@ const submitModal = async (): Promise<boolean> => {
       apiUrl,
       apiKey,
       officialSite,
-      icon,
+      icon: '',
       accent: '#0a84ff',
       tint: 'rgba(15, 23, 42, 0.12)',
       level: normalizeLevel(modalState.form.level),
@@ -2715,24 +2631,6 @@ const onDrop = async (targetId: number) => {
 
 const onDragEnd = () => {
   draggingId.value = null
-}
-
-const iconSvg = (name: string) => {
-  if (!name) return ''
-  const normalized = name.toLowerCase()
-  void ensureIconLoaded(normalized)
-  return loadedIconSvgs[normalized] ?? ''
-}
-
-const vendorInitials = (name: string) => {
-  if (!name) return 'AI'
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((word) => word[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase()
 }
 
 const onTabChange = (idx: number) => {
