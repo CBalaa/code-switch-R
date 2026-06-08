@@ -343,6 +343,24 @@ func TestCodexResponsesRequireManagedKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建 Codex relay key 失败: %v", err)
 	}
+	homeDir, err := getUserHomeDir()
+	if err != nil {
+		t.Fatalf("获取测试 home 目录失败: %v", err)
+	}
+	codexDir := filepath.Join(homeDir, codexSettingsDir)
+	if err := os.MkdirAll(codexDir, 0o700); err != nil {
+		t.Fatalf("创建 codex 配置目录失败: %v", err)
+	}
+	managedConfig := `model_provider = "code-switch-r"
+
+[model_providers.code-switch-r]
+name = "code-switch-r"
+base_url = "` + RelayClientBaseURL(relayService.Addr()) + `"
+wire_api = "responses"
+`
+	if err := os.WriteFile(filepath.Join(codexDir, codexConfigFileName), []byte(managedConfig), 0o600); err != nil {
+		t.Fatalf("写入 codex 托管配置失败: %v", err)
+	}
 
 	router := gin.New()
 	relayService.registerRoutes(router)

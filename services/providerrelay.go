@@ -180,6 +180,19 @@ func (prs *ProviderRelayService) shouldRequireProviderEnabled(kind string) bool 
 	return status.Enabled
 }
 
+func (prs *ProviderRelayService) codexDirectAppliedProviderFilter(kind string, requireProviderEnabled bool) (*int64, bool) {
+	if !strings.EqualFold(kind, "codex") || requireProviderEnabled {
+		return nil, false
+	}
+	codexSettings := NewCodexSettingsService(prs.Addr(), prs.codexRelayKeys)
+	id, err := codexSettings.GetDirectAppliedProviderID()
+	if err != nil {
+		fmt.Printf("[WARN] 读取 Codex 直接应用供应商失败，非托管模式下不启用 Codex provider: %v\n", err)
+		return nil, true
+	}
+	return id, true
+}
+
 // roundRobinOrder 对同 Level 的 providers 进行轮询排序
 // 算法：基于 name 追踪，将上次起始 provider 移到末尾，实现轮询效果
 // 参数：
@@ -442,11 +455,18 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 		}
 
 		requireProviderEnabled := prs.shouldRequireProviderEnabled(kind)
+		directAppliedProviderID, requireDirectAppliedProvider := prs.codexDirectAppliedProviderFilter(kind, requireProviderEnabled)
 		active := make([]Provider, 0, len(providers))
 		skippedCount := 0
 		for _, provider := range providers {
 			// 基础过滤：托管模式才要求 enabled；手动/直连模式下开关不影响 Codex 可用性。
 			if (requireProviderEnabled && !provider.Enabled) || provider.APIURL == "" || provider.APIKey == "" {
+				continue
+			}
+			if requireDirectAppliedProvider && directAppliedProviderID == nil {
+				continue
+			}
+			if directAppliedProviderID != nil && provider.ID != *directAppliedProviderID {
 				continue
 			}
 
@@ -1308,8 +1328,15 @@ func (prs *ProviderRelayService) selectCodexEmptyStreamRetryProvider(kind, curre
 	}
 
 	requireProviderEnabled := prs.shouldRequireProviderEnabled(kind)
+	directAppliedProviderID, requireDirectAppliedProvider := prs.codexDirectAppliedProviderFilter(kind, requireProviderEnabled)
 	for _, provider := range providers {
 		if (requireProviderEnabled && !provider.Enabled) || provider.APIURL == "" || provider.APIKey == "" {
+			continue
+		}
+		if requireDirectAppliedProvider && directAppliedProviderID == nil {
+			continue
+		}
+		if directAppliedProviderID != nil && provider.ID != *directAppliedProviderID {
 			continue
 		}
 		if errs := provider.ValidateConfiguration(); len(errs) > 0 {
@@ -2956,9 +2983,16 @@ func (prs *ProviderRelayService) forwardModelsRequest(
 
 	// 过滤可用的 providers（托管模式启用 + URL + APIKey）
 	requireProviderEnabled := prs.shouldRequireProviderEnabled(kind)
+	directAppliedProviderID, requireDirectAppliedProvider := prs.codexDirectAppliedProviderFilter(kind, requireProviderEnabled)
 	var activeProviders []Provider
 	for _, provider := range providers {
 		if (requireProviderEnabled && !provider.Enabled) || provider.APIURL == "" || provider.APIKey == "" {
+			continue
+		}
+		if requireDirectAppliedProvider && directAppliedProviderID == nil {
+			continue
+		}
+		if directAppliedProviderID != nil && provider.ID != *directAppliedProviderID {
 			continue
 		}
 

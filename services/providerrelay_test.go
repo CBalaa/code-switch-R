@@ -394,6 +394,89 @@ func TestSelectCodexEmptyStreamRetryProviderDoesNotFallbackToOtherProvider(t *te
 	}
 }
 
+func TestCodexDirectAppliedProviderIDDetectedInManualMode(t *testing.T) {
+	testHome := t.TempDir()
+	t.Setenv("HOME", testHome)
+
+	configDir := filepath.Join(testHome, ".code-switch")
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		t.Fatalf("create config dir: %v", err)
+	}
+	payload, err := json.Marshal(providerEnvelope{Providers: []Provider{
+		{
+			ID:      1,
+			Name:    "superapi",
+			APIURL:  "https://superapi.example.com",
+			APIKey:  "super-key",
+			Enabled: false,
+		},
+		{
+			ID:      2,
+			Name:    "wecoding",
+			APIURL:  "https://yuzapi.fun",
+			APIKey:  "wecoding-key",
+			Enabled: true,
+		},
+	}})
+	if err != nil {
+		t.Fatalf("marshal providers: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "codex.json"), payload, 0o600); err != nil {
+		t.Fatalf("write providers: %v", err)
+	}
+
+	codexDir := filepath.Join(testHome, codexSettingsDir)
+	if err := os.MkdirAll(codexDir, 0o700); err != nil {
+		t.Fatalf("create codex dir: %v", err)
+	}
+	config := `model_provider = "wecoding"
+preferred_auth_method = "apikey"
+
+[model_providers.wecoding]
+name = "wecoding"
+base_url = "https://yuzapi.fun"
+wire_api = "responses"
+`
+	if err := os.WriteFile(filepath.Join(codexDir, codexConfigFileName), []byte(config), 0o600); err != nil {
+		t.Fatalf("write codex config: %v", err)
+	}
+	auth := []byte(`{"OPENAI_API_KEY":"wecoding-key"}`)
+	if err := os.WriteFile(filepath.Join(codexDir, codexAuthFileName), auth, 0o600); err != nil {
+		t.Fatalf("write codex auth: %v", err)
+	}
+
+	relay := NewProviderRelayService(NewProviderService(), nil, nil, nil, nil, nil, DefaultRelayBindAddr)
+	id, required := relay.codexDirectAppliedProviderFilter("codex", false)
+	if !required {
+		t.Fatalf("manual mode should require direct applied provider")
+	}
+	if id == nil || *id != 2 {
+		t.Fatalf("direct applied provider id = %v, want 2", id)
+	}
+
+	id, required = relay.codexDirectAppliedProviderFilter("codex", true)
+	if required {
+		t.Fatalf("managed mode should not require direct applied provider")
+	}
+	if id != nil {
+		t.Fatalf("managed mode should not use direct applied provider id, got %v", *id)
+	}
+}
+
+func TestCodexDirectAppliedProviderRequiredInManualMode(t *testing.T) {
+	testHome := t.TempDir()
+	t.Setenv("HOME", testHome)
+
+	relay := NewProviderRelayService(NewProviderService(), nil, nil, nil, nil, nil, DefaultRelayBindAddr)
+	id, required := relay.codexDirectAppliedProviderFilter("codex", false)
+	if !required {
+		t.Fatalf("manual mode should require direct applied provider")
+	}
+	if id != nil {
+		t.Fatalf("manual mode without direct apply should not select a provider, got %v", *id)
+	}
+}
+
 func TestMarkFirstTextFromSSEPayload(t *testing.T) {
 	requestLog := &ReqeustLog{startedAt: time.Now()}
 	payload := `event: content_block_delta
