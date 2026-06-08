@@ -360,6 +360,40 @@ wire_api = "responses"
 	}
 }
 
+func TestSelectCodexEmptyStreamRetryProviderDoesNotFallbackToOtherProvider(t *testing.T) {
+	testHome := t.TempDir()
+	t.Setenv("HOME", testHome)
+
+	configDir := filepath.Join(testHome, ".code-switch")
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		t.Fatalf("create config dir: %v", err)
+	}
+	payload, err := json.Marshal(providerEnvelope{Providers: []Provider{
+		{
+			ID:      1,
+			Name:    "other-provider",
+			APIURL:  "https://other.example.com",
+			APIKey:  "other-key",
+			Enabled: true,
+		},
+	}})
+	if err != nil {
+		t.Fatalf("marshal providers: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "codex.json"), payload, 0o600); err != nil {
+		t.Fatalf("write providers: %v", err)
+	}
+
+	relay := NewProviderRelayService(NewProviderService(), nil, nil, nil, nil, nil, DefaultRelayBindAddr)
+	provider, ok, err := relay.selectCodexEmptyStreamRetryProvider("codex", "current-provider", "gpt-5.5")
+	if err != nil {
+		t.Fatalf("select retry provider returned error: %v", err)
+	}
+	if ok {
+		t.Fatalf("expected no fallback provider, got %#v", provider)
+	}
+}
+
 func TestMarkFirstTextFromSSEPayload(t *testing.T) {
 	requestLog := &ReqeustLog{startedAt: time.Now()}
 	payload := `event: content_block_delta

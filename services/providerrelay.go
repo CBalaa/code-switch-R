@@ -1259,11 +1259,8 @@ func (prs *ProviderRelayService) retryCodexEmptyStreamSameProvider(
 			return false, provider, err, attempts, totalDuration
 		}
 		if !ok {
-			fmt.Printf("[INFO] Codex 空流保护: 暂无可用 provider，继续等待后台切换\n")
+			fmt.Printf("[INFO] Codex 空流保护: Provider %s 当前不可用，继续等待恢复，不切换到其他 provider\n", provider.Name)
 			continue
-		}
-		if nextProvider.Name != provider.Name {
-			fmt.Printf("[INFO] Codex 空流保护: 检测到后台切换 provider: %s -> %s\n", provider.Name, nextProvider.Name)
 		}
 		provider = nextProvider
 
@@ -1311,7 +1308,6 @@ func (prs *ProviderRelayService) selectCodexEmptyStreamRetryProvider(kind, curre
 	}
 
 	requireProviderEnabled := prs.shouldRequireProviderEnabled(kind)
-	active := make([]Provider, 0, len(providers))
 	for _, provider := range providers {
 		if (requireProviderEnabled && !provider.Enabled) || provider.APIURL == "" || provider.APIKey == "" {
 			continue
@@ -1330,24 +1326,9 @@ func (prs *ProviderRelayService) selectCodexEmptyStreamRetryProvider(kind, curre
 		if provider.Name == currentProviderName {
 			return provider, true, nil
 		}
-		active = append(active, provider)
 	}
 
-	if len(active) == 0 {
-		return Provider{}, false, nil
-	}
-	sort.SliceStable(active, func(i, j int) bool {
-		leftLevel := active[i].Level
-		if leftLevel <= 0 {
-			leftLevel = 1
-		}
-		rightLevel := active[j].Level
-		if rightLevel <= 0 {
-			rightLevel = 1
-		}
-		return leftLevel < rightLevel
-	})
-	return active[0], true, nil
+	return Provider{}, false, nil
 }
 
 func isResponsesEndpoint(endpoint string) bool {
