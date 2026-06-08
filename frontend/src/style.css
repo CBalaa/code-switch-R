@@ -906,6 +906,15 @@ html.dark .mac-sidebar-item:hover {
   margin: 0;
 }
 
+.tab-pill[draggable='true'] {
+  cursor: grab;
+}
+
+.tab-pill.dragging {
+  opacity: 0.55;
+  cursor: grabbing;
+}
+
 .tab-pill::before {
   content: '';
   position: absolute;

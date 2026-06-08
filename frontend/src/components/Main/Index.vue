@@ -114,14 +114,20 @@
       <div class="section-header">
         <div class="tab-group" role="tablist" :aria-label="t('components.main.tabs.ariaLabel')">
           <button
-            v-for="(tab, idx) in tabs"
+            v-for="tab in orderedTabs"
             :key="tab.id"
             class="tab-pill"
-            :class="{ active: selectedIndex === idx }"
+            :class="{ active: activeTab === tab.id, dragging: draggingTab === tab.id }"
             role="tab"
-            :aria-selected="selectedIndex === idx"
+            :aria-selected="activeTab === tab.id"
             type="button"
-            @click="onTabChange(idx)"
+            draggable="true"
+            @click="onTabChange(tab.id)"
+            @dragstart="onTabDragStart(tab.id, $event)"
+            @dragenter.prevent="onTabDragEnter(tab.id)"
+            @dragover.prevent
+            @dragend="onTabDragEnd"
+            @drop.prevent="onTabDrop(tab.id)"
           >
             {{ tab.label }}
           </button>
@@ -1255,6 +1261,40 @@ const tabs = [
 ] as const
 type ProviderTab = (typeof tabs)[number]['id']
 const providerTabIds = tabs.map((tab) => tab.id) as ProviderTab[]
+const defaultTabOrder = [...providerTabIds]
+const tabOrderStorageKey = 'code-switch-main-tab-order'
+const tabById = Object.fromEntries(tabs.map((tab) => [tab.id, tab])) as Record<ProviderTab, (typeof tabs)[number]>
+
+const normalizeTabOrder = (value: unknown): ProviderTab[] => {
+  if (!Array.isArray(value)) return [...defaultTabOrder]
+  const seen = new Set<ProviderTab>()
+  const normalized = value.filter((id): id is ProviderTab => {
+    if (!providerTabIds.includes(id as ProviderTab) || seen.has(id as ProviderTab)) return false
+    seen.add(id as ProviderTab)
+    return true
+  })
+  defaultTabOrder.forEach((id) => {
+    if (!seen.has(id)) normalized.push(id)
+  })
+  return normalized
+}
+
+const loadTabOrder = (): ProviderTab[] => {
+  try {
+    const raw = window.localStorage.getItem(tabOrderStorageKey)
+    return normalizeTabOrder(raw ? JSON.parse(raw) : null)
+  } catch {
+    return [...defaultTabOrder]
+  }
+}
+
+const saveTabOrder = (order: ProviderTab[]) => {
+  try {
+    window.localStorage.setItem(tabOrderStorageKey, JSON.stringify(order))
+  } catch (error) {
+    console.error('Failed to save tab order', error)
+  }
+}
 
 const cards = reactive<Record<ProviderTab, AutomationCard[]>>({
   claude: createAutomationCards(automationCardGroups.claude),
@@ -1263,6 +1303,9 @@ const cards = reactive<Record<ProviderTab, AutomationCard[]>>({
   others: [],
 })
 const draggingId = ref<number | null>(null)
+const draggingTab = ref<ProviderTab | null>(null)
+const tabOrder = ref<ProviderTab[]>(loadTabOrder())
+const orderedTabs = computed(() => tabOrder.value.map((id) => tabById[id]))
 
 // Gemini Provider 到 AutomationCard 的转换
 const geminiToCard = (provider: GeminiProvider, index: number): AutomationCard => ({
@@ -1868,9 +1911,8 @@ const loadLastUsedProviders = async () => {
 // @author sm
 const switchToTabAndHighlight = (platform: string, providerName: string) => {
   // 切换到对应的 Tab
-  const tabIndex = tabs.findIndex(tab => tab.id === platform)
-  if (tabIndex >= 0 && selectedIndex.value !== tabIndex) {
-    selectedIndex.value = tabIndex
+  if (providerTabIds.includes(platform as ProviderTab) && selectedTab.value !== platform) {
+    selectedTab.value = platform as ProviderTab
   }
 
   // 更新最后使用的供应商
@@ -2026,8 +2068,8 @@ onUnmounted(() => {
   }
 })
 
-const selectedIndex = ref(0)
-const activeTab = computed<ProviderTab>(() => tabs[selectedIndex.value]?.id ?? tabs[0].id)
+const selectedTab = ref<ProviderTab>('claude')
+const activeTab = computed<ProviderTab>(() => selectedTab.value)
 const activeCards = computed(() => cards[activeTab.value] ?? [])
 
 // 连通性测试模型选项（根据平台）
@@ -2633,14 +2675,47 @@ const onDragEnd = () => {
   draggingId.value = null
 }
 
-const onTabChange = (idx: number) => {
-  selectedIndex.value = idx
-  const nextTab = tabs[idx]?.id
-  if (nextTab) {
-    void refreshProxyState(nextTab as ProviderTab)
-    void refreshDirectAppliedStatus(nextTab as ProviderTab)
-    void loadProviderStats(nextTab as ProviderTab)
+const reorderTabs = (targetTab: ProviderTab) => {
+  const sourceTab = draggingTab.value
+  if (!sourceTab || sourceTab === targetTab) return
+
+  const fromIndex = tabOrder.value.indexOf(sourceTab)
+  const toIndex = tabOrder.value.indexOf(targetTab)
+  if (fromIndex < 0 || toIndex < 0) return
+
+  const nextOrder = [...tabOrder.value]
+  nextOrder.splice(fromIndex, 1)
+  nextOrder.splice(toIndex, 0, sourceTab)
+  tabOrder.value = nextOrder
+  saveTabOrder(nextOrder)
+}
+
+const onTabChange = (tabId: ProviderTab) => {
+  selectedTab.value = tabId
+  void refreshProxyState(tabId)
+  void refreshDirectAppliedStatus(tabId)
+  void loadProviderStats(tabId)
+}
+
+const onTabDragStart = (tabId: ProviderTab, event: DragEvent) => {
+  draggingTab.value = tabId
+  event.dataTransfer?.setData('text/plain', tabId)
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
   }
+}
+
+const onTabDragEnter = (tabId: ProviderTab) => {
+  reorderTabs(tabId)
+}
+
+const onTabDrop = (tabId: ProviderTab) => {
+  reorderTabs(tabId)
+  draggingTab.value = null
+}
+
+const onTabDragEnd = () => {
+  draggingTab.value = null
 }
 
 const handleImportClick = async () => {
