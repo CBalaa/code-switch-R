@@ -432,8 +432,17 @@
             </div>
           </div>
           <div class="card-actions">
-            <label class="mac-switch sm">
-              <input type="checkbox" v-model="card.enabled" @change="persistProviders(activeTab)" />
+            <label
+              class="mac-switch sm"
+              :class="{ 'is-disabled': isProviderSwitchDisabled() }"
+              :title="providerSwitchTitle()"
+            >
+              <input
+                type="checkbox"
+                v-model="card.enabled"
+                :disabled="isProviderSwitchDisabled()"
+                @change="handleProviderSwitchChange"
+              />
               <span></span>
             </label>
             <!-- 直连应用按钮 -->
@@ -1097,6 +1106,16 @@ const isDirectApplied = (card: AutomationCard) => {
     return geminiProvidersCache.value[index].id === appliedId
   }
   return card.id === appliedId
+}
+
+const isProviderSwitchDisabled = () => activeTab.value === 'codex' && !activeProxyState.value
+
+const providerSwitchTitle = () =>
+  isProviderSwitchDisabled() ? t('components.main.providers.codexSwitchDisabled') : ''
+
+const handleProviderSwitchChange = () => {
+  if (isProviderSwitchDisabled()) return
+  void persistProviders(activeTab.value)
 }
 
 const providerStatsMap = reactive<Record<ProviderTab, Record<string, ProviderDailyStat>>>({

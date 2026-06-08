@@ -244,7 +244,8 @@
         "successRate": "成功率",
         "loading": "刷新中...",
         "noData": "今日暂无数据",
-        "lastUsed": "正在使用"
+        "lastUsed": "正在使用",
+        "codexSwitchDisabled": "开启“托管 Codex”后可使用此开关"
       },
       "directApply": {
         "title": "直接应用",

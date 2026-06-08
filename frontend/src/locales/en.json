@@ -243,7 +243,8 @@
         "successRate": "Success rate",
         "loading": "Refreshing...",
         "noData": "No data yet today",
-        "lastUsed": "In Use"
+        "lastUsed": "In Use",
+        "codexSwitchDisabled": "Enable hosted Codex to use this switch"
       },
       "directApply": {
         "title": "Direct Apply",

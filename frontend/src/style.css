@@ -207,6 +207,15 @@ html.dark .mac-sidebar-item:hover {
   transform: translateX(18px);
 }
 
+.mac-switch.is-disabled,
+.mac-switch input:disabled + span {
+  cursor: not-allowed;
+}
+
+.mac-switch input:disabled + span {
+  opacity: 0.45;
+}
+
 .mac-switch.sm {
   width: 36px;
   height: 20px;
