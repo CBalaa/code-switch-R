@@ -50,6 +50,7 @@ type ProviderRelayService struct {
 
 // errClientAbort 表示客户端中断连接，不应计入 provider 失败次数
 var errClientAbort = errors.New("client aborted, skip failure count")
+var errCodexEmptyStream = errors.New("codex upstream stream closed before useful content")
 
 func NewProviderRelayService(providerService *ProviderService, geminiService *GeminiService, codexRelayKeys *CodexRelayKeyService, blacklistService *BlacklistService, notificationService *NotificationService, appSettings *AppSettingsService, addr string) *ProviderRelayService {
 	if addr == "" {
@@ -151,6 +152,17 @@ func (prs *ProviderRelayService) isRoundRobinEnabled() bool {
 		return false
 	}
 	return prs.isRoundRobinSettingEnabled()
+}
+
+func (prs *ProviderRelayService) isCodexStreamGuardEnabled() bool {
+	if prs.appSettings == nil {
+		return true
+	}
+	settings, err := prs.appSettings.GetAppSettings()
+	if err != nil {
+		return true
+	}
+	return settings.EnableCodexStreamGuard
 }
 
 // roundRobinOrder 对同 Level 的 providers 进行轮询排序
@@ -1033,7 +1045,15 @@ func (prs *ProviderRelayService) forwardRequest(
 			// 使用协议转换 Hook
 			_, copyErr = writeStreamingResponse(c.Writer, resp, requestLog, protocolConvertHook(sseConverter, kind, requestLog))
 		} else if isStreamResponse(resp, isStream) {
-			_, copyErr = writeStreamingResponse(c.Writer, resp, requestLog, ReqeustLogHook(c, kind, requestLog))
+			if kind == "codex" && prs.isCodexStreamGuardEnabled() {
+				var responseWritten bool
+				_, responseWritten, copyErr = writeCodexGuardedStreamingResponse(c.Writer, resp, requestLog, ReqeustLogHook(c, kind, requestLog))
+				if copyErr != nil && !responseWritten {
+					return false, copyErr
+				}
+			} else {
+				_, copyErr = writeStreamingResponse(c.Writer, resp, requestLog, ReqeustLogHook(c, kind, requestLog))
+			}
 		} else {
 			_, copyErr = resp.ToHttpResponseWriter(c.Writer, ReqeustLogHook(c, kind, requestLog))
 		}
@@ -1051,7 +1071,15 @@ func (prs *ProviderRelayService) forwardRequest(
 			// 使用协议转换 Hook
 			_, copyErr = writeStreamingResponse(c.Writer, resp, requestLog, protocolConvertHook(sseConverter, kind, requestLog))
 		} else if isStreamResponse(resp, isStream) {
-			_, copyErr = writeStreamingResponse(c.Writer, resp, requestLog, ReqeustLogHook(c, kind, requestLog))
+			if kind == "codex" && prs.isCodexStreamGuardEnabled() {
+				var responseWritten bool
+				_, responseWritten, copyErr = writeCodexGuardedStreamingResponse(c.Writer, resp, requestLog, ReqeustLogHook(c, kind, requestLog))
+				if copyErr != nil && !responseWritten {
+					return false, copyErr
+				}
+			} else {
+				_, copyErr = writeStreamingResponse(c.Writer, resp, requestLog, ReqeustLogHook(c, kind, requestLog))
+			}
 		} else {
 			_, copyErr = resp.ToHttpResponseWriter(c.Writer, ReqeustLogHook(c, kind, requestLog))
 		}
@@ -1219,6 +1247,178 @@ func writeStreamingResponse(w http.ResponseWriter, resp *xrequest.Response, requ
 				return totalBytes, nil
 			}
 			return totalBytes, fmt.Errorf("error streaming response: %w", err)
+		}
+	}
+}
+
+const codexStreamGuardMaxInitialBufferBytes = 1024 * 1024
+
+type codexStreamGuardState struct {
+	sawCompleted     bool
+	sawFailed        bool
+	sawIncomplete    bool
+	sawUsefulContent bool
+	inputTokens      int64
+	outputTokens     int64
+	cacheTokens      int64
+	reasoningTokens  int64
+}
+
+func (s *codexStreamGuardState) observeLine(line []byte) {
+	trimmed := strings.TrimSpace(string(line))
+	if !strings.HasPrefix(trimmed, "data:") {
+		return
+	}
+	data := strings.TrimSpace(strings.TrimPrefix(trimmed, "data:"))
+	if data == "" || data == "[DONE]" || !json.Valid([]byte(data)) {
+		return
+	}
+
+	eventType := gjson.Get(data, "type").String()
+	switch eventType {
+	case "response.completed":
+		s.sawCompleted = true
+	case "response.failed":
+		s.sawFailed = true
+	case "response.incomplete":
+		s.sawIncomplete = true
+	case "response.output_text.delta":
+		if strings.TrimSpace(gjson.Get(data, "delta").String()) != "" {
+			s.sawUsefulContent = true
+		}
+	case "response.function_call_arguments.delta":
+		if strings.TrimSpace(gjson.Get(data, "delta").String()) != "" {
+			s.sawUsefulContent = true
+		}
+	}
+
+	usage := gjson.Get(data, "response.usage")
+	if usage.Exists() {
+		s.inputTokens += usage.Get("input_tokens").Int()
+		s.outputTokens += usage.Get("output_tokens").Int()
+		s.cacheTokens += usage.Get("input_tokens_details.cached_tokens").Int()
+		s.reasoningTokens += usage.Get("output_tokens_details.reasoning_tokens").Int()
+	}
+}
+
+func (s codexStreamGuardState) shouldRelease() bool {
+	return s.sawUsefulContent || s.sawCompleted || s.sawFailed || s.sawIncomplete || s.totalTokens() > 0
+}
+
+func (s codexStreamGuardState) totalTokens() int64 {
+	return s.inputTokens + s.outputTokens + s.cacheTokens + s.reasoningTokens
+}
+
+func (s codexStreamGuardState) isEmptyFailure() bool {
+	if s.sawFailed || s.sawIncomplete || s.sawCompleted {
+		return false
+	}
+	return !s.sawUsefulContent && s.totalTokens() == 0
+}
+
+func writeCodexGuardedStreamingResponse(w http.ResponseWriter, resp *xrequest.Response, requestLog *ReqeustLog, hooks ...xrequest.ResponseHook) (int64, bool, error) {
+	if resp == nil || resp.RawResponse == nil {
+		return 0, false, fmt.Errorf("empty upstream response")
+	}
+
+	raw := resp.RawResponse
+	if raw.Body != nil {
+		defer raw.Body.Close()
+	}
+	if raw.Body == nil {
+		return 0, false, errCodexEmptyStream
+	}
+
+	headerWritten := false
+	totalBytes := int64(0)
+	state := codexStreamGuardState{}
+	var initialBuffer bytes.Buffer
+
+	writeHeader := func() {
+		if headerWritten {
+			return
+		}
+		copyStreamingResponseHeaders(w.Header(), raw.Header)
+		status := resp.StatusCode()
+		if status == 0 {
+			status = http.StatusOK
+		}
+		w.WriteHeader(status)
+		headerWritten = true
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+	}
+
+	flushInitialBuffer := func() error {
+		writeHeader()
+		if initialBuffer.Len() == 0 {
+			return nil
+		}
+		n, err := writeStreamingBuffer(w, initialBuffer.Bytes(), requestLog, hooks...)
+		totalBytes += n
+		initialBuffer.Reset()
+		return err
+	}
+
+	reader := bufio.NewReader(raw.Body)
+	for {
+		line, err := reader.ReadBytes('\n')
+		if len(line) > 0 {
+			if headerWritten {
+				n, writeErr := writeStreamingLine(w, line, requestLog, hooks...)
+				totalBytes += n
+				if writeErr != nil {
+					return totalBytes, true, writeErr
+				}
+			} else {
+				initialBuffer.Write(line)
+				state.observeLine(line)
+				if state.shouldRelease() || initialBuffer.Len() >= codexStreamGuardMaxInitialBufferBytes {
+					if writeErr := flushInitialBuffer(); writeErr != nil {
+						return totalBytes, true, writeErr
+					}
+				}
+			}
+		}
+
+		if err != nil {
+			if err == io.EOF {
+				if !headerWritten {
+					if state.isEmptyFailure() {
+						return 0, false, errCodexEmptyStream
+					}
+					if writeErr := flushInitialBuffer(); writeErr != nil {
+						return totalBytes, true, writeErr
+					}
+				}
+				return totalBytes, headerWritten, nil
+			}
+			if !headerWritten {
+				return 0, false, fmt.Errorf("error streaming response before useful content: %w", err)
+			}
+			return totalBytes, true, fmt.Errorf("error streaming response: %w", err)
+		}
+	}
+}
+
+func writeStreamingBuffer(w http.ResponseWriter, data []byte, requestLog *ReqeustLog, hooks ...xrequest.ResponseHook) (int64, error) {
+	reader := bufio.NewReader(bytes.NewReader(data))
+	totalBytes := int64(0)
+	for {
+		line, err := reader.ReadBytes('\n')
+		if len(line) > 0 {
+			n, writeErr := writeStreamingLine(w, line, requestLog, hooks...)
+			totalBytes += n
+			if writeErr != nil {
+				return totalBytes, writeErr
+			}
+		}
+		if err != nil {
+			if err == io.EOF {
+				return totalBytes, nil
+			}
+			return totalBytes, err
 		}
 	}
 }

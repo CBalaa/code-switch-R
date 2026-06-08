@@ -2,6 +2,7 @@ package services
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -230,6 +231,99 @@ func TestWriteStreamingResponseFlushesFirstLineImmediately(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatalf("writeStreamingResponse did not return after upstream EOF")
+	}
+}
+
+func TestWriteCodexGuardedStreamingResponseRejectsEmptyStreamBeforeWrite(t *testing.T) {
+	resp := xrequest.NewResponse(&http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Type": []string{"text/event-stream"},
+		},
+		Body: io.NopCloser(strings.NewReader("data: {\"type\":\"response.created\"}\n\n")),
+	})
+
+	recorder := newStreamingRecorder()
+	requestLog := &ReqeustLog{startedAt: time.Now()}
+	written, responseWritten, err := writeCodexGuardedStreamingResponse(recorder, resp, requestLog)
+	if !errors.Is(err, errCodexEmptyStream) {
+		t.Fatalf("err = %v, want errCodexEmptyStream", err)
+	}
+	if responseWritten {
+		t.Fatalf("responseWritten = true, want false")
+	}
+	if written != 0 {
+		t.Fatalf("written = %d, want 0", written)
+	}
+	if body := recorder.BodyString(); body != "" {
+		t.Fatalf("body = %q, want empty", body)
+	}
+	if recorder.status != 0 {
+		t.Fatalf("status = %d, want 0 before guarded stream is released", recorder.status)
+	}
+}
+
+func TestWriteCodexGuardedStreamingResponseReleasesOnUsefulContent(t *testing.T) {
+	pr, pw := io.Pipe()
+	defer pr.Close()
+
+	resp := xrequest.NewResponse(&http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Type": []string{"text/event-stream"},
+		},
+		Body: pr,
+	})
+
+	recorder := newStreamingRecorder()
+	requestLog := &ReqeustLog{startedAt: time.Now()}
+	done := make(chan error, 1)
+	go func() {
+		_, responseWritten, err := writeCodexGuardedStreamingResponse(recorder, resp, requestLog)
+		if err == nil && !responseWritten {
+			err = errors.New("guard returned without writing response")
+		}
+		done <- err
+	}()
+
+	if _, err := pw.Write([]byte("data: {\"type\":\"response.created\"}\n\n")); err != nil {
+		t.Fatalf("write created event: %v", err)
+	}
+
+	select {
+	case <-recorder.wroteCh:
+		t.Fatalf("guard wrote before useful content")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	if _, err := pw.Write([]byte("data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hello\"}\n\n")); err != nil {
+		t.Fatalf("write text delta: %v", err)
+	}
+
+	select {
+	case <-recorder.wroteCh:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatalf("guard did not release on useful content")
+	}
+
+	if err := pw.Close(); err != nil {
+		t.Fatalf("close pipe writer: %v", err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("writeCodexGuardedStreamingResponse returned error: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("writeCodexGuardedStreamingResponse did not return after EOF")
+	}
+
+	body := recorder.BodyString()
+	if !strings.Contains(body, "response.created") || !strings.Contains(body, "Hello") {
+		t.Fatalf("guard did not replay buffered events, body=%q", body)
+	}
+	if requestLog.FirstEventSec <= 0 {
+		t.Fatalf("expected FirstEventSec to be recorded")
 	}
 }
 

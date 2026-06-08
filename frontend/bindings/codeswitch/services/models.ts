@@ -23,6 +23,7 @@ export class AppSettings {
      * 同 Level 轮询负载均衡开关（默认关闭）
      */
     "enable_round_robin": boolean;
+    "enable_codex_stream_guard": boolean;
 
     /** Creates a new AppSettings instance. */
     constructor($$source: Partial<AppSettings> = {}) {
@@ -40,6 +41,9 @@ export class AppSettings {
         }
         if (!("enable_round_robin" in $$source)) {
             this["enable_round_robin"] = false;
+        }
+        if (!("enable_codex_stream_guard" in $$source)) {
+            this["enable_codex_stream_guard"] = false;
         }
 
         Object.assign(this, $$source);

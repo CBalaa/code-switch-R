@@ -469,6 +469,8 @@
         "switchNotifyHint": "Send system notification when provider switches or gets blacklisted",
         "roundRobin": "Same-Level Round Robin",
         "roundRobinHint": "When enabled, providers at the same Level take turns handling requests; when disabled, always starts from the first",
+        "codexStreamGuard": "Codex Empty Stream Guard",
+        "codexStreamGuardHint": "Intercept Codex 200 streams with no initial useful content and retry before the client sees them",
         "autoConnectivityTest": "Auto Availability Monitoring",
         "autoConnectivityTestHint": "Automatically check availability of monitored providers every minute",
         "blacklistThreshold": "Failure threshold",
