@@ -5,6 +5,8 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -324,6 +326,37 @@ func TestWriteCodexGuardedStreamingResponseReleasesOnUsefulContent(t *testing.T)
 	}
 	if requestLog.FirstEventSec <= 0 {
 		t.Fatalf("expected FirstEventSec to be recorded")
+	}
+}
+
+func TestCodexProviderEnabledRequiredOnlyInManagedProxyMode(t *testing.T) {
+	testHome := t.TempDir()
+	t.Setenv("HOME", testHome)
+
+	relay := NewProviderRelayService(NewProviderService(), nil, nil, nil, nil, nil, DefaultRelayBindAddr)
+	if relay.shouldRequireProviderEnabled("claude") != true {
+		t.Fatalf("claude should always require provider enabled")
+	}
+	if relay.shouldRequireProviderEnabled("codex") != false {
+		t.Fatalf("codex should ignore provider enabled when managed proxy is disabled")
+	}
+
+	codexDir := filepath.Join(testHome, codexSettingsDir)
+	if err := os.MkdirAll(codexDir, 0o700); err != nil {
+		t.Fatalf("create codex dir: %v", err)
+	}
+	config := `model_provider = "code-switch-r"
+
+[model_providers.code-switch-r]
+name = "code-switch-r"
+base_url = "http://127.0.0.1:18100"
+wire_api = "responses"
+`
+	if err := os.WriteFile(filepath.Join(codexDir, codexConfigFileName), []byte(config), 0o600); err != nil {
+		t.Fatalf("write codex config: %v", err)
+	}
+	if relay.shouldRequireProviderEnabled("codex") != true {
+		t.Fatalf("codex should require provider enabled when managed proxy is enabled")
 	}
 }
 

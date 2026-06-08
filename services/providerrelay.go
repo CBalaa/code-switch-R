@@ -167,6 +167,19 @@ func (prs *ProviderRelayService) isCodexStreamGuardEnabled() bool {
 	return settings.EnableCodexStreamGuard
 }
 
+func (prs *ProviderRelayService) shouldRequireProviderEnabled(kind string) bool {
+	if !strings.EqualFold(kind, "codex") {
+		return true
+	}
+	codexSettings := NewCodexSettingsService(prs.Addr(), prs.codexRelayKeys)
+	status, err := codexSettings.ProxyStatus()
+	if err != nil {
+		fmt.Printf("[WARN] 读取 Codex 托管状态失败，保守使用 provider 开关: %v\n", err)
+		return true
+	}
+	return status.Enabled
+}
+
 // roundRobinOrder 对同 Level 的 providers 进行轮询排序
 // 算法：基于 name 追踪，将上次起始 provider 移到末尾，实现轮询效果
 // 参数：
@@ -428,11 +441,12 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 			return
 		}
 
+		requireProviderEnabled := prs.shouldRequireProviderEnabled(kind)
 		active := make([]Provider, 0, len(providers))
 		skippedCount := 0
 		for _, provider := range providers {
-			// 基础过滤：enabled、URL、APIKey
-			if !provider.Enabled || provider.APIURL == "" || provider.APIKey == "" {
+			// 基础过滤：托管模式才要求 enabled；手动/直连模式下开关不影响 Codex 可用性。
+			if (requireProviderEnabled && !provider.Enabled) || provider.APIURL == "" || provider.APIKey == "" {
 				continue
 			}
 
@@ -1296,9 +1310,10 @@ func (prs *ProviderRelayService) selectCodexEmptyStreamRetryProvider(kind, curre
 		return Provider{}, false, err
 	}
 
+	requireProviderEnabled := prs.shouldRequireProviderEnabled(kind)
 	active := make([]Provider, 0, len(providers))
 	for _, provider := range providers {
-		if !provider.Enabled || provider.APIURL == "" || provider.APIKey == "" {
+		if (requireProviderEnabled && !provider.Enabled) || provider.APIURL == "" || provider.APIKey == "" {
 			continue
 		}
 		if errs := provider.ValidateConfiguration(); len(errs) > 0 {
@@ -2958,10 +2973,11 @@ func (prs *ProviderRelayService) forwardModelsRequest(
 		return fmt.Errorf("failed to load providers: %w", err)
 	}
 
-	// 过滤可用的 providers（启用 + URL + APIKey）
+	// 过滤可用的 providers（托管模式启用 + URL + APIKey）
+	requireProviderEnabled := prs.shouldRequireProviderEnabled(kind)
 	var activeProviders []Provider
 	for _, provider := range providers {
-		if !provider.Enabled || provider.APIURL == "" || provider.APIKey == "" {
+		if (requireProviderEnabled && !provider.Enabled) || provider.APIURL == "" || provider.APIKey == "" {
 			continue
 		}
 
