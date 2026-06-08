@@ -64,7 +64,6 @@ export {
     ConfigFile,
     ConfigImportResult,
     ConfigImportStatus,
-    ConfigureResult,
     ConnectivityResult,
     ConsoleLog,
     CustomCliProxyStatus,
@@ -94,7 +93,5 @@ export {
     ProxyInjection,
     ReqeustLog,
     RetryConfig,
-    Skill,
-    TargetCli,
-    WSLDetection
+    Skill
 } from "./models.js";

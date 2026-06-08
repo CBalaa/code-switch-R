@@ -15,54 +15,12 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 import * as $models from "./models.js";
 
 /**
- * ConfigureWSLClients 配置 WSL 中的 CLI 工具
- */
-export function ConfigureWSLClients(targets: $models.TargetCli): $CancellablePromise<$models.ConfigureResult> {
-    return $Call.ByID(402084964, targets).then(($result: any) => {
-        return $$createType0($result);
-    });
-}
-
-/**
- * DetectWSL 检测 WSL 状态
- */
-export function DetectWSL(): $CancellablePromise<$models.WSLDetection> {
-    return $Call.ByID(2387227977).then(($result: any) => {
-        return $$createType1($result);
-    });
-}
-
-/**
  * GetNetworkSettings 获取网络设置
  */
 export function GetNetworkSettings(): $CancellablePromise<$models.NetworkSettings> {
     return $Call.ByID(716731921).then(($result: any) => {
-        return $$createType2($result);
+        return $$createType0($result);
     });
-}
-
-/**
- * GetWSLConfigStatus 获取 WSL 配置状态
- */
-export function GetWSLConfigStatus(): $CancellablePromise<{ [_ in string]?: { [_ in string]?: boolean } }> {
-    return $Call.ByID(1329108980).then(($result: any) => {
-        return $$createType4($result);
-    });
-}
-
-/**
- * GetWSLHostAddress 获取 WSL 宿主机地址
- */
-export function GetWSLHostAddress(): $CancellablePromise<string> {
-    return $Call.ByID(2455094662);
-}
-
-/**
- * ReadWSLResolveConf 从 WSL 中读取 /etc/resolv.conf 获取宿主机 IP
- * 这是更准确的方法，因为 WSL2 的 nameserver 指向宿主机
- */
-export function ReadWSLResolveConf(distro: string): $CancellablePromise<string> {
-    return $Call.ByID(1117286778, distro);
 }
 
 /**
@@ -73,8 +31,4 @@ export function SaveNetworkSettings(settings: $models.NetworkSettings): $Cancell
 }
 
 // Private type creation functions
-const $$createType0 = $models.ConfigureResult.createFrom;
-const $$createType1 = $models.WSLDetection.createFrom;
-const $$createType2 = $models.NetworkSettings.createFrom;
-const $$createType3 = $Create.Map($Create.Any, $Create.Any);
-const $$createType4 = $Create.Map($Create.Any, $$createType3);
+const $$createType0 = $models.NetworkSettings.createFrom;

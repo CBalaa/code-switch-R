@@ -9,7 +9,6 @@
       "listenMode": "监听模式",
       "modes": {
         "localhost": "仅本地 (127.0.0.1)",
-        "wslAuto": "WSL 自动检测",
         "lan": "局域网 (0.0.0.0)",
         "custom": "自定义地址"
       },
@@ -17,17 +16,6 @@
       "currentAddress": "当前监听地址",
       "lanWarningTitle": "安全警告",
       "lanWarningText": "局域网模式会将 API 密钥暴露给局域网内的其他设备，请仅在可信环境中使用。",
-      "wslTitle": "WSL 配置",
-      "wslAutoConfig": "WSL 自动配置",
-      "wslAutoConfigHint": "自动配置 WSL 中的 CLI 工具使用宿主机代理",
-      "wslStatus": "WSL 状态",
-      "wslDetected": "已检测到 WSL",
-      "wslNotDetected": "未检测到 WSL",
-      "wslDistros": "已检测的发行版",
-      "targetCli": "目标 CLI 工具",
-      "configureNow": "立即配置",
-      "configureSuccess": "WSL CLI 工具配置成功",
-      "configureFailed": "配置 WSL CLI 工具失败",
       "saveFailed": "保存网络设置失败"
     }
   },

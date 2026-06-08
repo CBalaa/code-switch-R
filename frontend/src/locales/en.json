@@ -9,7 +9,6 @@
       "listenMode": "Listen Mode",
       "modes": {
         "localhost": "Localhost Only (127.0.0.1)",
-        "wslAuto": "WSL Auto-Detect",
         "lan": "LAN (0.0.0.0)",
         "custom": "Custom Address"
       },
@@ -17,17 +16,6 @@
       "currentAddress": "Current Listen Address",
       "lanWarningTitle": "Security Warning",
       "lanWarningText": "LAN mode exposes your API keys to the local network. Only use this in trusted environments.",
-      "wslTitle": "WSL Configuration",
-      "wslAutoConfig": "WSL Auto-Configure",
-      "wslAutoConfigHint": "Automatically configure CLI tools in WSL to use host proxy",
-      "wslStatus": "WSL Status",
-      "wslDetected": "WSL Detected",
-      "wslNotDetected": "WSL Not Detected",
-      "wslDistros": "Detected Distros",
-      "targetCli": "Target CLI Tools",
-      "configureNow": "Configure Now",
-      "configureSuccess": "WSL CLI tools configured successfully",
-      "configureFailed": "Failed to configure WSL CLI tools",
       "saveFailed": "Failed to save network settings"
     }
   },

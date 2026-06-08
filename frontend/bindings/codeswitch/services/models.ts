@@ -718,31 +718,6 @@ export class ConfigImportStatus {
 }
 
 /**
- * ConfigureResult 配置结果
- */
-export class ConfigureResult {
-    "success": boolean;
-    "message"?: string;
-
-    /** Creates a new ConfigureResult instance. */
-    constructor($$source: Partial<ConfigureResult> = {}) {
-        if (!("success" in $$source)) {
-            this["success"] = false;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new ConfigureResult instance from a string or object.
-     */
-    static createFrom($$source: any = {}): ConfigureResult {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new ConfigureResult($$parsedSource as Partial<ConfigureResult>);
-    }
-}
-
-/**
  * ConnectivityResult 连通性测试结果
  */
 export class ConnectivityResult {
@@ -1509,7 +1484,6 @@ export enum ListenMode {
     $zero = "",
 
     ListenModeLocalhost = "localhost",
-    ListenModeWSLAuto = "wsl_auto",
     ListenModeLAN = "lan",
     ListenModeCustom = "custom",
 };
@@ -1758,19 +1732,11 @@ export class NetworkSettings {
     "listenMode": ListenMode;
     "customAddress"?: string;
     "currentAddress"?: string;
-    "wslAutoConfig": boolean;
-    "targetCli": TargetCli;
 
     /** Creates a new NetworkSettings instance. */
     constructor($$source: Partial<NetworkSettings> = {}) {
         if (!("listenMode" in $$source)) {
             this["listenMode"] = ListenMode.$zero;
-        }
-        if (!("wslAutoConfig" in $$source)) {
-            this["wslAutoConfig"] = false;
-        }
-        if (!("targetCli" in $$source)) {
-            this["targetCli"] = (new TargetCli());
         }
 
         Object.assign(this, $$source);
@@ -1780,11 +1746,7 @@ export class NetworkSettings {
      * Creates a new NetworkSettings instance from a string or object.
      */
     static createFrom($$source: any = {}): NetworkSettings {
-        const $$createField4_0 = $$createType19;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("targetCli" in $$parsedSource) {
-            $$parsedSource["targetCli"] = $$createField4_0($$parsedSource["targetCli"]);
-        }
         return new NetworkSettings($$parsedSource as Partial<NetworkSettings>);
     }
 }
@@ -1951,7 +1913,7 @@ export class Provider {
      * Creates a new Provider instance from a string or object.
      */
     static createFrom($$source: any = {}): Provider {
-        const $$createField10_0 = $$createType20;
+        const $$createField10_0 = $$createType18;
         const $$createField11_0 = $$createType4;
         const $$createField15_0 = $$createType22;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
@@ -2343,70 +2305,6 @@ export class Skill {
     }
 }
 
-/**
- * TargetCli 目标 CLI 工具配置
- */
-export class TargetCli {
-    "claudeCode": boolean;
-    "codex": boolean;
-    "gemini": boolean;
-
-    /** Creates a new TargetCli instance. */
-    constructor($$source: Partial<TargetCli> = {}) {
-        if (!("claudeCode" in $$source)) {
-            this["claudeCode"] = false;
-        }
-        if (!("codex" in $$source)) {
-            this["codex"] = false;
-        }
-        if (!("gemini" in $$source)) {
-            this["gemini"] = false;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new TargetCli instance from a string or object.
-     */
-    static createFrom($$source: any = {}): TargetCli {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new TargetCli($$parsedSource as Partial<TargetCli>);
-    }
-}
-
-/**
- * WSLDetection WSL 检测结果
- */
-export class WSLDetection {
-    "detected": boolean;
-    "distros": string[];
-
-    /** Creates a new WSLDetection instance. */
-    constructor($$source: Partial<WSLDetection> = {}) {
-        if (!("detected" in $$source)) {
-            this["detected"] = false;
-        }
-        if (!("distros" in $$source)) {
-            this["distros"] = [];
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new WSLDetection instance from a string or object.
-     */
-    static createFrom($$source: any = {}): WSLDetection {
-        const $$createField1_0 = $$createType18;
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("distros" in $$parsedSource) {
-            $$parsedSource["distros"] = $$createField1_0($$parsedSource["distros"]);
-        }
-        return new WSLDetection($$parsedSource as Partial<WSLDetection>);
-    }
-}
-
 export class installRequest {
     "directory": string;
     "repo_owner": string;
@@ -2508,8 +2406,6 @@ const $$createType14 = LogStatsSeries.createFrom;
 const $$createType15 = $Create.Array($$createType14);
 const $$createType16 = MCPServer.createFrom;
 const $$createType17 = $Create.Array($$createType16);
-const $$createType18 = $Create.Array($Create.Any);
-const $$createType19 = TargetCli.createFrom;
-const $$createType20 = $Create.Map($Create.Any, $Create.Any);
+const $$createType18 = $Create.Map($Create.Any, $Create.Any);
 const $$createType21 = AvailabilityConfig.createFrom;
 const $$createType22 = $Create.Nullable($$createType21);

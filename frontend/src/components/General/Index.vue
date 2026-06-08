@@ -5,7 +5,7 @@ import { Call } from '@wailsio/runtime'
 import ListItem from '../Setting/ListRow.vue'
 import LanguageSwitcher from '../Setting/LanguageSwitcher.vue'
 import ThemeSetting from '../Setting/ThemeSetting.vue'
-import NetworkWslSettings from '../Setting/NetworkWslSettings.vue'
+import NetworkSettings from '../Setting/NetworkSettings.vue'
 import SecuritySettings from '../Setting/SecuritySettings.vue'
 import { fetchAppSettings, saveAppSettings, type AppSettings } from '../../services/appSettings'
 import { getBlacklistSettings, updateBlacklistSettings, getLevelBlacklistEnabled, setLevelBlacklistEnabled, getBlacklistEnabled, setBlacklistEnabled, type BlacklistSettings } from '../../services/settings'
@@ -339,8 +339,7 @@ onMounted(async () => {
         </div>
       </section>
 
-      <!-- Network & WSL Settings -->
-      <NetworkWslSettings />
+      <NetworkSettings />
 
       <SecuritySettings />
 
