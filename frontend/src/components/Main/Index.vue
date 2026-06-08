@@ -44,40 +44,6 @@
         </svg>
       </button>
       <button
-        v-if="showImportButton"
-        class="ghost-icon"
-        :data-tooltip="importButtonTooltip"
-        :disabled="importBusy"
-        @click="handleImportClick"
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true" :class="{ rotating: importBusy }">
-          <path
-            d="M12 4v9"
-            stroke="currentColor"
-            stroke-width="1.5"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            fill="none"
-          />
-          <path
-            d="M8.5 10.5l3.5 3.5 3.5-3.5"
-            stroke="currentColor"
-            stroke-width="1.5"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            fill="none"
-          />
-          <path
-            d="M5 19h14"
-            stroke="currentColor"
-            stroke-width="1.5"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            fill="none"
-          />
-        </svg>
-      </button>
-      <button
         class="ghost-icon"
         :data-tooltip="t('components.main.controls.settings')"
         @click="goToSettings"
@@ -938,7 +904,6 @@ import { fetchCurrentVersion } from '../../services/version'
 import { fetchAppSettings, type AppSettings } from '../../services/appSettings'
 import { getCurrentTheme, setTheme, type ThemeMode } from '../../utils/ThemeManager'
 import { useRouter } from 'vue-router'
-import { fetchConfigImportStatus, importFromCcSwitch, type ConfigImportStatus } from '../../services/configImport'
 import { showToast } from '../../utils/toast'
 import { extractErrorMessage } from '../../utils/error'
 import { getBlacklistStatus, manualUnblock, type BlacklistStatus } from '../../services/blacklist'
@@ -1087,8 +1052,6 @@ const providerStatsLoaded = reactive<Record<ProviderTab, boolean>>({
 let providerStatsTimer: number | undefined
 const showHomeTitle = ref(true)
 const appVersion = ref('')
-const importStatus = ref<ConfigImportStatus | null>(null)
-const importBusy = ref(false)
 
 // 自定义 CLI 工具状态
 const customCliTools = ref<CustomCliTool[]>([])
@@ -1148,26 +1111,6 @@ const lastUsedProviders = reactive<Record<string, LastUsedProvider | null>>({
 // 高亮闪烁的供应商名称
 const highlightedProvider = ref<string | null>(null)
 let highlightTimer: number | undefined
-
-const showImportButton = computed(() => {
-  const status = importStatus.value
-  if (!status) return false
-  return status.config_exists && (status.pending_providers || status.pending_mcp)
-})
-
-const importButtonTooltip = computed(() => {
-  if (!showImportButton.value) {
-    return t('components.main.controls.import')
-  }
-  const status = importStatus.value
-  if (!status) {
-    return t('components.main.controls.import')
-  }
-  return t('components.main.importConfig.tooltip', {
-    providers: status.pending_provider_count,
-    servers: status.pending_mcp_count,
-  })
-})
 
 const formatMetric = (value: number) => value.toLocaleString()
 
@@ -1519,15 +1462,6 @@ const loadCustomCliProviders = async (toolId: string) => {
   }
 }
 
-const refreshImportStatus = async () => {
-  try {
-    importStatus.value = await fetchConfigImportStatus()
-  } catch (error) {
-    console.error('Failed to load cc-switch import status', error)
-    importStatus.value = null
-  }
-}
-
 const refreshProxyState = async (tab: ProviderTab) => {
   try {
     if (tab === 'others') {
@@ -1782,7 +1716,6 @@ const refreshAllData = async () => {
       ...providerTabIds.map((tab) => loadProviderStats(tab)),
       ...providerTabIds.map((tab) => loadBlacklistStatus(tab)), // 同步刷新黑名单状态
       loadAvailabilityResults(), // 同步刷新可用性监控状态（改用新服务）
-      refreshImportStatus()
     ])
   } catch (error) {
     console.error('Failed to refresh data', error)
@@ -1981,7 +1914,6 @@ onMounted(async () => {
   await Promise.all(providerTabIds.map((tab) => loadProviderStats(tab)))
   await loadAppSettings()
   await loadAppVersion()
-  await refreshImportStatus()
   startProviderStatsTimer()
 
   // 加载初始黑名单状态
@@ -2716,35 +2648,6 @@ const onTabDrop = (tabId: ProviderTab) => {
 
 const onTabDragEnd = () => {
   draggingTab.value = null
-}
-
-const handleImportClick = async () => {
-  if (importBusy.value) return
-  importBusy.value = true
-  try {
-    const result = await importFromCcSwitch()
-    importStatus.value = result?.status ?? null
-    const importedProviders = result?.imported_providers ?? 0
-    const importedMCP = result?.imported_mcp ?? 0
-    if (importedProviders > 0) {
-      await loadProvidersFromDisk()
-    }
-    if (importedProviders > 0 || importedMCP > 0) {
-      showToast(
-        t('components.main.importConfig.success', {
-          providers: importedProviders,
-          servers: importedMCP,
-        })
-      )
-    } else if (result?.status?.config_exists) {
-      showToast(t('components.main.importConfig.empty'))
-    }
-  } catch (error) {
-    console.error('Failed to import cc-switch config', error)
-    showToast(t('components.main.importConfig.error'), 'error')
-  } finally {
-    importBusy.value = false
-  }
 }
 
 // ========== 自定义 CLI 工具管理 ==========

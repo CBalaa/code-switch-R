@@ -650,77 +650,6 @@ export class ConfigFile {
     }
 }
 
-export class ConfigImportResult {
-    "status": ConfigImportStatus;
-    "imported_providers": number;
-    "imported_mcp": number;
-
-    /** Creates a new ConfigImportResult instance. */
-    constructor($$source: Partial<ConfigImportResult> = {}) {
-        if (!("status" in $$source)) {
-            this["status"] = (new ConfigImportStatus());
-        }
-        if (!("imported_providers" in $$source)) {
-            this["imported_providers"] = 0;
-        }
-        if (!("imported_mcp" in $$source)) {
-            this["imported_mcp"] = 0;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new ConfigImportResult instance from a string or object.
-     */
-    static createFrom($$source: any = {}): ConfigImportResult {
-        const $$createField0_0 = $$createType6;
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("status" in $$parsedSource) {
-            $$parsedSource["status"] = $$createField0_0($$parsedSource["status"]);
-        }
-        return new ConfigImportResult($$parsedSource as Partial<ConfigImportResult>);
-    }
-}
-
-export class ConfigImportStatus {
-    "config_exists": boolean;
-    "config_path"?: string;
-    "pending_providers": boolean;
-    "pending_mcp": boolean;
-    "pending_provider_count": number;
-    "pending_mcp_count": number;
-
-    /** Creates a new ConfigImportStatus instance. */
-    constructor($$source: Partial<ConfigImportStatus> = {}) {
-        if (!("config_exists" in $$source)) {
-            this["config_exists"] = false;
-        }
-        if (!("pending_providers" in $$source)) {
-            this["pending_providers"] = false;
-        }
-        if (!("pending_mcp" in $$source)) {
-            this["pending_mcp"] = false;
-        }
-        if (!("pending_provider_count" in $$source)) {
-            this["pending_provider_count"] = 0;
-        }
-        if (!("pending_mcp_count" in $$source)) {
-            this["pending_mcp_count"] = 0;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new ConfigImportStatus instance from a string or object.
-     */
-    static createFrom($$source: any = {}): ConfigImportStatus {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new ConfigImportStatus($$parsedSource as Partial<ConfigImportStatus>);
-    }
-}
-
 /**
  * ConnectivityResult 连通性测试结果
  */
@@ -1586,46 +1515,6 @@ export class LogStatsSeries {
     }
 }
 
-/**
- * MCPParseResult MCP JSON 解析结果（供前端批量导入向导使用）
- */
-export class MCPParseResult {
-    "servers": MCPServer[];
-    "conflicts": string[];
-    "needName": boolean;
-
-    /** Creates a new MCPParseResult instance. */
-    constructor($$source: Partial<MCPParseResult> = {}) {
-        if (!("servers" in $$source)) {
-            this["servers"] = [];
-        }
-        if (!("conflicts" in $$source)) {
-            this["conflicts"] = [];
-        }
-        if (!("needName" in $$source)) {
-            this["needName"] = false;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new MCPParseResult instance from a string or object.
-     */
-    static createFrom($$source: any = {}): MCPParseResult {
-        const $$createField0_0 = $$createType17;
-        const $$createField1_0 = $$createType18;
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("servers" in $$parsedSource) {
-            $$parsedSource["servers"] = $$createField0_0($$parsedSource["servers"]);
-        }
-        if ("conflicts" in $$parsedSource) {
-            $$parsedSource["conflicts"] = $$createField1_0($$parsedSource["conflicts"]);
-        }
-        return new MCPParseResult($$parsedSource as Partial<MCPParseResult>);
-    }
-}
-
 export class MCPServer {
     "name": string;
     "type": string;
@@ -2398,7 +2287,6 @@ const $$createType2 = CLIConfigFile.createFrom;
 const $$createType3 = $Create.Array($$createType2);
 const $$createType4 = $Create.Map($Create.Any, $Create.Any);
 const $$createType5 = $Create.Map($Create.Any, $Create.Any);
-const $$createType6 = ConfigImportStatus.createFrom;
 const $$createType7 = ConfigFile.createFrom;
 const $$createType8 = $Create.Array($$createType7);
 const $$createType9 = ProxyInjection.createFrom;
@@ -2408,8 +2296,6 @@ const $$createType12 = $Create.Array($$createType11);
 const $$createType13 = $Create.Nullable($$createType11);
 const $$createType14 = LogStatsSeries.createFrom;
 const $$createType15 = $Create.Array($$createType14);
-const $$createType16 = MCPServer.createFrom;
-const $$createType17 = $Create.Array($$createType16);
 const $$createType18 = $Create.Map($Create.Any, $Create.Any);
 const $$createType21 = AvailabilityConfig.createFrom;
 const $$createType22 = $Create.Nullable($$createType21);

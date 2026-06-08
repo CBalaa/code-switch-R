@@ -9,7 +9,6 @@ import NetworkSettings from '../Setting/NetworkSettings.vue'
 import SecuritySettings from '../Setting/SecuritySettings.vue'
 import { fetchAppSettings, saveAppSettings, type AppSettings } from '../../services/appSettings'
 import { getBlacklistSettings, updateBlacklistSettings, getLevelBlacklistEnabled, setLevelBlacklistEnabled, getBlacklistEnabled, setBlacklistEnabled, type BlacklistSettings } from '../../services/settings'
-import { fetchConfigImportStatus, importFromPath, type ConfigImportStatus } from '../../services/configImport'
 import { useI18n } from 'vue-i18n'
 import { extractErrorMessage } from '../../utils/error'
 
@@ -38,12 +37,6 @@ const blacklistDuration = ref(30)
 const levelBlacklistEnabled = ref(false)
 const blacklistLoading = ref(false)
 const blacklistSaving = ref(false)
-
-// cc-switch 导入相关状态
-const importStatus = ref<ConfigImportStatus | null>(null)
-const importPath = ref('')
-const importing = ref(false)
-const importLoading = ref(true)
 
 const goBack = () => {
   router.push('/')
@@ -190,63 +183,11 @@ const toggleLevelBlacklist = async () => {
   }
 }
 
-// 加载 cc-switch 导入状态
-const loadImportStatus = async () => {
-  importLoading.value = true
-  try {
-    importStatus.value = await fetchConfigImportStatus()
-    // 设置默认路径
-    if (importStatus.value?.config_path) {
-      importPath.value = importStatus.value.config_path
-    }
-  } catch (error) {
-    console.error('failed to load import status', error)
-    importStatus.value = null
-  } finally {
-    importLoading.value = false
-  }
-}
-
-// 执行导入
-const handleImport = async () => {
-  if (importing.value || !importPath.value.trim()) return
-  importing.value = true
-  try {
-    const result = await importFromPath(importPath.value.trim())
-    // 无论结果如何，都更新状态
-    importStatus.value = result.status
-    if (result.status.config_path) {
-      importPath.value = result.status.config_path
-    }
-    if (!result.status.config_exists) {
-      alert(t('components.general.import.fileNotFound'))
-      return
-    }
-    const imported = result.imported_providers + result.imported_mcp
-    if (imported > 0) {
-      alert(t('components.general.import.success', {
-        providers: result.imported_providers,
-        mcp: result.imported_mcp
-      }))
-    } else {
-      alert(t('components.general.import.nothingToImport'))
-    }
-  } catch (error) {
-    console.error('import failed', error)
-    alert(t('components.general.import.failed') + ': ' + (error as Error).message)
-  } finally {
-    importing.value = false
-  }
-}
-
 onMounted(async () => {
   await loadAppSettings()
 
   // 加载拉黑配置
   await loadBlacklistSettings()
-
-  // 加载导入状态
-  await loadImportStatus()
 })
 </script>
 
@@ -433,45 +374,6 @@ onMounted(async () => {
       </section>
 
       <section>
-        <h2 class="mac-section-title">{{ $t('components.general.title.dataImport') }}</h2>
-        <div class="mac-panel">
-          <ListItem :label="$t('components.general.import.configPath')">
-            <input
-              type="text"
-              v-model="importPath"
-              :placeholder="$t('components.general.import.pathPlaceholder')"
-              class="mac-input import-path-input"
-            />
-          </ListItem>
-          <ListItem :label="$t('components.general.import.status')">
-            <span class="info-text" v-if="importLoading">
-              {{ $t('components.general.import.loading') }}
-            </span>
-            <span class="info-text" v-else-if="importStatus?.config_exists">
-              {{ $t('components.general.import.configFound') }}
-              <span v-if="importStatus.pending_provider_count > 0 || importStatus.pending_mcp_count > 0">
-                ({{ $t('components.general.import.pendingCount', {
-                  providers: importStatus.pending_provider_count,
-                  mcp: importStatus.pending_mcp_count
-                }) }})
-              </span>
-            </span>
-            <span class="info-text warning" v-else-if="importStatus">
-              {{ $t('components.general.import.configNotFound') }}
-            </span>
-          </ListItem>
-          <ListItem :label="$t('components.general.import.action')">
-            <button
-              @click="handleImport"
-              :disabled="importing || !importPath.trim()"
-              class="action-btn">
-              {{ importing ? $t('components.general.import.importing') : $t('components.general.import.importBtn') }}
-            </button>
-          </ListItem>
-        </div>
-      </section>
-
-      <section>
         <h2 class="mac-section-title">{{ $t('components.general.title.exterior') }}</h2>
         <div class="mac-panel">
           <ListItem :label="$t('components.general.label.language')">
@@ -536,19 +438,6 @@ onMounted(async () => {
 
 :global(.dark) .hint-text {
   color: rgba(255, 255, 255, 0.5);
-}
-
-.import-path-input {
-  width: 280px;
-  font-size: 12px;
-}
-
-.info-text.warning {
-  color: var(--mac-text-warning, #e67e22);
-}
-
-:global(.dark) .info-text.warning {
-  color: #f39c12;
 }
 
 :global(.dark) .mac-input {

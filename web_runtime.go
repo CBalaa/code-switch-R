@@ -43,7 +43,6 @@ type appRuntime struct {
 	skillService       *services.SkillService
 	promptService      *services.PromptService
 	envCheckService    *services.EnvCheckService
-	importService      *services.ImportService
 	deeplinkService    *services.DeepLinkService
 	speedTestService   *services.SpeedTestService
 	connectivityTest   *services.ConnectivityTestService
@@ -96,7 +95,6 @@ func newAppRuntime() (*appRuntime, error) {
 	skillService := services.NewSkillService()
 	promptService := services.NewPromptService()
 	envCheckService := services.NewEnvCheckService()
-	importService := services.NewImportService(providerService, mcpService)
 	deeplinkService := services.NewDeepLinkService(providerService)
 	speedTestService := services.NewSpeedTestService()
 	connectivityTestService := services.NewConnectivityTestService(providerService, blacklistService, settingsService)
@@ -178,7 +176,6 @@ func newAppRuntime() (*appRuntime, error) {
 		skillService:       skillService,
 		promptService:      promptService,
 		envCheckService:    envCheckService,
-		importService:      importService,
 		deeplinkService:    deeplinkService,
 		speedTestService:   speedTestService,
 		connectivityTest:   connectivityTestService,
@@ -229,7 +226,6 @@ func (rt *appRuntime) registerServices(registry *rpcRegistry) {
 	registry.Register("codeswitch/services.SkillService", rt.skillService)
 	registry.Register("codeswitch/services.PromptService", rt.promptService)
 	registry.Register("codeswitch/services.EnvCheckService", rt.envCheckService)
-	registry.Register("codeswitch/services.ImportService", rt.importService)
 	registry.Register("codeswitch/services.DeepLinkService", rt.deeplinkService)
 	registry.Register("codeswitch/services.SpeedTestService", rt.speedTestService)
 	registry.Register("codeswitch/services.ConnectivityTestService", rt.connectivityTest)

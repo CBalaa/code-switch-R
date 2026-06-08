@@ -210,14 +210,7 @@
         "theme": "Toggle theme",
         "settings": "Open settings",
         "gemini": "Open Gemini CLI manager",
-        "import": "Import cc-switch config",
         "duplicate": "Duplicate provider"
-      },
-      "importConfig": {
-        "tooltip": "Import {providers} providers · {servers} MCP servers",
-        "success": "Imported {providers} providers and {servers} MCP servers",
-        "empty": "Everything from cc-switch is already in sync",
-        "error": "Failed to import cc-switch config"
       },
       "providers": {
         "requests": "Requests",
@@ -443,7 +436,6 @@
         "power": "Permission settings",
         "security": "Security",
         "blacklist": "Blacklist Settings",
-        "dataImport": "Data Import",
         "connectivity": "Availability Monitoring"
       },
       "label": {
@@ -491,22 +483,6 @@
         "authorized": "Auth",
         "go_authorized": "Auth now",
         "back": "Back to home"
-      },
-      "import": {
-        "configPath": "Config file path",
-        "pathPlaceholder": "Enter cc-switch config file path",
-        "status": "Config status",
-        "loading": "Loading...",
-        "configFound": "Config file found",
-        "configNotFound": "Config file not found",
-        "pendingCount": "{providers} providers, {mcp} MCPs",
-        "action": "Import action",
-        "importBtn": "Import config",
-        "importing": "Importing...",
-        "success": "Imported: {providers} providers, {mcp} MCP servers",
-        "nothingToImport": "Nothing to import (all may have been imported)",
-        "failed": "Import failed",
-        "fileNotFound": "Config file not found, please check the path"
       }
     },
     "gemini": {

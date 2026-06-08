@@ -13,7 +13,6 @@ import * as DeepLinkService from "./deeplinkservice.js";
 import * as EnvCheckService from "./envcheckservice.js";
 import * as GeminiService from "./geminiservice.js";
 import * as HealthCheckService from "./healthcheckservice.js";
-import * as ImportService from "./importservice.js";
 import * as LogService from "./logservice.js";
 import * as MCPService from "./mcpservice.js";
 import * as NetworkService from "./networkservice.js";
@@ -36,7 +35,6 @@ export {
     EnvCheckService,
     GeminiService,
     HealthCheckService,
-    ImportService,
     LogService,
     MCPService,
     NetworkService,
@@ -62,8 +60,6 @@ export {
     CLITemplate,
     ClaudeProxyStatus,
     ConfigFile,
-    ConfigImportResult,
-    ConfigImportStatus,
     ConnectivityResult,
     ConsoleLog,
     CustomCliProxyStatus,
@@ -82,7 +78,6 @@ export {
     ListenMode,
     LogStats,
     LogStatsSeries,
-    MCPParseResult,
     MCPServer,
     ManualTestResult,
     NetworkSettings,
