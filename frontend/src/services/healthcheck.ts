@@ -110,7 +110,7 @@ export async function setAvailabilityMonitorEnabled(
 }
 
 /**
- * 启用/禁用指定 Provider 的连通性自动拉黑
+ * 启用/禁用指定 Provider 的可用性失败自动拉黑
  */
 export async function setConnectivityAutoBlacklist(
   platform: string,

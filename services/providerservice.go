@@ -52,7 +52,7 @@ type Provider struct {
 	// 启用后才会执行后台健康检查
 	AvailabilityMonitorEnabled bool `json:"availabilityMonitorEnabled,omitempty"`
 
-	// 连通性自动拉黑开关 - 在 Provider 编辑页面配置
+	// 可用性失败自动拉黑开关 - 在 Provider 编辑页面配置
 	// 前置条件：AvailabilityMonitorEnabled 必须为 true
 	// 启用后，当健康检查连续失败达到阈值时自动拉黑
 	ConnectivityAutoBlacklist bool `json:"connectivityAutoBlacklist,omitempty"`
@@ -86,13 +86,13 @@ type Provider struct {
 	// ========== 旧字段（已废弃，仅用于读取迁移） ==========
 	// 这些字段在保存时不再写入，但读取时会自动迁移到新字段
 
-	// [已废弃] 连通性检测开关 - 迁移到 AvailabilityMonitorEnabled
+	// [已废弃] 可用性检测开关 - 迁移到 AvailabilityMonitorEnabled
 	ConnectivityCheck bool `json:"connectivityCheck,omitempty"`
 
-	// [已废弃] 连通性检测模型 - 迁移到 AvailabilityConfig.TestModel
+	// [已废弃] 可用性检测模型 - 迁移到 AvailabilityConfig.TestModel
 	ConnectivityTestModel string `json:"connectivityTestModel,omitempty"`
 
-	// [已废弃] 连通性检测端点 - 迁移到 AvailabilityConfig.TestEndpoint
+	// [已废弃] 可用性检测端点 - 迁移到 AvailabilityConfig.TestEndpoint
 	ConnectivityTestEndpoint string `json:"connectivityTestEndpoint,omitempty"`
 
 	// 内部字段：配置验证错误（不持久化）
@@ -217,7 +217,7 @@ func (ps *ProviderService) saveProvidersLocked(kind string, providers []Provider
 			}
 		}
 
-		// 清除旧连通性字段，确保保存时不再写入
+		// 清除旧可用性字段，确保保存时不再写入
 		p.clearLegacyFields()
 	}
 
@@ -332,7 +332,7 @@ func (ps *ProviderService) loadProvidersNoLock(kind string) ([]Provider, error) 
 	return envelope.Providers, nil
 }
 
-// migrateFromLegacy 将旧连通性字段迁移到新可用性字段
+// migrateFromLegacy 将旧可用性字段迁移到新可用性字段
 // 返回 true 表示发生了迁移
 func (p *Provider) migrateFromLegacy() bool {
 	migrated := false

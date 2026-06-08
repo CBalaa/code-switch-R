@@ -306,7 +306,7 @@
                 >
                   {{ t('components.main.directApply.currentBadge') }}
                 </span>
-                <!-- 连通性状态指示器 -->
+                <!-- 可用性状态指示器 -->
                 <span
                   v-if="card.availabilityMonitorEnabled"
                   class="connectivity-dot"
@@ -698,7 +698,7 @@
                   <span class="field-hint">{{ t('components.main.form.hints.availabilityMonitor') }}</span>
                 </div>
 
-                <!-- 连通性自动拉黑 -->
+                <!-- 可用性失败自动拉黑 -->
                 <div v-if="modalState.form.availabilityMonitorEnabled" class="form-field switch-field">
                   <span>{{ t('components.main.form.labels.connectivityAutoBlacklist') }}</span>
                   <div class="switch-inline">
@@ -1116,7 +1116,7 @@ const blacklistStatusMap = reactive<Record<ProviderTab, Record<string, Blacklist
 })
 let blacklistTimer: number | undefined
 
-// 连通性状态（已废弃，保留用于兼容）
+// 可用性旧结果（已废弃，保留用于兼容）
 const connectivityResultsMap = reactive<Record<ProviderTab, Record<number, ConnectivityResult>>>({
   claude: {},
   codex: {},
@@ -1350,7 +1350,7 @@ const serializeProviders = (providers: AutomationCard[]) =>
           timeout: provider.availabilityConfig.timeout || 15000,
         }
       : undefined,
-    // 清除旧连通性字段（避免再次写入配置文件）
+    // 清除旧可用性字段（避免再次写入配置文件）
     connectivityCheck: false,
     connectivityTestModel: '',
     connectivityTestEndpoint: '',
@@ -1676,9 +1676,9 @@ const getProviderBlacklistStatus = (providerName: string): BlacklistStatus | nul
   return blacklistStatusMap[activeTab.value][providerName] || null
 }
 
-// 加载连通性测试结果（已废弃，保留兼容）
+// 加载旧可用性测试结果（已废弃，保留兼容）
 const loadConnectivityResults = async (tab: ProviderTab) => {
-  // 'others' Tab 暂不加载连通性结果
+  // 'others' Tab 暂不加载旧可用性结果
   if (tab === 'others') {
     return
   }
@@ -1691,7 +1691,7 @@ const loadConnectivityResults = async (tab: ProviderTab) => {
     })
     connectivityResultsMap[tab] = map
   } catch (err) {
-    console.error(`加载 ${tab} 连通性结果失败:`, err)
+    console.error(`加载 ${tab} 可用性结果失败:`, err)
   }
 }
 
@@ -1714,7 +1714,7 @@ const loadAvailabilityResults = async () => {
   }
 }
 
-// 获取 provider 连通性状态（已废弃）
+// 获取 provider 旧可用性状态（已废弃）
 const getProviderConnectivityResult = (providerId: number): ConnectivityResult | null => {
   return connectivityResultsMap[activeTab.value][providerId] || null
 }
@@ -1724,7 +1724,7 @@ const getProviderAvailabilityResult = (providerId: number): ProviderTimeline | n
   return availabilityResultsMap[activeTab.value][providerId] || null
 }
 
-// 获取连通性状态指示器样式（改用可用性监控结果）
+// 获取可用性状态指示器样式
 const getConnectivityIndicatorClass = (providerId: number): string => {
   const result = getProviderAvailabilityResult(providerId)
   if (!result || !result.latest) return 'connectivity-gray'
@@ -1743,7 +1743,7 @@ const getConnectivityIndicatorClass = (providerId: number): string => {
   }
 }
 
-// 获取连通性状态提示文本（改用可用性监控结果）
+// 获取可用性状态提示文本
 const getConnectivityTooltip = (providerId: number): string => {
   const result = getProviderAvailabilityResult(providerId)
   if (!result || !result.latest) return t('components.main.connectivity.noData')
@@ -2072,7 +2072,7 @@ const selectedTab = ref<ProviderTab>('claude')
 const activeTab = computed<ProviderTab>(() => selectedTab.value)
 const activeCards = computed(() => cards[activeTab.value] ?? [])
 
-// 连通性测试模型选项（根据平台）
+// 可用性测试模型选项（根据平台）
 const connectivityTestModelOptions = computed(() => {
   const options: Record<string, string[]> = {
     claude: ['claude-haiku-4-5-20251001', 'claude-sonnet-4-5-20250929'],
@@ -2082,14 +2082,14 @@ const connectivityTestModelOptions = computed(() => {
   return options[modalState.tabId] || options.claude
 })
 
-// 连通性测试端点选项
+// 可用性测试端点选项
 const connectivityEndpointOptions = [
   { value: '/v1/messages', label: '/v1/messages (Anthropic)' },
   { value: '/v1/chat/completions', label: '/v1/chat/completions (OpenAI)' },
   { value: '/responses', label: '/responses (Codex)' },
 ]
 
-// 连通性测试状态
+// 可用性测试状态
 const testingConnectivity = ref(false)
 const connectivityTestResult = ref<{ success: boolean; message: string } | null>(null)
 
@@ -2108,7 +2108,7 @@ const getDefaultEndpoint = (platform: string, upstreamProtocol = 'auto') => {
 // 获取平台默认认证方式（默认 Bearer，与 v2.2.x 保持一致）
 const getDefaultAuthType = (_platform: string) => 'bearer'
 
-// 手动测试连通性
+// 手动测试可用性
 const handleTestConnectivity = async () => {
   testingConnectivity.value = true
   connectivityTestResult.value = null
@@ -2226,7 +2226,7 @@ type VendorForm = {
     testEndpoint?: string
     timeout?: number
   }
-  // === 旧连通性字段（已废弃） ===
+  // === 旧可用性字段（已废弃） ===
   /** @deprecated */
   connectivityCheck?: boolean
   /** @deprecated */
@@ -2276,7 +2276,7 @@ const defaultFormValues = (platform?: string): VendorForm => ({
     testEndpoint: getDefaultEndpoint(platform || 'claude', 'auto'),
     timeout: 15000,
   },
-  // 旧连通性字段（已废弃，置空）
+  // 旧可用性字段（已废弃，置空）
   connectivityCheck: false,
   connectivityTestModel: '',
   connectivityTestEndpoint: '',
@@ -2394,7 +2394,7 @@ const openEditModal = (card: AutomationCard) => {
         getDefaultEndpoint(activeTab.value, card.upstreamProtocol || 'auto'),
       timeout: card.availabilityConfig?.timeout || 15000,
     },
-    // 旧连通性字段不再写入表单
+    // 旧可用性字段不再写入表单
     connectivityCheck: false,
     connectivityTestModel: '',
     connectivityTestEndpoint: '',
@@ -2479,7 +2479,7 @@ const submitModal = async (): Promise<boolean> => {
           getDefaultEndpoint(modalState.tabId, modalState.form.upstreamProtocol || 'auto'),
         timeout: modalState.form.availabilityConfig?.timeout || 15000,
       },
-      // 旧连通性字段清空（避免再次写入）
+      // 旧可用性字段清空（避免再次写入）
       connectivityCheck: false,
       connectivityTestModel: '',
       connectivityTestEndpoint: '',
@@ -2519,7 +2519,7 @@ const submitModal = async (): Promise<boolean> => {
           getDefaultEndpoint(modalState.tabId, modalState.form.upstreamProtocol || 'auto'),
         timeout: modalState.form.availabilityConfig?.timeout || 15000,
       },
-      // 旧连通性字段清空
+      // 旧可用性字段清空
       connectivityCheck: false,
       connectivityTestModel: '',
       connectivityTestEndpoint: '',
@@ -3593,7 +3593,7 @@ const confirmDeleteCliTool = async () => {
   color: #fff;
 }
 
-/* 连通性状态指示器 */
+/* 可用性状态指示器 */
 .connectivity-dot {
   display: inline-block;
   width: 8px;
@@ -3642,7 +3642,7 @@ const confirmDeleteCliTool = async () => {
   background-color: #6b7280;
 }
 
-/* 测试连通性按钮 */
+/* 测试可用性按钮 */
 .test-connectivity-btn {
   display: flex;
   align-items: center;

@@ -250,11 +250,11 @@
           "enabled": "Enabled",
           "level": "Priority Level",
           "availabilityMonitor": "Availability Monitoring",
-          "connectivityAutoBlacklist": "Auto-Blacklist on Failure",
+          "connectivityAutoBlacklist": "Auto-Blacklist on Availability Failure",
           "availabilityTestModel": "Test Model (optional)",
           "availabilityTestEndpoint": "Test Endpoint (optional)",
           "availabilityTimeout": "Timeout (ms)",
-          "connectivityCheck": "Connectivity Check (deprecated)",
+          "connectivityCheck": "Availability Monitoring (legacy, deprecated)",
           "connectivityTestModel": "Test Model",
           "connectivityTestEndpoint": "Test Endpoint",
           "connectivityAuthType": "Auth Method"
@@ -280,13 +280,13 @@
           "apiEndpoint": "Override the platform default endpoint. Leave blank for default (Claude: /v1/messages for Anthropic, /v1/responses for OpenAI Compatible; Codex: /responses). For GLM models use /v1/chat/completions",
           "upstreamProtocol": "Specify the upstream API protocol. Auto detects from the endpoint; OpenAI Compatible converts Claude Messages requests to OpenAI Responses or Chat Completions",
           "availabilityMonitor": "Enable background health checks for this provider. Checks are performed periodically to monitor availability.",
-          "connectivityAutoBlacklist": "Automatically blacklist this provider if health checks fail repeatedly",
+          "connectivityAutoBlacklist": "Automatically blacklist this provider when availability checks fail repeatedly",
           "availabilityAdvancedConfig": "Advanced configuration (test model, endpoint, timeout) can be edited on the Availability page",
           "availabilityTestModel": "Model to use for health checks. Leave empty to use platform default.",
           "availabilityTestEndpoint": "API endpoint for health checks. Leave empty to use platform default.",
           "availabilityTimeout": "Timeout for health check requests in milliseconds (default: 15000)",
-          "connectivityCheck": "When enabled, connectivity to this provider will be tested periodically; enabling this may consume a small amount of tokens",
-          "connectivityTestModel": "Select a model for connectivity testing, or leave empty to use platform default",
+          "connectivityCheck": "Legacy field, migrated to Availability Monitoring",
+          "connectivityTestModel": "Select a model for availability checks, or leave empty to use platform default",
           "connectivityTestEndpoint": "Select or enter API endpoint path",
           "connectivityAuthType": "Default is Bearer. Use X-API-Key for Anthropic-style APIs. Enter custom header name in the text field if needed."
         },
@@ -295,12 +295,12 @@
           "save": "Save",
           "saveAndApply": "Save & Apply",
           "delete": "Delete",
-          "testConnectivity": "Test Connectivity",
+          "testConnectivity": "Test Availability",
           "testing": "Testing..."
         },
         "connectivity": {
-          "success": "Connected (latency: {latency}ms)",
-          "failed": "Connection failed",
+          "success": "Available (latency: {latency}ms)",
+          "failed": "Availability check failed",
           "error": "Test error: {error}"
         },
         "switch": {
@@ -444,7 +444,7 @@
         "security": "Security",
         "blacklist": "Blacklist Settings",
         "dataImport": "Data Import",
-        "connectivity": "Connectivity Test"
+        "connectivity": "Availability Monitoring"
       },
       "label": {
         "assistant_access": "Accessibility permissions",

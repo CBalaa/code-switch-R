@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-// ConnectivityStatus 连通性状态常量（与 relay-pulse 一致）
+// ConnectivityStatus 可用性状态常量（与 relay-pulse 一致）
 const (
 	StatusAvailable   = 1  // 绿色：可用
 	StatusDegraded    = 2  // 黄色：波动
@@ -37,7 +37,7 @@ const (
 	SubStatusContentMismatch = "content_mismatch"
 )
 
-// ConnectivityResult 连通性测试结果
+// ConnectivityResult 可用性测试结果
 type ConnectivityResult struct {
 	ProviderID   int64     `json:"providerId"`
 	ProviderName string    `json:"providerName"`
@@ -50,7 +50,7 @@ type ConnectivityResult struct {
 	HTTPCode     int       `json:"httpCode,omitempty"`
 }
 
-// ConnectivityTestService 连通性测试服务
+// ConnectivityTestService 可用性测试服务（旧兼容服务）
 type ConnectivityTestService struct {
 	providerService  *ProviderService
 	blacklistService *BlacklistService
@@ -66,7 +66,7 @@ type ConnectivityTestService struct {
 	client *http.Client
 }
 
-// NewConnectivityTestService 创建连通性测试服务
+// NewConnectivityTestService 创建可用性测试服务（旧兼容服务）
 func NewConnectivityTestService(
 	providerService *ProviderService,
 	blacklistService *BlacklistService,
@@ -94,7 +94,7 @@ func NewConnectivityTestService(
 	}
 }
 
-// TestProvider 测试单个供应商连通性
+// TestProvider 测试单个供应商可用性
 func (cts *ConnectivityTestService) TestProvider(ctx context.Context, provider Provider, platform string) *ConnectivityResult {
 	result := &ConnectivityResult{
 		ProviderID:   provider.ID,
@@ -119,7 +119,7 @@ func (cts *ConnectivityTestService) TestProvider(ctx context.Context, provider P
 	authType := cts.getEffectiveAuthType(&provider, platform)
 
 	// 调试日志：打印最终请求信息
-	fmt.Printf("[DEBUG] 连通性测试请求:\n")
+	fmt.Printf("[DEBUG] 可用性测试请求:\n")
 	fmt.Printf("  targetURL: %s\n", targetURL)
 	fmt.Printf("  authType:  %s\n", authType)
 	fmt.Printf("  reqBody:   %s\n", string(reqBody))
@@ -456,7 +456,7 @@ func (cts *ConnectivityTestService) TestAll(platform string) []ConnectivityResul
 	defer cancel()
 
 	for _, provider := range providers {
-		// 只测试启用了连通性检测的供应商
+		// 只测试启用了旧可用性检测的供应商
 		if !provider.ConnectivityCheck {
 			continue
 		}
@@ -685,7 +685,7 @@ type ManualTestResult struct {
 	Message   string `json:"message"`
 }
 
-// TestProviderManual 手动测试供应商连通性（供前端测试按钮调用）
+// TestProviderManual 手动测试供应商可用性（供前端测试按钮调用）
 func (cts *ConnectivityTestService) TestProviderManual(
 	platform string,
 	apiURL string,

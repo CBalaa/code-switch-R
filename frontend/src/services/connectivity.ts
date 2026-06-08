@@ -1,6 +1,6 @@
 import { Call } from '@wailsio/runtime'
 
-// 连通性状态常量（与 relay-pulse 一致）
+// 可用性状态常量（与 relay-pulse 一致）
 export const StatusAvailable = 1    // 绿色：可用
 export const StatusDegraded = 2     // 黄色：波动
 export const StatusUnavailable = 0  // 红色：不可用
@@ -17,7 +17,7 @@ export const SubStatusInvalidRequest = 'invalid_request'
 export const SubStatusNetworkError = 'network_error'
 export const SubStatusContentMismatch = 'content_mismatch'
 
-// 连通性测试结果接口
+// 可用性测试结果接口
 export interface ConnectivityResult {
   providerId: number
   providerName: string

@@ -251,11 +251,11 @@
           "enabled": "启用状态",
           "level": "优先级分组",
           "availabilityMonitor": "可用性监控",
-          "connectivityAutoBlacklist": "失败自动拉黑",
+          "connectivityAutoBlacklist": "可用性失败自动拉黑",
           "availabilityTestModel": "测试模型（可选）",
           "availabilityTestEndpoint": "测试端点（可选）",
           "availabilityTimeout": "超时时间（毫秒）",
-          "connectivityCheck": "连通性检测（已废弃）",
+          "connectivityCheck": "可用性监控（旧字段，已废弃）",
           "connectivityTestModel": "测试模型",
           "connectivityTestEndpoint": "测试端点",
           "connectivityAuthType": "认证方式"
@@ -281,13 +281,13 @@
           "apiEndpoint": "覆盖平台默认端点。留空使用默认（Claude: Anthropic 为 /v1/messages，OpenAI Compatible 为 /v1/responses；Codex: /responses）。GLM 模型请使用 /v1/chat/completions",
           "upstreamProtocol": "指定上游 API 的协议类型。选择 auto 时根据端点自动检测；选择 OpenAI Compatible 时会把 Claude Messages 请求转换到 OpenAI Responses 或 Chat Completions",
           "availabilityMonitor": "启用后会定期进行健康检查，监控此供应商的可用性状态",
-          "connectivityAutoBlacklist": "健康检查失败时自动拉黑该供应商",
+          "connectivityAutoBlacklist": "可用性检查失败时自动拉黑该供应商",
           "availabilityAdvancedConfig": "高级配置（测试模型、端点、超时）可在可用性页面中编辑",
           "availabilityTestModel": "用于健康检查的模型，留空则使用平台默认模型",
           "availabilityTestEndpoint": "用于健康检查的 API 端点，留空则使用平台默认端点",
           "availabilityTimeout": "健康检查请求的超时时间（毫秒），默认 15000",
-          "connectivityCheck": "启用后会定期检测此供应商的连通性，开启该选项可能会消耗少量 tokens",
-          "connectivityTestModel": "选择用于连通性测试的模型，留空则使用平台默认模型",
+          "connectivityCheck": "旧字段，已迁移到可用性监控",
+          "connectivityTestModel": "选择用于可用性检测的模型，留空则使用平台默认模型",
           "connectivityTestEndpoint": "选择或输入 API 端点路径",
           "connectivityAuthType": "默认使用 Bearer。Anthropic 官方 API 请选择 X-API-Key。如需自定义请在下方输入 Header 名称。"
         },
@@ -296,12 +296,12 @@
           "save": "保存",
           "saveAndApply": "保存并应用",
           "delete": "删除",
-          "testConnectivity": "测试连通性",
+          "testConnectivity": "测试可用性",
           "testing": "测试中..."
         },
         "connectivity": {
-          "success": "连接成功（延迟: {latency}ms）",
-          "failed": "连接失败",
+          "success": "可用性正常（延迟: {latency}ms）",
+          "failed": "可用性检测失败",
           "error": "测试出错: {error}"
         },
         "switch": {
@@ -445,7 +445,7 @@
         "security": "安全设置",
         "blacklist": "拉黑配置",
         "dataImport": "数据导入",
-        "connectivity": "连通性检测"
+        "connectivity": "可用性监控"
       },
       "label": {
         "assistant_access": "辅助功能访问权限",
