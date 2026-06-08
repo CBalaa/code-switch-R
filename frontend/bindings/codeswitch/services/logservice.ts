@@ -9,10 +9,6 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 // @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
-export function CostSince(start: string, platform: string): $CancellablePromise<number> {
-    return $Call.ByID(445919367, start, platform);
-}
-
 export function ListProviders(platform: string): $CancellablePromise<string[]> {
     return $Call.ByID(790916236, platform).then(($result: any) => {
         return $$createType0($result);

@@ -240,7 +240,6 @@
       "providers": {
         "requests": "请求数",
         "tokens": "Tokens",
-        "cost": "花费",
         "successRate": "成功率",
         "loading": "刷新中...",
         "noData": "今日暂无数据",
@@ -427,7 +426,6 @@
         "tokenHint": "输入 + 输出 Tokens",
         "cache": "缓存命中",
         "cacheHint": "缓存读取 / 总 Token 流量",
-        "costHint": "近 24 小时总花费",
         "todayScope": "今日 · {date}"
       },
       "table": {
@@ -439,7 +437,6 @@
         "httpCode": "HTTP",
         "stream": "传输",
         "duration": "耗时",
-        "cost": "金额",
         "tokens": "Token 汇总"
       },
       "tokenLabels": {
@@ -447,18 +444,13 @@
         "output": "输出",
         "reasoning": "推理",
         "cacheWrite": "缓存写入",
-        "cacheRead": "缓存读取",
-        "cost": "金额"
+        "cacheRead": "缓存读取"
       },
       "streamOn": "流式",
       "streamOff": "非流",
       "back": "返回主页",
       "nextRefresh": "距离下次刷新 {seconds}s",
       "query": "查询",
-      "costDetail": {
-        "title": "今日消费明细",
-        "empty": "今日暂无消费记录"
-      },
       "tokenDetail": {
         "title": "今日 Token 明细"
       }
@@ -481,17 +473,6 @@
         "language": "界面语言",
         "theme": "主题模式",
         "homeTitle": "显示首页标题",
-        "budgetTotal": "预算总额",
-        "budgetTotalHint": "用于托盘菜单进度条（USD）",
-        "budgetUsedAdjustment": "已用额度调整",
-        "budgetUsedAdjustmentHint": "用于补录已用金额（USD）",
-        "budgetCycle": "启用刷新周期",
-        "budgetCycleHint": "开启后按刷新时间重置预算统计",
-        "budgetCycleMode": "刷新周期",
-        "budgetCycleModeDaily": "每日",
-        "budgetCycleModeWeekly": "每周",
-        "budgetRefreshTime": "刷新时间",
-        "budgetRefreshDay": "刷新星期",
         "weekdayMon": "周一",
         "weekdayTue": "周二",
         "weekdayWed": "周三",
@@ -499,15 +480,6 @@
         "weekdayFri": "周五",
         "weekdaySat": "周六",
         "weekdaySun": "周日",
-        "budgetShowCountdown": "显示重置倒计时",
-        "budgetShowForecast": "显示预算耗尽预测",
-        "budgetForecastMethod": "预测方法",
-        "budgetForecastMethodHint": "选择预算耗尽预测的计算方式",
-        "budgetForecastMethodCycle": "本周期平均速度",
-        "budgetForecastMethod10m": "近 10 分钟速度",
-        "budgetForecastMethod1h": "近 1 小时速度",
-        "budgetForecastMethodYesterday": "昨日平均速度",
-        "budgetForecastMethod24h": "近 24 小时速度",
         "trayPanelClaude": "Claude Code",
         "trayPanelCodex": "Codex",
         "autoStart": "开机自启动",

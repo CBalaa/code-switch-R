@@ -3,12 +3,9 @@ package services
 import (
 	"errors"
 	"fmt"
-	"log"
 	"sort"
 	"strings"
 	"time"
-
-	modelpricing "codeswitch/resources/model-pricing"
 
 	"github.com/daodao97/xgo/xdb"
 )
@@ -16,59 +13,11 @@ import (
 const timeLayout = "2006-01-02 15:04:05"
 
 type LogService struct {
-	pricing   *modelpricing.Service
 	relayKeys *CodexRelayKeyService
 }
 
-func (ls *LogService) CostSince(start string, platform string) (float64, error) {
-	startTime, err := parseTimeInput(start)
-	if err != nil {
-		return 0, err
-	}
-	model := xdb.New("request_log")
-	options := []xdb.Option{
-		xdb.WhereGte("created_at", startTime.Format(timeLayout)),
-		xdb.Field(
-			"model",
-			"input_tokens",
-			"output_tokens",
-			"reasoning_tokens",
-			"cache_create_tokens",
-			"cache_read_tokens",
-		),
-	}
-	if platform != "" {
-		options = append(options, xdb.WhereEq("platform", platform))
-	}
-	records, err := model.Selects(options...)
-	if err != nil {
-		if errors.Is(err, xdb.ErrNotFound) || isNoSuchTableErr(err) {
-			return 0, nil
-		}
-		return 0, err
-	}
-	total := 0.0
-	for _, record := range records {
-		usage := modelpricing.UsageSnapshot{
-			InputTokens:       record.GetInt("input_tokens"),
-			OutputTokens:      record.GetInt("output_tokens"),
-			ReasoningTokens:   record.GetInt("reasoning_tokens"),
-			CacheCreateTokens: record.GetInt("cache_create_tokens"),
-			CacheReadTokens:   record.GetInt("cache_read_tokens"),
-		}
-		cost := ls.calculateCost(record.GetString("model"), usage)
-		total += cost.TotalCost
-	}
-	return total, nil
-}
-
 func NewLogService() *LogService {
-	svc, err := modelpricing.DefaultService()
-	if err != nil {
-		log.Printf("pricing service init failed: %v", err)
-	}
 	return &LogService{
-		pricing:   svc,
 		relayKeys: NewCodexRelayKeyService(),
 	}
 }
@@ -119,7 +68,6 @@ func (ls *LogService) ListRequestLogs(platform string, provider string, limit in
 			FirstEventSec:     record.GetFloat64("first_event_sec"),
 			FirstTextSec:      record.GetFloat64("first_text_sec"),
 		}
-		ls.decorateCost(&logEntry)
 		logs = append(logs, logEntry)
 	}
 	return logs, nil
@@ -254,22 +202,12 @@ func (ls *LogService) StatsSince(platform string) (LogStats, error) {
 		reasoning := record.GetInt("reasoning_tokens")
 		cacheCreate := record.GetInt("cache_create_tokens")
 		cacheRead := record.GetInt("cache_read_tokens")
-		usage := modelpricing.UsageSnapshot{
-			InputTokens:       input,
-			OutputTokens:      output,
-			ReasoningTokens:   reasoning,
-			CacheCreateTokens: cacheCreate,
-			CacheReadTokens:   cacheRead,
-		}
-		cost := ls.calculateCost(record.GetString("model"), usage)
-
 		bucket.TotalRequests++
 		bucket.InputTokens += int64(input)
 		bucket.OutputTokens += int64(output)
 		bucket.ReasoningTokens += int64(reasoning)
 		bucket.CacheCreateTokens += int64(cacheCreate)
 		bucket.CacheReadTokens += int64(cacheRead)
-		bucket.TotalCost += cost.TotalCost
 
 		if createdAt.IsZero() || createdAt.Before(summaryStart) {
 			continue
@@ -280,11 +218,6 @@ func (ls *LogService) StatsSince(platform string) (LogStats, error) {
 		stats.ReasoningTokens += int64(reasoning)
 		stats.CacheCreateTokens += int64(cacheCreate)
 		stats.CacheReadTokens += int64(cacheRead)
-		stats.CostInput += cost.InputCost
-		stats.CostOutput += cost.OutputCost
-		stats.CostCacheCreate += cost.CacheCreateCost
-		stats.CostCacheRead += cost.CacheReadCost
-		stats.CostTotal += cost.TotalCost
 	}
 
 	for i := 0; i < seriesHours; i++ {
@@ -358,14 +291,6 @@ func (ls *LogService) ProviderDailyStats(platform string) ([]ProviderDailyStat, 
 		reasoning := record.GetInt("reasoning_tokens")
 		cacheCreate := record.GetInt("cache_create_tokens")
 		cacheRead := record.GetInt("cache_read_tokens")
-		usage := modelpricing.UsageSnapshot{
-			InputTokens:       input,
-			OutputTokens:      output,
-			ReasoningTokens:   reasoning,
-			CacheCreateTokens: cacheCreate,
-			CacheReadTokens:   cacheRead,
-		}
-		cost := ls.calculateCost(record.GetString("model"), usage)
 		stat.TotalRequests++
 		// 只有 HTTP 200-299 才算成功，其他（包括 0）都算失败
 		if httpCode >= 200 && httpCode < 300 {
@@ -378,7 +303,6 @@ func (ls *LogService) ProviderDailyStats(platform string) ([]ProviderDailyStat, 
 		stat.ReasoningTokens += int64(reasoning)
 		stat.CacheCreateTokens += int64(cacheCreate)
 		stat.CacheReadTokens += int64(cacheRead)
-		stat.CostTotal += cost.TotalCost
 	}
 	stats := make([]ProviderDailyStat, 0, len(statMap))
 	for _, stat := range statMap {
@@ -394,36 +318,6 @@ func (ls *LogService) ProviderDailyStats(platform string) ([]ProviderDailyStat, 
 		return stats[i].TotalRequests > stats[j].TotalRequests
 	})
 	return stats, nil
-}
-
-func (ls *LogService) decorateCost(logEntry *ReqeustLog) {
-	if ls == nil || ls.pricing == nil || logEntry == nil {
-		return
-	}
-	usage := modelpricing.UsageSnapshot{
-		InputTokens:       logEntry.InputTokens,
-		OutputTokens:      logEntry.OutputTokens,
-		ReasoningTokens:   logEntry.ReasoningTokens,
-		CacheCreateTokens: logEntry.CacheCreateTokens,
-		CacheReadTokens:   logEntry.CacheReadTokens,
-	}
-	cost := ls.pricing.CalculateCost(logEntry.Model, usage)
-	logEntry.HasPricing = cost.HasPricing
-	logEntry.InputCost = cost.InputCost
-	logEntry.OutputCost = cost.OutputCost
-	logEntry.ReasoningCost = cost.ReasoningCost
-	logEntry.CacheCreateCost = cost.CacheCreateCost
-	logEntry.CacheReadCost = cost.CacheReadCost
-	logEntry.Ephemeral5mCost = cost.Ephemeral5mCost
-	logEntry.Ephemeral1hCost = cost.Ephemeral1hCost
-	logEntry.TotalCost = cost.TotalCost
-}
-
-func (ls *LogService) calculateCost(model string, usage modelpricing.UsageSnapshot) modelpricing.CostBreakdown {
-	if ls == nil || ls.pricing == nil {
-		return modelpricing.CostBreakdown{}
-	}
-	return ls.pricing.CalculateCost(model, usage)
 }
 
 func parseCreatedAt(record xdb.Record) (time.Time, bool) {
@@ -544,11 +438,6 @@ type LogStats struct {
 	ReasoningTokens   int64            `json:"reasoning_tokens"`
 	CacheCreateTokens int64            `json:"cache_create_tokens"`
 	CacheReadTokens   int64            `json:"cache_read_tokens"`
-	CostTotal         float64          `json:"cost_total"`
-	CostInput         float64          `json:"cost_input"`
-	CostOutput        float64          `json:"cost_output"`
-	CostCacheCreate   float64          `json:"cost_cache_create"`
-	CostCacheRead     float64          `json:"cost_cache_read"`
 	Series            []LogStatsSeries `json:"series"`
 }
 
@@ -563,16 +452,14 @@ type ProviderDailyStat struct {
 	ReasoningTokens    int64   `json:"reasoning_tokens"`
 	CacheCreateTokens  int64   `json:"cache_create_tokens"`
 	CacheReadTokens    int64   `json:"cache_read_tokens"`
-	CostTotal          float64 `json:"cost_total"`
 }
 
 type LogStatsSeries struct {
-	Day               string  `json:"day"`
-	TotalRequests     int64   `json:"total_requests"`
-	InputTokens       int64   `json:"input_tokens"`
-	OutputTokens      int64   `json:"output_tokens"`
-	ReasoningTokens   int64   `json:"reasoning_tokens"`
-	CacheCreateTokens int64   `json:"cache_create_tokens"`
-	CacheReadTokens   int64   `json:"cache_read_tokens"`
-	TotalCost         float64 `json:"total_cost"`
+	Day               string `json:"day"`
+	TotalRequests     int64  `json:"total_requests"`
+	InputTokens       int64  `json:"input_tokens"`
+	OutputTokens      int64  `json:"output_tokens"`
+	ReasoningTokens   int64  `json:"reasoning_tokens"`
+	CacheCreateTokens int64  `json:"cache_create_tokens"`
+	CacheReadTokens   int64  `json:"cache_read_tokens"`
 }

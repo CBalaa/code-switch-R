@@ -18,29 +18,11 @@ const (
 )
 
 type AppSettings struct {
-	ShowHomeTitle             bool    `json:"show_home_title"`
-	BudgetTotal               float64 `json:"budget_total"`
-	BudgetUsedAdjustment      float64 `json:"budget_used_adjustment"`
-	BudgetCycleEnabled        bool    `json:"budget_cycle_enabled"`
-	BudgetCycleMode           string  `json:"budget_cycle_mode"`
-	BudgetRefreshTime         string  `json:"budget_refresh_time"`
-	BudgetRefreshDay          int     `json:"budget_refresh_day"`
-	BudgetShowCountdown       bool    `json:"budget_show_countdown"`
-	BudgetShowForecast        bool    `json:"budget_show_forecast"`
-	BudgetForecastMethod      string  `json:"budget_forecast_method"`
-	BudgetTotalCodex          float64 `json:"budget_total_codex"`
-	BudgetUsedAdjustmentCodex float64 `json:"budget_used_adjustment_codex"`
-	BudgetCycleEnabledCodex   bool    `json:"budget_cycle_enabled_codex"`
-	BudgetCycleModeCodex      string  `json:"budget_cycle_mode_codex"`
-	BudgetRefreshTimeCodex    string  `json:"budget_refresh_time_codex"`
-	BudgetRefreshDayCodex     int     `json:"budget_refresh_day_codex"`
-	BudgetShowCountdownCodex  bool    `json:"budget_show_countdown_codex"`
-	BudgetShowForecastCodex   bool    `json:"budget_show_forecast_codex"`
-	BudgetForecastMethodCodex string  `json:"budget_forecast_method_codex"`
-	AutoStart                 bool    `json:"auto_start"`
-	AutoConnectivityTest      bool    `json:"auto_connectivity_test"`
-	EnableSwitchNotify        bool    `json:"enable_switch_notify"` // 供应商切换通知开关
-	EnableRoundRobin          bool    `json:"enable_round_robin"`   // 同 Level 轮询负载均衡开关（默认关闭）
+	ShowHomeTitle        bool `json:"show_home_title"`
+	AutoStart            bool `json:"auto_start"`
+	AutoConnectivityTest bool `json:"auto_connectivity_test"`
+	EnableSwitchNotify   bool `json:"enable_switch_notify"` // 供应商切换通知开关
+	EnableRoundRobin     bool `json:"enable_round_robin"`   // 同 Level 轮询负载均衡开关（默认关闭）
 }
 
 type persistedAppSettings struct {
@@ -168,29 +150,11 @@ func (as *AppSettingsService) defaultSettings() AppSettings {
 	}
 
 	return AppSettings{
-		ShowHomeTitle:             true,
-		BudgetTotal:               0,
-		BudgetUsedAdjustment:      0,
-		BudgetCycleEnabled:        false,
-		BudgetCycleMode:           "daily",
-		BudgetRefreshTime:         "00:00",
-		BudgetRefreshDay:          1,
-		BudgetShowCountdown:       false,
-		BudgetShowForecast:        false,
-		BudgetForecastMethod:      "cycle",
-		BudgetTotalCodex:          0,
-		BudgetUsedAdjustmentCodex: 0,
-		BudgetCycleEnabledCodex:   false,
-		BudgetCycleModeCodex:      "daily",
-		BudgetRefreshTimeCodex:    "00:00",
-		BudgetRefreshDayCodex:     1,
-		BudgetShowCountdownCodex:  false,
-		BudgetShowForecastCodex:   false,
-		BudgetForecastMethodCodex: "cycle",
-		AutoStart:                 autoStartEnabled,
-		AutoConnectivityTest:      true,  // 默认开启自动可用性监控（开箱即用）
-		EnableSwitchNotify:        true,  // 默认开启切换通知
-		EnableRoundRobin:          false, // 默认关闭轮询（使用顺序降级）
+		ShowHomeTitle:        true,
+		AutoStart:            autoStartEnabled,
+		AutoConnectivityTest: true,  // 默认开启自动可用性监控（开箱即用）
+		EnableSwitchNotify:   true,  // 默认开启切换通知
+		EnableRoundRobin:     false, // 默认关闭轮询（使用顺序降级）
 	}
 }
 

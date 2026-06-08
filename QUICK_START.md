@@ -224,23 +224,6 @@ provider relay server listening on :18100
 ]
 ```
 
-### 技巧 2：成本优化
-```json
-// 优先使用便宜的 provider
-[
-  {
-    "id": 1,
-    "name": "Budget Provider",
-    "modelMapping": {"claude-*": "cheap-claude-*"}
-  },
-  {
-    "id": 2,
-    "name": "Premium Provider",
-    "modelMapping": {"claude-*": "anthropic/claude-*"}
-  }
-]
-```
-
 ---
 
 ## 📚 相关文档

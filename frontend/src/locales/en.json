@@ -239,7 +239,6 @@
       "providers": {
         "requests": "Requests",
         "tokens": "Tokens",
-        "cost": "Cost",
         "successRate": "Success rate",
         "loading": "Refreshing...",
         "noData": "No data yet today",
@@ -426,7 +425,6 @@
         "tokenHint": "Input + output tokens",
         "cache": "Cache reads",
         "cacheHint": "Cache reads / total token traffic",
-        "costHint": "24h total cost",
         "todayScope": "Today · {date}"
       },
       "table": {
@@ -438,7 +436,6 @@
         "httpCode": "HTTP",
         "stream": "Stream",
         "duration": "Duration",
-        "cost": "Cost",
         "tokens": "Tokens"
       },
       "tokenLabels": {
@@ -446,18 +443,13 @@
         "output": "Output",
         "reasoning": "Reasoning",
         "cacheWrite": "Cache write",
-        "cacheRead": "Cache read",
-        "cost": "Cost"
+        "cacheRead": "Cache read"
       },
       "streamOn": "Streaming",
       "streamOff": "Single response",
       "back": "Back to home",
       "nextRefresh": "Next refresh in {seconds}s",
       "query": "Query",
-      "costDetail": {
-        "title": "Today's Cost Breakdown",
-        "empty": "No cost records today"
-      },
       "tokenDetail": {
         "title": "Today's Token Breakdown"
       }
@@ -480,17 +472,6 @@
         "startup": "Started when logged in",
         "theme": "Theme mode",
         "homeTitle": "Show home title",
-        "budgetTotal": "Budget total",
-        "budgetTotalHint": "Used for tray menu progress (USD)",
-        "budgetUsedAdjustment": "Manual used adjustment",
-        "budgetUsedAdjustmentHint": "Offsets used spend (USD)",
-        "budgetCycle": "Enable refresh cycle",
-        "budgetCycleHint": "Reset budget stats at the refresh time",
-        "budgetCycleMode": "Refresh cycle",
-        "budgetCycleModeDaily": "Daily",
-        "budgetCycleModeWeekly": "Weekly",
-        "budgetRefreshTime": "Refresh time",
-        "budgetRefreshDay": "Refresh weekday",
         "weekdayMon": "Mon",
         "weekdayTue": "Tue",
         "weekdayWed": "Wed",
@@ -498,15 +479,6 @@
         "weekdayFri": "Fri",
         "weekdaySat": "Sat",
         "weekdaySun": "Sun",
-        "budgetShowCountdown": "Show reset countdown",
-        "budgetShowForecast": "Show budget depletion forecast",
-        "budgetForecastMethod": "Forecast method",
-        "budgetForecastMethodHint": "Choose how depletion time is estimated",
-        "budgetForecastMethodCycle": "Cycle average rate",
-        "budgetForecastMethod10m": "Last 10 minutes rate",
-        "budgetForecastMethod1h": "Last 1 hour rate",
-        "budgetForecastMethodYesterday": "Yesterday average rate",
-        "budgetForecastMethod24h": "Last 24 hours rate",
         "trayPanelClaude": "Claude Code",
         "trayPanelCodex": "Codex",
         "autoStart": "Launch at login",

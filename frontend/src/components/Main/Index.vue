@@ -366,8 +366,6 @@
                   <span >{{ stats.requests }}</span>
                   <span class="card-metric-separator" aria-hidden="true">·</span>
                   <span>{{ stats.tokens }}</span>
-                  <span class="card-metric-separator" aria-hidden="true">·</span>
-                  <span>{{ stats.cost }}</span>
                 </template>
               </p>
               <!-- 黑名单横幅 -->
@@ -1021,7 +1019,7 @@ import {
   type ProviderTimeline,
 } from '../../services/healthcheck'
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
 const router = useRouter()
 const themeMode = ref<ThemeMode>(getCurrentTheme())
 const resolvedTheme = computed(() => {
@@ -1240,15 +1238,6 @@ const formatTokenNumber = (value: number) => {
   }
   return value.toLocaleString()
 }
-
-const currencyFormatter = computed(() =>
-  new Intl.NumberFormat(locale.value || 'en', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })
-)
 
 const clamp = (value: number, min: number, max: number) => {
   if (max <= min) return min
@@ -1847,12 +1836,11 @@ const refreshAllData = async () => {
 type ProviderStatDisplay =
   | { state: 'loading' | 'empty'; message: string }
   | {
-      state: 'ready'
-      requests: string
-      tokens: string
-      cost: string
-      successRateLabel: string
-      successRateClass: string
+	      state: 'ready'
+	      requests: string
+	      tokens: string
+	      successRateLabel: string
+	      successRateClass: string
     }
 
 const SUCCESS_RATE_THRESHOLDS = {
@@ -1891,11 +1879,10 @@ const providerStatDisplay = (providerName: string): ProviderStatDisplay => {
   const successRateLabel = successRateValue !== null ? formatSuccessRateLabel(successRateValue) : ''
   const successRateClass = successRateValue !== null ? successRateClassName(successRateValue) : ''
   return {
-    state: 'ready',
-    requests: `${t('components.main.providers.requests')}: ${formatMetric(stat.total_requests)}`,
-    tokens: `${t('components.main.providers.tokens')}: ${formatTokenNumber(totalTokens)}`,
-    cost: `${t('components.main.providers.cost')}: ${currencyFormatter.value.format(Math.max(stat.cost_total, 0))}`,
-    successRateLabel,
+	    state: 'ready',
+	    requests: `${t('components.main.providers.requests')}: ${formatMetric(stat.total_requests)}`,
+	    tokens: `${t('components.main.providers.tokens')}: ${formatTokenNumber(totalTokens)}`,
+	    successRateLabel,
     successRateClass,
   }
 }

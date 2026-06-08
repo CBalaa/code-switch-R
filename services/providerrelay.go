@@ -1586,15 +1586,6 @@ type ReqeustLog struct {
 	FirstEventSec               float64 `json:"first_event_sec"`
 	FirstTextSec                float64 `json:"first_text_sec"`
 	CreatedAt                   string  `json:"created_at"`
-	InputCost                   float64 `json:"input_cost"`
-	OutputCost                  float64 `json:"output_cost"`
-	ReasoningCost               float64 `json:"reasoning_cost"`
-	CacheCreateCost             float64 `json:"cache_create_cost"`
-	CacheReadCost               float64 `json:"cache_read_cost"`
-	Ephemeral5mCost             float64 `json:"ephemeral_5m_cost"`
-	Ephemeral1hCost             float64 `json:"ephemeral_1h_cost"`
-	TotalCost                   float64 `json:"total_cost"`
-	HasPricing                  bool    `json:"has_pricing"`
 	startedAt                   time.Time
 	inputTokensIncludeCacheRead bool
 }

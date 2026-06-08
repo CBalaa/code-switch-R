@@ -16,7 +16,7 @@
       <article
         v-for="card in statsCards"
         :key="card.key"
-        :class="['summary-card', { 'summary-card--clickable': card.key === 'cost' || card.key === 'tokens' }]"
+        :class="['summary-card', { 'summary-card--clickable': card.key === 'tokens' }]"
         @click="handleCardClick(card.key)"
       >
         <div class="summary-card__label">{{ card.label }}</div>
@@ -72,7 +72,6 @@
             <th class="col-http">{{ t('components.logs.table.httpCode') }}</th>
             <th class="col-stream">{{ t('components.logs.table.stream') }}</th>
             <th class="col-duration">{{ t('components.logs.table.duration') }}</th>
-            <th class="col-cost">{{ t('components.logs.table.cost') }}</th>
             <th class="col-tokens">{{ t('components.logs.table.tokens') }}</th>
           </tr>
         </thead>
@@ -86,7 +85,6 @@
             <td :class="['code', httpCodeClass(item.http_code)]">{{ item.http_code }}</td>
             <td><span :class="['stream-tag', item.is_stream ? 'on' : 'off']">{{ formatStream(item.is_stream) }}</span></td>
             <td><span :class="['duration-tag', durationColor(item.duration_sec)]">{{ formatDuration(item.duration_sec) }}</span></td>
-            <td class="cost-cell">{{ formatCurrency(item.total_cost) }}</td>
             <td class="token-cell">
               <div>
                 <span class="token-label">{{ t('components.logs.tokenLabels.input') }}</span>
@@ -111,7 +109,7 @@
             </td>
           </tr>
           <tr v-if="!pagedLogs.length && !loading">
-            <td colspan="10" class="empty">{{ t('components.logs.empty') }}</td>
+            <td colspan="9" class="empty">{{ t('components.logs.empty') }}</td>
           </tr>
         </tbody>
       </table>
@@ -129,28 +127,6 @@
         </BaseButton>
       </div>
     </div>
-
-    <!-- 金额明细弹窗 -->
-    <BaseModal
-      :open="costDetailModal.open"
-      :title="t('components.logs.costDetail.title')"
-      @close="closeCostDetailModal"
-    >
-      <div class="cost-detail-modal">
-        <p v-if="costDetailModal.loading" class="cost-detail-loading">
-          {{ t('components.logs.loading') }}
-        </p>
-        <div v-else-if="costDetailModal.data.length === 0" class="cost-detail-empty">
-          {{ t('components.logs.costDetail.empty') }}
-        </div>
-        <ul v-else class="cost-detail-list">
-          <li v-for="item in costDetailModal.data" :key="item.provider" class="cost-detail-item">
-            <span class="cost-detail-item__name">{{ item.provider }}</span>
-            <span class="cost-detail-item__value">{{ formatCurrency(item.cost_total) }}</span>
-          </li>
-        </ul>
-      </div>
-    </BaseModal>
 
     <!-- Token 明细弹窗 -->
     <BaseModal
@@ -184,12 +160,10 @@ import {
   fetchRequestLogs,
   fetchLogProviders,
   fetchLogStats,
-  fetchProviderDailyStats,
   type RequestLog,
   type LogStats,
   type LogStatsSeries,
   type LogPlatform,
-  type ProviderDailyStat,
 } from '../../services/logs'
 import {
   Chart,
@@ -217,17 +191,6 @@ const PAGE_SIZE = 15
 const providerOptions = ref<string[]>([])
 const statsSeries = computed<LogStatsSeries[]>(() => stats.value?.series ?? [])
 
-// 金额明细弹窗状态
-const costDetailModal = reactive<{
-  open: boolean
-  loading: boolean
-  data: ProviderDailyStat[]
-}>({
-  open: false,
-  loading: false,
-  data: [],
-})
-
 // Token 明细弹窗状态
 const tokenDetailModal = reactive<{
   open: boolean
@@ -235,35 +198,9 @@ const tokenDetailModal = reactive<{
   open: false,
 })
 
-// 打开金额明细弹窗
-const openCostDetailModal = async () => {
-  costDetailModal.open = true
-  costDetailModal.loading = true
-  costDetailModal.data = []
-
-  try {
-    const stats = await fetchProviderDailyStats(filters.platform)
-    // 按金额降序排序，过滤掉金额为 0 的
-    costDetailModal.data = (stats ?? [])
-      .filter(item => item.cost_total > 0)
-      .sort((a, b) => b.cost_total - a.cost_total)
-  } catch (error) {
-    console.error('failed to load provider daily stats', error)
-  } finally {
-    costDetailModal.loading = false
-  }
-}
-
-// 关闭金额明细弹窗
-const closeCostDetailModal = () => {
-  costDetailModal.open = false
-}
-
 // 处理卡片点击
 const handleCardClick = (key: string) => {
-  if (key === 'cost') {
-    openCostDetailModal()
-  } else if (key === 'tokens') {
+  if (key === 'tokens') {
     openTokenDetailModal()
   }
 }
@@ -305,15 +242,6 @@ const chartData = computed(() => {
   return {
     labels: series.map((item) => formatSeriesLabel(item.day)),
     datasets: [
-      {
-        label: t('components.logs.tokenLabels.cost'),
-        data: series.map((item) => Number(((item.total_cost ?? 0)).toFixed(4))),
-        borderColor: '#f97316',
-        backgroundColor: 'rgba(249, 115, 22, 0.2)',
-        tension: 0.3,
-        fill: false,
-        yAxisID: 'yCost',
-      },
       {
         label: t('components.logs.tokenLabels.input'),
         data: series.map((item) => item.input_tokens ?? 0),
@@ -385,20 +313,6 @@ const chartOptions: ChartOptions<'line'> = {
       beginAtZero: true,
       ticks: { color: '#94a3b8' },
       grid: { color: 'rgba(148, 163, 184, 0.2)' },
-    },
-    yCost: {
-      position: 'right',
-      beginAtZero: true,
-      grid: { drawOnChartArea: false },
-      ticks: {
-        color: '#475569',
-        callback: (value: string | number) => {
-          const numeric = typeof value === 'number' ? value : Number(value)
-          if (Number.isNaN(numeric)) return '$0'
-          if (numeric >= 1) return `$${numeric.toFixed(2)}`
-          return `$${numeric.toFixed(4)}`
-        },
-      },
     },
   },
 }
@@ -609,19 +523,6 @@ const formatCacheHitRate = (cacheRead?: number, totalTokens?: number) => {
   return `${rate.toFixed(1)}%`
 }
 
-const formatCurrency = (value?: number) => {
-  if (value === undefined || value === null || Number.isNaN(value)) {
-    return '$0.0000'
-  }
-  if (value >= 1) {
-    return `$${value.toFixed(2)}`
-  }
-  if (value >= 0.01) {
-    return `$${value.toFixed(3)}`
-  }
-  return `$${value.toFixed(4)}`
-}
-
 const startOfTodayLocal = () => {
   const now = new Date()
   now.setHours(0, 0, 0, 0)
@@ -652,12 +553,6 @@ const statsCards = computed(() => {
       hint: t('components.logs.summary.cacheHint'),
       value: data ? formatTokenNumber(data.cache_read_tokens) : '—',
       subValue: data ? formatCacheHitRate(data.cache_read_tokens, totalTokens) : '',
-    },
-    {
-      key: 'cost',
-      label: t('components.logs.tokenLabels.cost'),
-      hint: summaryDate ? t('components.logs.summary.todayScope', { date: summaryDate }) : '',
-      value: formatCurrency(data?.cost_total ?? 0),
     },
   ]
 })
@@ -794,59 +689,6 @@ html.dark .summary-card--clickable:hover {
   box-shadow: 0 4px 12px rgba(249, 115, 22, 0.25);
 }
 
-/* 弹窗内容 */
-.cost-detail-modal {
-  min-height: 120px;
-}
-.cost-detail-loading,
-.cost-detail-empty {
-  text-align: center;
-  color: #64748b;
-  padding: 2rem 0;
-}
-html.dark .cost-detail-loading,
-html.dark .cost-detail-empty {
-  color: #94a3b8;
-}
-.cost-detail-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-.cost-detail-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0.75rem 1rem;
-  background: rgba(148, 163, 184, 0.08);
-  border-radius: 8px;
-  transition: background 0.15s ease;
-}
-.cost-detail-item:hover {
-  background: rgba(148, 163, 184, 0.12);
-}
-html.dark .cost-detail-item {
-  background: rgba(148, 163, 184, 0.12);
-}
-html.dark .cost-detail-item:hover {
-  background: rgba(148, 163, 184, 0.18);
-}
-.cost-detail-item__name {
-  font-weight: 500;
-  color: #1e293b;
-}
-html.dark .cost-detail-item__name {
-  color: #f1f5f9;
-}
-.cost-detail-item__value {
-  font-weight: 600;
-  color: #f97316;
-  font-variant-numeric: tabular-nums;
-}
-
 /* Token 弹窗 */
 .token-detail-modal {
   min-height: 80px;
@@ -887,13 +729,4 @@ html.dark .token-detail-item__name {
   font-variant-numeric: tabular-nums;
 }
 
-/* 金额列 */
-.col-cost {
-  width: 80px;
-}
-.cost-cell {
-  color: #f97316;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-}
 </style>

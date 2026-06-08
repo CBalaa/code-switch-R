@@ -11,24 +11,6 @@ import * as time$0 from "../../time/models.js";
 
 export class AppSettings {
     "show_home_title": boolean;
-    "budget_total": number;
-    "budget_used_adjustment": number;
-    "budget_cycle_enabled": boolean;
-    "budget_cycle_mode": string;
-    "budget_refresh_time": string;
-    "budget_refresh_day": number;
-    "budget_show_countdown": boolean;
-    "budget_show_forecast": boolean;
-    "budget_forecast_method": string;
-    "budget_total_codex": number;
-    "budget_used_adjustment_codex": number;
-    "budget_cycle_enabled_codex": boolean;
-    "budget_cycle_mode_codex": string;
-    "budget_refresh_time_codex": string;
-    "budget_refresh_day_codex": number;
-    "budget_show_countdown_codex": boolean;
-    "budget_show_forecast_codex": boolean;
-    "budget_forecast_method_codex": string;
     "auto_start": boolean;
     "auto_connectivity_test": boolean;
 
@@ -46,60 +28,6 @@ export class AppSettings {
     constructor($$source: Partial<AppSettings> = {}) {
         if (!("show_home_title" in $$source)) {
             this["show_home_title"] = false;
-        }
-        if (!("budget_total" in $$source)) {
-            this["budget_total"] = 0;
-        }
-        if (!("budget_used_adjustment" in $$source)) {
-            this["budget_used_adjustment"] = 0;
-        }
-        if (!("budget_cycle_enabled" in $$source)) {
-            this["budget_cycle_enabled"] = false;
-        }
-        if (!("budget_cycle_mode" in $$source)) {
-            this["budget_cycle_mode"] = "";
-        }
-        if (!("budget_refresh_time" in $$source)) {
-            this["budget_refresh_time"] = "";
-        }
-        if (!("budget_refresh_day" in $$source)) {
-            this["budget_refresh_day"] = 0;
-        }
-        if (!("budget_show_countdown" in $$source)) {
-            this["budget_show_countdown"] = false;
-        }
-        if (!("budget_show_forecast" in $$source)) {
-            this["budget_show_forecast"] = false;
-        }
-        if (!("budget_forecast_method" in $$source)) {
-            this["budget_forecast_method"] = "";
-        }
-        if (!("budget_total_codex" in $$source)) {
-            this["budget_total_codex"] = 0;
-        }
-        if (!("budget_used_adjustment_codex" in $$source)) {
-            this["budget_used_adjustment_codex"] = 0;
-        }
-        if (!("budget_cycle_enabled_codex" in $$source)) {
-            this["budget_cycle_enabled_codex"] = false;
-        }
-        if (!("budget_cycle_mode_codex" in $$source)) {
-            this["budget_cycle_mode_codex"] = "";
-        }
-        if (!("budget_refresh_time_codex" in $$source)) {
-            this["budget_refresh_time_codex"] = "";
-        }
-        if (!("budget_refresh_day_codex" in $$source)) {
-            this["budget_refresh_day_codex"] = 0;
-        }
-        if (!("budget_show_countdown_codex" in $$source)) {
-            this["budget_show_countdown_codex"] = false;
-        }
-        if (!("budget_show_forecast_codex" in $$source)) {
-            this["budget_show_forecast_codex"] = false;
-        }
-        if (!("budget_forecast_method_codex" in $$source)) {
-            this["budget_forecast_method_codex"] = "";
         }
         if (!("auto_start" in $$source)) {
             this["auto_start"] = false;
@@ -1593,11 +1521,6 @@ export class LogStats {
     "reasoning_tokens": number;
     "cache_create_tokens": number;
     "cache_read_tokens": number;
-    "cost_total": number;
-    "cost_input": number;
-    "cost_output": number;
-    "cost_cache_create": number;
-    "cost_cache_read": number;
     "series": LogStatsSeries[];
 
     /** Creates a new LogStats instance. */
@@ -1619,21 +1542,6 @@ export class LogStats {
         }
         if (!("cache_read_tokens" in $$source)) {
             this["cache_read_tokens"] = 0;
-        }
-        if (!("cost_total" in $$source)) {
-            this["cost_total"] = 0;
-        }
-        if (!("cost_input" in $$source)) {
-            this["cost_input"] = 0;
-        }
-        if (!("cost_output" in $$source)) {
-            this["cost_output"] = 0;
-        }
-        if (!("cost_cache_create" in $$source)) {
-            this["cost_cache_create"] = 0;
-        }
-        if (!("cost_cache_read" in $$source)) {
-            this["cost_cache_read"] = 0;
         }
         if (!("series" in $$source)) {
             this["series"] = [];
@@ -1663,7 +1571,6 @@ export class LogStatsSeries {
     "reasoning_tokens": number;
     "cache_create_tokens": number;
     "cache_read_tokens": number;
-    "total_cost": number;
 
     /** Creates a new LogStatsSeries instance. */
     constructor($$source: Partial<LogStatsSeries> = {}) {
@@ -1687,9 +1594,6 @@ export class LogStatsSeries {
         }
         if (!("cache_read_tokens" in $$source)) {
             this["cache_read_tokens"] = 0;
-        }
-        if (!("total_cost" in $$source)) {
-            this["total_cost"] = 0;
         }
 
         Object.assign(this, $$source);
@@ -2075,7 +1979,6 @@ export class ProviderDailyStat {
     "reasoning_tokens": number;
     "cache_create_tokens": number;
     "cache_read_tokens": number;
-    "cost_total": number;
 
     /** Creates a new ProviderDailyStat instance. */
     constructor($$source: Partial<ProviderDailyStat> = {}) {
@@ -2108,9 +2011,6 @@ export class ProviderDailyStat {
         }
         if (!("cache_read_tokens" in $$source)) {
             this["cache_read_tokens"] = 0;
-        }
-        if (!("cost_total" in $$source)) {
-            this["cost_total"] = 0;
         }
 
         Object.assign(this, $$source);
@@ -2267,15 +2167,6 @@ export class ReqeustLog {
     "is_stream": boolean;
     "duration_sec": number;
     "created_at": string;
-    "input_cost": number;
-    "output_cost": number;
-    "reasoning_cost": number;
-    "cache_create_cost": number;
-    "cache_read_cost": number;
-    "ephemeral_5m_cost": number;
-    "ephemeral_1h_cost": number;
-    "total_cost": number;
-    "has_pricing": boolean;
 
     /** Creates a new ReqeustLog instance. */
     constructor($$source: Partial<ReqeustLog> = {}) {
@@ -2323,33 +2214,6 @@ export class ReqeustLog {
         }
         if (!("created_at" in $$source)) {
             this["created_at"] = "";
-        }
-        if (!("input_cost" in $$source)) {
-            this["input_cost"] = 0;
-        }
-        if (!("output_cost" in $$source)) {
-            this["output_cost"] = 0;
-        }
-        if (!("reasoning_cost" in $$source)) {
-            this["reasoning_cost"] = 0;
-        }
-        if (!("cache_create_cost" in $$source)) {
-            this["cache_create_cost"] = 0;
-        }
-        if (!("cache_read_cost" in $$source)) {
-            this["cache_read_cost"] = 0;
-        }
-        if (!("ephemeral_5m_cost" in $$source)) {
-            this["ephemeral_5m_cost"] = 0;
-        }
-        if (!("ephemeral_1h_cost" in $$source)) {
-            this["ephemeral_1h_cost"] = 0;
-        }
-        if (!("total_cost" in $$source)) {
-            this["total_cost"] = 0;
-        }
-        if (!("has_pricing" in $$source)) {
-            this["has_pricing"] = false;
         }
 
         Object.assign(this, $$source);

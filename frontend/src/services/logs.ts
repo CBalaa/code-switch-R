@@ -21,14 +21,6 @@ export type RequestLog = {
   first_event_sec?: number
   first_text_sec?: number
   created_at: string
-  total_cost?: number
-  input_cost?: number
-  output_cost?: number
-  cache_create_cost?: number
-  cache_read_cost?: number
-  ephemeral_5m_cost?: number
-  ephemeral_1h_cost?: number
-  has_pricing?: boolean
 }
 
 type RequestLogQuery = {
@@ -56,7 +48,6 @@ export type LogStatsSeries = {
   reasoning_tokens: number
   cache_create_tokens: number
   cache_read_tokens: number
-  total_cost: number
 }
 
 export type LogStats = {
@@ -66,20 +57,11 @@ export type LogStats = {
   reasoning_tokens: number
   cache_create_tokens: number
   cache_read_tokens: number
-  cost_total: number
-  cost_input: number
-  cost_output: number
-  cost_cache_create: number
-  cost_cache_read: number
   series: LogStatsSeries[]
 }
 
 export const fetchLogStats = async (platform: LogPlatform | '' = ''): Promise<LogStats> => {
   return Call.ByName('codeswitch/services.LogService.StatsSince', platform)
-}
-
-export const fetchCostSince = async (start: string, platform: LogPlatform | '' = ''): Promise<number> => {
-  return Call.ByName('codeswitch/services.LogService.CostSince', start, platform)
 }
 
 export type ProviderDailyStat = {
@@ -93,7 +75,6 @@ export type ProviderDailyStat = {
   reasoning_tokens: number
   cache_create_tokens: number
   cache_read_tokens: number
-  cost_total: number
 }
 
 export const fetchProviderDailyStats = async (
