@@ -952,8 +952,8 @@ func (prs *ProviderRelayService) forwardRequest(
 				platform, model, provider, relay_key_id, http_code,
 				input_tokens, output_tokens, cache_create_tokens, cache_read_tokens,
 				reasoning_tokens, is_stream, duration_sec,
-				upstream_header_sec, first_event_sec, first_text_sec
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				upstream_header_sec, first_event_sec, first_text_sec, created_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`,
 			requestLog.Platform,
 			requestLog.Model,
@@ -970,6 +970,7 @@ func (prs *ProviderRelayService) forwardRequest(
 			requestLog.UpstreamHeaderSec,
 			requestLog.FirstEventSec,
 			requestLog.FirstTextSec,
+			time.Now().UTC().Format(timeLayout),
 		)
 
 		if err != nil {
@@ -2096,14 +2097,15 @@ func (prs *ProviderRelayService) geminiProxyHandler(apiVersion string) gin.Handl
 					platform, model, provider, relay_key_id, http_code,
 					input_tokens, output_tokens, cache_create_tokens, cache_read_tokens,
 					reasoning_tokens, is_stream, duration_sec,
-					upstream_header_sec, first_event_sec, first_text_sec
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+					upstream_header_sec, first_event_sec, first_text_sec, created_at
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			`,
 				requestLog.Platform, requestLog.Model, requestLog.Provider, requestLog.RelayKeyID, requestLog.HttpCode,
 				requestLog.InputTokens, requestLog.OutputTokens, requestLog.CacheCreateTokens,
 				requestLog.CacheReadTokens, requestLog.ReasoningTokens,
 				boolToInt(requestLog.IsStream), requestLog.DurationSec,
 				requestLog.UpstreamHeaderSec, requestLog.FirstEventSec, requestLog.FirstTextSec,
+				time.Now().UTC().Format(timeLayout),
 			)
 		}()
 

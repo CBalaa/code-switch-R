@@ -294,6 +294,10 @@ const chartOptions: ChartOptions<'line'> = {
 }
 const formatSeriesLabel = (value?: string) => {
   if (!value) return ''
+  const beijingTime = value.match(/^\d{4}-\d{2}-\d{2}[ T](\d{2}):(\d{2})/)
+  if (beijingTime) {
+    return `${beijingTime[1]}:${beijingTime[2]}`
+  }
   const parsed = parseLogDate(value)
   if (parsed) {
     return `${padHour(parsed.getHours())}:00`
@@ -420,6 +424,9 @@ const backToHome = () => {
 const padHour = (num: number) => num.toString().padStart(2, '0')
 
 const formatTime = (value?: string) => {
+  if (value && /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}$/.test(value)) {
+    return value.replace('T', ' ')
+  }
   const date = parseLogDate(value)
   if (!date) return value || '—'
   return `${date.getFullYear()}-${padHour(date.getMonth() + 1)}-${padHour(date.getDate())} ${padHour(date.getHours())}:${padHour(date.getMinutes())}:${padHour(date.getSeconds())}`
@@ -499,15 +506,8 @@ const formatCacheHitRate = (cacheRead?: number, totalTokens?: number) => {
   return `${rate.toFixed(1)}%`
 }
 
-const startOfTodayLocal = () => {
-  const now = new Date()
-  now.setHours(0, 0, 0, 0)
-  return now
-}
-
 const statsCards = computed(() => {
   const data = stats.value
-  const summaryDate = summaryDateLabel.value
   const totalTokens = (data?.input_tokens ?? 0) + (data?.output_tokens ?? 0)
   return [
     {
@@ -530,13 +530,6 @@ const statsCards = computed(() => {
       subValue: data ? formatCacheHitRate(data.cache_read_tokens, totalTokens) : '',
     },
   ]
-})
-
-const summaryDateLabel = computed(() => {
-  const firstBucket = statsSeries.value.find((item) => item.day)
-  const parsed = parseLogDate(firstBucket?.day ?? '')
-  const date = parsed ?? startOfTodayLocal()
-  return `${date.getFullYear()}-${padHour(date.getMonth() + 1)}-${padHour(date.getDate())}`
 })
 
 const loadProviderOptions = async () => {

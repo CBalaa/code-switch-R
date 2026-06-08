@@ -12,6 +12,8 @@ import (
 
 const timeLayout = "2006-01-02 15:04:05"
 
+var beijingLocation = loadBeijingLocation()
+
 type LogService struct {
 	relayKeys *CodexRelayKeyService
 }
@@ -61,7 +63,7 @@ func (ls *LogService) ListRequestLogs(platform string, provider string, limit in
 			CacheCreateTokens: record.GetInt("cache_create_tokens"),
 			CacheReadTokens:   record.GetInt("cache_read_tokens"),
 			ReasoningTokens:   record.GetInt("reasoning_tokens"),
-			CreatedAt:         record.GetString("created_at"),
+			CreatedAt:         formatCreatedAtBeijing(record),
 			IsStream:          record.GetBool("is_stream"),
 			DurationSec:       record.GetFloat64("duration_sec"),
 			UpstreamHeaderSec: record.GetFloat64("upstream_header_sec"),
@@ -132,14 +134,16 @@ func (ls *LogService) StatsSince(platform string) (LogStats, error) {
 	stats := LogStats{
 		Series: make([]LogStatsSeries, 0, seriesHours),
 	}
-	now := time.Now()
+	loc := beijingLocation
+	now := time.Now().In(loc)
 	model := xdb.New("request_log")
 	seriesStart := startOfDay(now)
 	seriesEnd := seriesStart.Add(seriesHours * time.Hour)
-	queryStart := seriesStart.Add(-24 * time.Hour)
-	summaryStart := seriesStart
+	queryStart := seriesStart.In(time.UTC).Format(timeLayout)
+	queryEnd := seriesEnd.In(time.UTC).Format(timeLayout)
 	options := []xdb.Option{
-		xdb.WhereGte("created_at", queryStart.Format(timeLayout)),
+		xdb.WhereGte("created_at", queryStart),
+		xdb.WhereLt("created_at", queryEnd),
 		xdb.Field(
 			"model",
 			"input_tokens",
@@ -209,7 +213,7 @@ func (ls *LogService) StatsSince(platform string) (LogStats, error) {
 		bucket.CacheCreateTokens += int64(cacheCreate)
 		bucket.CacheReadTokens += int64(cacheRead)
 
-		if createdAt.IsZero() || createdAt.Before(summaryStart) {
+		if createdAt.IsZero() {
 			continue
 		}
 		stats.TotalRequests++
@@ -235,12 +239,15 @@ func (ls *LogService) StatsSince(platform string) (LogStats, error) {
 }
 
 func (ls *LogService) ProviderDailyStats(platform string) ([]ProviderDailyStat, error) {
-	start := startOfDay(time.Now())
+	loc := beijingLocation
+	start := startOfDay(time.Now().In(loc))
 	end := start.Add(24 * time.Hour)
-	queryStart := start.Add(-24 * time.Hour)
+	queryStart := start.In(time.UTC).Format(timeLayout)
+	queryEnd := end.In(time.UTC).Format(timeLayout)
 	model := xdb.New("request_log")
 	options := []xdb.Option{
-		xdb.WhereGte("created_at", queryStart.Format(timeLayout)),
+		xdb.WhereGte("created_at", queryStart),
+		xdb.WhereLt("created_at", queryEnd),
 		xdb.Field(
 			"provider",
 			"model",
@@ -321,14 +328,23 @@ func (ls *LogService) ProviderDailyStats(platform string) ([]ProviderDailyStat, 
 }
 
 func parseCreatedAt(record xdb.Record) (time.Time, bool) {
-	if t := record.GetTime("created_at"); t != nil {
-		return t.In(time.Local), true
-	}
 	raw := strings.TrimSpace(record.GetString("created_at"))
+	if raw != "" {
+		if parsed, hasTime := parseLogTimestamp(raw); !parsed.IsZero() {
+			return parsed, hasTime
+		}
+	}
+	if t := record.GetTime("created_at"); t != nil {
+		return t.In(beijingLocation), true
+	}
+	return time.Time{}, false
+}
+
+func parseLogTimestamp(raw string) (time.Time, bool) {
+	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return time.Time{}, false
 	}
-
 	layouts := []string{
 		timeLayout,
 		time.RFC3339,
@@ -340,21 +356,21 @@ func parseCreatedAt(record xdb.Record) (time.Time, bool) {
 	}
 	for _, layout := range layouts {
 		if parsed, err := time.Parse(layout, raw); err == nil {
-			return parsed.In(time.Local), true
+			return parsed.In(beijingLocation), true
 		}
-		if parsed, err := time.ParseInLocation(layout, raw, time.Local); err == nil {
-			return parsed.In(time.Local), true
+		if parsed, err := time.ParseInLocation(layout, raw, beijingLocation); err == nil {
+			return parsed.In(beijingLocation), true
 		}
 	}
 
 	if normalized := strings.Replace(raw, " ", "T", 1); normalized != raw {
 		if parsed, err := time.Parse(time.RFC3339, normalized); err == nil {
-			return parsed.In(time.Local), true
+			return parsed.In(beijingLocation), true
 		}
 	}
 
 	if len(raw) >= len("2006-01-02") {
-		if parsed, err := time.ParseInLocation("2006-01-02", raw[:10], time.Local); err == nil {
+		if parsed, err := time.ParseInLocation("2006-01-02", raw[:10], beijingLocation); err == nil {
 			return parsed, false
 		}
 	}
@@ -365,7 +381,7 @@ func parseCreatedAt(record xdb.Record) (time.Time, bool) {
 func parseTimeInput(value string) (time.Time, error) {
 	raw := strings.TrimSpace(value)
 	if raw == "" {
-		return startOfDay(time.Now()), nil
+		return startOfDay(time.Now().In(beijingLocation)), nil
 	}
 	layouts := []string{
 		time.RFC3339,
@@ -378,19 +394,19 @@ func parseTimeInput(value string) (time.Time, error) {
 	}
 	for _, layout := range layouts {
 		if parsed, err := time.Parse(layout, raw); err == nil {
-			return parsed.In(time.Local), nil
+			return parsed.In(beijingLocation), nil
 		}
-		if parsed, err := time.ParseInLocation(layout, raw, time.Local); err == nil {
-			return parsed.In(time.Local), nil
+		if parsed, err := time.ParseInLocation(layout, raw, beijingLocation); err == nil {
+			return parsed.In(beijingLocation), nil
 		}
 	}
 	if normalized := strings.Replace(raw, " ", "T", 1); normalized != raw {
 		if parsed, err := time.Parse(time.RFC3339, normalized); err == nil {
-			return parsed.In(time.Local), nil
+			return parsed.In(beijingLocation), nil
 		}
 	}
 	if len(raw) >= len("2006-01-02") {
-		if parsed, err := time.ParseInLocation("2006-01-02", raw[:10], time.Local); err == nil {
+		if parsed, err := time.ParseInLocation("2006-01-02", raw[:10], beijingLocation); err == nil {
 			return parsed, nil
 		}
 	}
@@ -398,10 +414,11 @@ func parseTimeInput(value string) (time.Time, error) {
 }
 
 func dayFromTimestamp(value string) string {
+	if parsed, _ := parseLogTimestamp(value); !parsed.IsZero() {
+		return parsed.Format("2006-01-02")
+	}
+	value = strings.TrimSpace(value)
 	if len(value) >= len("2006-01-02") {
-		if t, err := time.ParseInLocation(timeLayout, value, time.Local); err == nil {
-			return t.Format("2006-01-02")
-		}
 		return value[:10]
 	}
 	return value
@@ -410,6 +427,25 @@ func dayFromTimestamp(value string) string {
 func startOfDay(t time.Time) time.Time {
 	y, m, d := t.Date()
 	return time.Date(y, m, d, 0, 0, 0, 0, t.Location())
+}
+
+func loadBeijingLocation() *time.Location {
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		return time.FixedZone("Asia/Shanghai", 8*60*60)
+	}
+	return loc
+}
+
+func formatCreatedAtBeijing(record xdb.Record) string {
+	createdAt, hasTime := parseCreatedAt(record)
+	if !createdAt.IsZero() {
+		if hasTime {
+			return createdAt.Format(timeLayout)
+		}
+		return createdAt.Format("2006-01-02")
+	}
+	return record.GetString("created_at")
 }
 
 func startOfHour(t time.Time) time.Time {
