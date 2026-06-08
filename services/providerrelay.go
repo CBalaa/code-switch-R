@@ -52,6 +52,8 @@ type ProviderRelayService struct {
 var errClientAbort = errors.New("client aborted, skip failure count")
 var errCodexEmptyStream = errors.New("codex upstream stream closed before useful content")
 
+const codexEmptyStreamRetryDelay = time.Second
+
 func NewProviderRelayService(providerService *ProviderService, geminiService *GeminiService, codexRelayKeys *CodexRelayKeyService, blacklistService *BlacklistService, notificationService *NotificationService, appSettings *AppSettingsService, addr string) *ProviderRelayService {
 	if addr == "" {
 		addr = DefaultRelayBindAddr
@@ -573,6 +575,13 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 						startTime := time.Now()
 						ok, err := prs.forwardRequest(c, kind, provider, effectiveEndpoint, query, clientHeaders, currentBodyBytes, isStream, effectiveModel)
 						duration := time.Since(startTime)
+						if !ok && errors.Is(err, errCodexEmptyStream) {
+							var retryAttempts int
+							var retryDuration time.Duration
+							ok, provider, err, retryAttempts, retryDuration = prs.retryCodexEmptyStreamSameProvider(c, kind, provider, endpoint, query, clientHeaders, bodyBytes, isStream, requestedModel)
+							totalAttempts += retryAttempts
+							duration += retryDuration
+						}
 
 						if ok {
 							fmt.Printf("[INFO] ✓ 成功: %s | 重试 %d 次 | 耗时: %.2fs\n",
@@ -700,6 +709,13 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 				startTime := time.Now()
 				ok, err := prs.forwardRequest(c, kind, provider, effectiveEndpoint, query, clientHeaders, currentBodyBytes, isStream, effectiveModel)
 				duration := time.Since(startTime)
+				if !ok && errors.Is(err, errCodexEmptyStream) {
+					var retryAttempts int
+					var retryDuration time.Duration
+					ok, provider, err, retryAttempts, retryDuration = prs.retryCodexEmptyStreamSameProvider(c, kind, provider, endpoint, query, clientHeaders, bodyBytes, isStream, requestedModel)
+					totalAttempts += retryAttempts
+					duration += retryDuration
+				}
 
 				if ok {
 					fmt.Printf("[INFO]   ✓ Level %d 成功: %s | 耗时: %.2fs\n", level, provider.Name, duration.Seconds())
@@ -1190,6 +1206,133 @@ func waitBeforeProviderRetry(ctx context.Context) error {
 	case <-timer.C:
 		return nil
 	}
+}
+
+func waitBeforeCodexEmptyStreamRetry(ctx context.Context) error {
+	timer := time.NewTimer(codexEmptyStreamRetryDelay)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+func (prs *ProviderRelayService) retryCodexEmptyStreamSameProvider(
+	c *gin.Context,
+	kind string,
+	initialProvider Provider,
+	endpoint string,
+	query map[string]string,
+	clientHeaders map[string]string,
+	originalBodyBytes []byte,
+	isStream bool,
+	requestedModel string,
+) (bool, Provider, error, int, time.Duration) {
+	provider := initialProvider
+	attempts := 0
+	totalDuration := time.Duration(0)
+
+	for {
+		if err := waitBeforeCodexEmptyStreamRetry(c.Request.Context()); err != nil {
+			return false, provider, fmt.Errorf("%w: %v", errClientAbort, err), attempts, totalDuration
+		}
+
+		nextProvider, ok, err := prs.selectCodexEmptyStreamRetryProvider(kind, provider.Name, requestedModel)
+		if err != nil {
+			return false, provider, err, attempts, totalDuration
+		}
+		if !ok {
+			fmt.Printf("[INFO] Codex 空流保护: 暂无可用 provider，继续等待后台切换\n")
+			continue
+		}
+		if nextProvider.Name != provider.Name {
+			fmt.Printf("[INFO] Codex 空流保护: 检测到后台切换 provider: %s -> %s\n", provider.Name, nextProvider.Name)
+		}
+		provider = nextProvider
+
+		effectiveModel := provider.GetEffectiveModel(requestedModel)
+		currentBodyBytes := originalBodyBytes
+		if effectiveModel != requestedModel && requestedModel != "" {
+			modifiedBody, err := ReplaceModelInRequestBody(originalBodyBytes, effectiveModel)
+			if err != nil {
+				return false, provider, err, attempts, totalDuration
+			}
+			currentBodyBytes = modifiedBody
+		}
+
+		effectiveEndpoint := prs.resolveRelayEndpoint(kind, provider, endpoint)
+		attempts++
+		fmt.Printf("[INFO] Codex 空流保护: 同 provider 后台重试 #%d | Provider: %s | Model: %s\n",
+			attempts, provider.Name, effectiveModel)
+
+		startTime := time.Now()
+		requestOK, requestErr := prs.forwardRequest(c, kind, provider, effectiveEndpoint, query, clientHeaders, currentBodyBytes, isStream, effectiveModel)
+		duration := time.Since(startTime)
+		totalDuration += duration
+
+		if requestOK {
+			fmt.Printf("[INFO] Codex 空流保护: 重试成功 | Provider: %s | 后台重试 %d 次 | 耗时: %.2fs\n",
+				provider.Name, attempts, totalDuration.Seconds())
+			return true, provider, nil, attempts, totalDuration
+		}
+		if errors.Is(requestErr, errCodexEmptyStream) {
+			fmt.Printf("[WARN] Codex 空流保护: Provider %s 仍返回空流，继续后台重试 | 耗时: %.2fs\n",
+				provider.Name, duration.Seconds())
+			continue
+		}
+		return false, provider, requestErr, attempts, totalDuration
+	}
+}
+
+func (prs *ProviderRelayService) selectCodexEmptyStreamRetryProvider(kind, currentProviderName, requestedModel string) (Provider, bool, error) {
+	if prs.providerService == nil {
+		return Provider{}, false, fmt.Errorf("provider service unavailable")
+	}
+	providers, err := prs.providerService.LoadProviders(kind)
+	if err != nil {
+		return Provider{}, false, err
+	}
+
+	active := make([]Provider, 0, len(providers))
+	for _, provider := range providers {
+		if !provider.Enabled || provider.APIURL == "" || provider.APIKey == "" {
+			continue
+		}
+		if errs := provider.ValidateConfiguration(); len(errs) > 0 {
+			continue
+		}
+		if requestedModel != "" && !provider.IsModelSupported(requestedModel) {
+			continue
+		}
+		if prs.blacklistService != nil {
+			if blacklisted, _ := prs.blacklistService.IsBlacklisted(kind, provider.Name); blacklisted {
+				continue
+			}
+		}
+		if provider.Name == currentProviderName {
+			return provider, true, nil
+		}
+		active = append(active, provider)
+	}
+
+	if len(active) == 0 {
+		return Provider{}, false, nil
+	}
+	sort.SliceStable(active, func(i, j int) bool {
+		leftLevel := active[i].Level
+		if leftLevel <= 0 {
+			leftLevel = 1
+		}
+		rightLevel := active[j].Level
+		if rightLevel <= 0 {
+			rightLevel = 1
+		}
+		return leftLevel < rightLevel
+	})
+	return active[0], true, nil
 }
 
 func isResponsesEndpoint(endpoint string) bool {
