@@ -1421,8 +1421,9 @@ func writeStreamingResponse(w http.ResponseWriter, resp *xrequest.Response, requ
 const (
 	codexStreamGuardMaxInitialBufferBytes = 1024 * 1024
 	codexStreamGuardKeepAliveInterval     = 15 * time.Second
-	codexStreamGuardKeepAliveComment      = ":\n\n"
 )
+
+var codexStreamGuardKeepAliveComment = ":" + strings.Repeat(" ", 1024) + "\n\n"
 
 type codexStreamGuardState struct {
 	sawCompleted     bool
@@ -1514,6 +1515,10 @@ func writeCodexGuardedStreamingResponse(w http.ResponseWriter, resp *xrequest.Re
 		copyStreamingResponseHeaders(w.Header(), raw.Header)
 		if w.Header().Get("Content-Type") == "" {
 			w.Header().Set("Content-Type", "text/event-stream")
+		}
+		w.Header().Set("Cache-Control", appendCacheControlDirective(w.Header().Get("Cache-Control"), "no-transform"))
+		if w.Header().Get("Content-Encoding") == "" {
+			w.Header().Set("Content-Encoding", "identity")
 		}
 		status := resp.StatusCode()
 		if status == 0 {
@@ -1715,6 +1720,22 @@ func copyStreamingResponseHeaders(dst, src http.Header) {
 	if dst.Get("Cache-Control") == "" {
 		dst.Set("Cache-Control", "no-cache")
 	}
+}
+
+func appendCacheControlDirective(value, directive string) string {
+	directive = strings.TrimSpace(directive)
+	if directive == "" {
+		return value
+	}
+	if strings.TrimSpace(value) == "" {
+		return directive
+	}
+	for _, part := range strings.Split(value, ",") {
+		if strings.EqualFold(strings.TrimSpace(part), directive) {
+			return value
+		}
+	}
+	return value + ", " + directive
 }
 
 func writeTransformedJSONResponse(w http.ResponseWriter, resp *xrequest.Response, requestLog *ReqeustLog) error {
