@@ -236,7 +236,7 @@ func TestWriteStreamingResponseFlushesFirstLineImmediately(t *testing.T) {
 	}
 }
 
-func TestWriteCodexGuardedStreamingResponseRejectsEmptyStreamBeforeWrite(t *testing.T) {
+func TestWriteCodexGuardedStreamingResponseRejectsEmptyStreamAfterKeepAlive(t *testing.T) {
 	resp := xrequest.NewResponse(&http.Response{
 		StatusCode: http.StatusOK,
 		Header: http.Header{
@@ -251,17 +251,17 @@ func TestWriteCodexGuardedStreamingResponseRejectsEmptyStreamBeforeWrite(t *test
 	if !errors.Is(err, errCodexEmptyStream) {
 		t.Fatalf("err = %v, want errCodexEmptyStream", err)
 	}
-	if responseWritten {
-		t.Fatalf("responseWritten = true, want false")
+	if !responseWritten {
+		t.Fatalf("responseWritten = false, want true for keepalive")
 	}
 	if written != 0 {
 		t.Fatalf("written = %d, want 0", written)
 	}
-	if body := recorder.BodyString(); body != "" {
-		t.Fatalf("body = %q, want empty", body)
+	if body := recorder.BodyString(); body != codexStreamGuardKeepAliveComment {
+		t.Fatalf("body = %q, want keepalive only", body)
 	}
-	if recorder.status != 0 {
-		t.Fatalf("status = %d, want 0 before guarded stream is released", recorder.status)
+	if recorder.status != http.StatusOK {
+		t.Fatalf("status = %d, want 200 for keepalive", recorder.status)
 	}
 }
 
@@ -288,14 +288,22 @@ func TestWriteCodexGuardedStreamingResponseReleasesOnUsefulContent(t *testing.T)
 		done <- err
 	}()
 
+	select {
+	case <-recorder.wroteCh:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatalf("guard did not write initial keepalive")
+	}
+	if body := recorder.BodyString(); body != codexStreamGuardKeepAliveComment {
+		t.Fatalf("body = %q, want initial keepalive only", body)
+	}
+
 	if _, err := pw.Write([]byte("data: {\"type\":\"response.created\"}\n\n")); err != nil {
 		t.Fatalf("write created event: %v", err)
 	}
 
-	select {
-	case <-recorder.wroteCh:
-		t.Fatalf("guard wrote before useful content")
-	case <-time.After(100 * time.Millisecond):
+	time.Sleep(100 * time.Millisecond)
+	if body := recorder.BodyString(); strings.Contains(body, "response.created") {
+		t.Fatalf("guard leaked buffered event before useful content, body=%q", body)
 	}
 
 	if _, err := pw.Write([]byte("data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hello\"}\n\n")); err != nil {

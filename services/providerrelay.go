@@ -1099,7 +1099,7 @@ func (prs *ProviderRelayService) forwardRequest(
 			if kind == "codex" && prs.isCodexStreamGuardEnabled() {
 				var responseWritten bool
 				_, responseWritten, copyErr = writeCodexGuardedStreamingResponse(c.Writer, resp, requestLog, ReqeustLogHook(c, kind, requestLog))
-				if copyErr != nil && !responseWritten {
+				if copyErr != nil && (errors.Is(copyErr, errCodexEmptyStream) || !responseWritten) {
 					return false, copyErr
 				}
 			} else {
@@ -1125,7 +1125,7 @@ func (prs *ProviderRelayService) forwardRequest(
 			if kind == "codex" && prs.isCodexStreamGuardEnabled() {
 				var responseWritten bool
 				_, responseWritten, copyErr = writeCodexGuardedStreamingResponse(c.Writer, resp, requestLog, ReqeustLogHook(c, kind, requestLog))
-				if copyErr != nil && !responseWritten {
+				if copyErr != nil && (errors.Is(copyErr, errCodexEmptyStream) || !responseWritten) {
 					return false, copyErr
 				}
 			} else {
@@ -1418,7 +1418,11 @@ func writeStreamingResponse(w http.ResponseWriter, resp *xrequest.Response, requ
 	}
 }
 
-const codexStreamGuardMaxInitialBufferBytes = 1024 * 1024
+const (
+	codexStreamGuardMaxInitialBufferBytes = 1024 * 1024
+	codexStreamGuardKeepAliveInterval     = 15 * time.Second
+	codexStreamGuardKeepAliveComment      = ":\n\n"
+)
 
 type codexStreamGuardState struct {
 	sawCompleted     bool
@@ -1496,29 +1500,51 @@ func writeCodexGuardedStreamingResponse(w http.ResponseWriter, resp *xrequest.Re
 		return 0, false, errCodexEmptyStream
 	}
 
-	headerWritten := false
+	var writeMu sync.Mutex
+	clientStarted := responseWriterWritten(w)
+	released := false
 	totalBytes := int64(0)
 	state := codexStreamGuardState{}
 	var initialBuffer bytes.Buffer
 
-	writeHeader := func() {
-		if headerWritten {
+	writeHeaderLocked := func() {
+		if clientStarted {
 			return
 		}
 		copyStreamingResponseHeaders(w.Header(), raw.Header)
+		if w.Header().Get("Content-Type") == "" {
+			w.Header().Set("Content-Type", "text/event-stream")
+		}
 		status := resp.StatusCode()
 		if status == 0 {
 			status = http.StatusOK
 		}
 		w.WriteHeader(status)
-		headerWritten = true
+		clientStarted = true
 		if flusher, ok := w.(http.Flusher); ok {
 			flusher.Flush()
 		}
 	}
 
+	sendKeepAliveLocked := func() error {
+		if released {
+			return nil
+		}
+		writeHeaderLocked()
+		if _, err := io.WriteString(w, codexStreamGuardKeepAliveComment); err != nil {
+			return fmt.Errorf("error writing codex stream keepalive: %w", err)
+		}
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		return nil
+	}
+
 	flushInitialBuffer := func() error {
-		writeHeader()
+		writeMu.Lock()
+		defer writeMu.Unlock()
+		released = true
+		writeHeaderLocked()
 		if initialBuffer.Len() == 0 {
 			return nil
 		}
@@ -1528,22 +1554,62 @@ func writeCodexGuardedStreamingResponse(w http.ResponseWriter, resp *xrequest.Re
 		return err
 	}
 
+	writeStreamingLineLocked := func(line []byte) error {
+		writeMu.Lock()
+		defer writeMu.Unlock()
+		n, err := writeStreamingLine(w, line, requestLog, hooks...)
+		totalBytes += n
+		return err
+	}
+
+	if err := func() error {
+		writeMu.Lock()
+		defer writeMu.Unlock()
+		return sendKeepAliveLocked()
+	}(); err != nil {
+		return totalBytes, clientStarted, err
+	}
+
+	stopKeepAlive := make(chan struct{})
+	keepAliveStopped := make(chan struct{})
+	go func() {
+		defer close(keepAliveStopped)
+		ticker := time.NewTicker(codexStreamGuardKeepAliveInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				writeMu.Lock()
+				err := sendKeepAliveLocked()
+				writeMu.Unlock()
+				if err != nil {
+					fmt.Printf("[WARN] Codex 空流保护: SSE 保活写入失败: %v\n", err)
+					return
+				}
+			case <-stopKeepAlive:
+				return
+			}
+		}
+	}()
+	defer func() {
+		close(stopKeepAlive)
+		<-keepAliveStopped
+	}()
+
 	reader := bufio.NewReader(raw.Body)
 	for {
 		line, err := reader.ReadBytes('\n')
 		if len(line) > 0 {
-			if headerWritten {
-				n, writeErr := writeStreamingLine(w, line, requestLog, hooks...)
-				totalBytes += n
-				if writeErr != nil {
-					return totalBytes, true, writeErr
+			if released {
+				if writeErr := writeStreamingLineLocked(line); writeErr != nil {
+					return totalBytes, clientStarted, writeErr
 				}
 			} else {
 				initialBuffer.Write(line)
 				state.observeLine(line)
 				if state.shouldRelease() || initialBuffer.Len() >= codexStreamGuardMaxInitialBufferBytes {
 					if writeErr := flushInitialBuffer(); writeErr != nil {
-						return totalBytes, true, writeErr
+						return totalBytes, clientStarted, writeErr
 					}
 				}
 			}
@@ -1551,22 +1617,32 @@ func writeCodexGuardedStreamingResponse(w http.ResponseWriter, resp *xrequest.Re
 
 		if err != nil {
 			if err == io.EOF {
-				if !headerWritten {
+				if !released {
 					if state.isEmptyFailure() {
-						return 0, false, errCodexEmptyStream
+						return totalBytes, clientStarted, errCodexEmptyStream
 					}
 					if writeErr := flushInitialBuffer(); writeErr != nil {
-						return totalBytes, true, writeErr
+						return totalBytes, clientStarted, writeErr
 					}
 				}
-				return totalBytes, headerWritten, nil
+				return totalBytes, clientStarted, nil
 			}
-			if !headerWritten {
-				return 0, false, fmt.Errorf("error streaming response before useful content: %w", err)
+			if !released {
+				return totalBytes, clientStarted, fmt.Errorf("error streaming response before useful content: %w", err)
 			}
-			return totalBytes, true, fmt.Errorf("error streaming response: %w", err)
+			return totalBytes, clientStarted, fmt.Errorf("error streaming response: %w", err)
 		}
 	}
+}
+
+func responseWriterWritten(w http.ResponseWriter) bool {
+	type writtenChecker interface {
+		Written() bool
+	}
+	if checker, ok := w.(writtenChecker); ok {
+		return checker.Written()
+	}
+	return false
 }
 
 func writeStreamingBuffer(w http.ResponseWriter, data []byte, requestLog *ReqeustLog, hooks ...xrequest.ResponseHook) (int64, error) {
