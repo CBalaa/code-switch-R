@@ -1124,6 +1124,12 @@ func (prs *ProviderRelayService) forwardRequest(
 	}
 
 	if status >= http.StatusOK && status < http.StatusMultipleChoices {
+		if isStream {
+			if err := upstreamHTMLStreamError(resp); err != nil {
+				return false, err
+			}
+		}
+
 		var copyErr error
 		if useResponsesTransform && !isStream {
 			copyErr = writeTransformedJSONResponse(c.Writer, resp, requestLog)
@@ -1379,6 +1385,29 @@ func isStreamResponse(resp *xrequest.Response, requestedStream bool) bool {
 		return false
 	}
 	return strings.Contains(strings.ToLower(resp.RawResponse.Header.Get("Content-Type")), "text/event-stream")
+}
+
+func upstreamHTMLStreamError(resp *xrequest.Response) error {
+	if resp == nil || resp.RawResponse == nil {
+		return nil
+	}
+	contentType := strings.ToLower(resp.RawResponse.Header.Get("Content-Type"))
+	if !strings.Contains(contentType, "text/html") {
+		return nil
+	}
+	body := summarizeBodyForError(extractUpstreamError(resp), 240)
+	if body == "" {
+		return fmt.Errorf("upstream returned HTML instead of SSE")
+	}
+	return fmt.Errorf("upstream returned HTML instead of SSE: %s", body)
+}
+
+func summarizeBodyForError(body string, maxLen int) string {
+	body = strings.Join(strings.Fields(body), " ")
+	if maxLen <= 0 || len(body) <= maxLen {
+		return body
+	}
+	return body[:maxLen] + "..."
 }
 
 func writeStreamingResponse(w http.ResponseWriter, resp *xrequest.Response, requestLog *ReqeustLog, hooks ...xrequest.ResponseHook) (int64, error) {

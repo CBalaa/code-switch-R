@@ -300,6 +300,41 @@ func TestWriteStreamingResponseNormalizesSSEHeaders(t *testing.T) {
 	}
 }
 
+func TestUpstreamHTMLStreamErrorRejectsHTML(t *testing.T) {
+	resp := xrequest.NewResponse(&http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Type": []string{"text/html; charset=utf-8"},
+		},
+		Body: io.NopCloser(strings.NewReader("<!doctype html><html><head><title>WeCoding - AI API Gateway</title></head></html>")),
+	})
+
+	err := upstreamHTMLStreamError(resp)
+	if err == nil {
+		t.Fatalf("expected HTML stream response to be rejected")
+	}
+	if !strings.Contains(err.Error(), "upstream returned HTML instead of SSE") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(err.Error(), "WeCoding") {
+		t.Fatalf("expected upstream HTML title in error, got %v", err)
+	}
+}
+
+func TestUpstreamHTMLStreamErrorAllowsSSE(t *testing.T) {
+	resp := xrequest.NewResponse(&http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Type": []string{"text/event-stream"},
+		},
+		Body: io.NopCloser(strings.NewReader("data: {}\n\n")),
+	})
+
+	if err := upstreamHTMLStreamError(resp); err != nil {
+		t.Fatalf("expected SSE to pass, got %v", err)
+	}
+}
+
 func TestWriteCodexGuardedStreamingResponseRejectsEmptyStreamAfterKeepAlive(t *testing.T) {
 	resp := xrequest.NewResponse(&http.Response{
 		StatusCode: http.StatusOK,
