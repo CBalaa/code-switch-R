@@ -44,7 +44,7 @@ export type CodexRelayKeyCreateResult = {
   createdAt: string
 }
 
-export type CodexRelayKeyUsageRange = '1h' | '5h' | '1d' | '1w' | '1mo'
+export type CodexRelayKeyUsageRange = '1h' | '5h' | '1d' | '1w' | '1mo' | 'custom'
 
 export type CodexRelayKeyUsagePoint = {
   bucket: string
@@ -59,7 +59,7 @@ export type CodexRelayKeyUsagePoint = {
 
 export type CodexRelayKeyUsageStats = {
   keyId: string
-  range: CodexRelayKeyUsageRange
+  range: string
   totalCalls: number
   totalTokens: number
   points: CodexRelayKeyUsagePoint[]
@@ -243,10 +243,13 @@ export async function renameCodexRelayKey(id: string, name: string): Promise<voi
 export async function fetchCodexRelayKeyUsage(
   id: string,
   range: CodexRelayKeyUsageRange,
+  start?: string,
+  end?: string,
 ): Promise<CodexRelayKeyUsageStats> {
-  return adminRequest<CodexRelayKeyUsageStats>(
-    `/api/admin/codex-keys/${encodeURIComponent(id)}/usage?range=${encodeURIComponent(range)}`,
-  )
+  const params = new URLSearchParams({ range })
+  if (start) params.set('start', start)
+  if (end) params.set('end', end)
+  return adminRequest<CodexRelayKeyUsageStats>(`/api/admin/codex-keys/${encodeURIComponent(id)}/usage?${params}`)
 }
 
 export async function deleteCodexRelayKey(id: string): Promise<void> {

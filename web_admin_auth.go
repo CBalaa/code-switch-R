@@ -234,7 +234,7 @@ func registerAdminAuthRoutes(router *gin.Engine, rt *appRuntime) {
 
 	router.GET("/api/admin/codex-keys/:id/usage", authRequired, func(c *gin.Context) {
 		c.Header("Cache-Control", "no-store")
-		stats, err := rt.codexRelayKeys.GetUsageStats(c.Param("id"), c.Query("range"))
+		stats, err := rt.codexRelayKeys.GetUsageStats(c.Param("id"), c.Query("range"), c.Query("start"), c.Query("end"))
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, apiErrorResponse{
 				Error: apiError{Code: "key_usage_failed", Message: err.Error()},

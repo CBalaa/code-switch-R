@@ -644,7 +644,13 @@
       "fiveHours": "5 hours",
       "oneDay": "1 day",
       "oneWeek": "1 week",
-      "oneMonth": "1 month"
+      "oneMonth": "1 month",
+      "custom": "Custom"
+    },
+    "customRange": {
+      "start": "Start",
+      "end": "End",
+      "apply": "Query"
     },
     "chart": {
       "tokens": "Token usage",
@@ -656,7 +662,8 @@
     },
     "errors": {
       "loadUsage": "Failed to load key usage",
-      "rename": "Failed to rename key"
+      "rename": "Failed to rename key",
+      "invalidCustomRange": "Select a valid start and end time"
     }
   }
 }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   Chart,
@@ -37,6 +37,7 @@ const ranges: Array<{ value: CodexRelayKeyUsageRange; labelKey: string }> = [
   { value: '1d', labelKey: 'keys.ranges.oneDay' },
   { value: '1w', labelKey: 'keys.ranges.oneWeek' },
   { value: '1mo', labelKey: 'keys.ranges.oneMonth' },
+  { value: 'custom', labelKey: 'keys.ranges.custom' },
 ]
 
 const tabs = [
@@ -75,6 +76,14 @@ const usageMetric = ref<UsageMetric>('tokens')
 const usageLoading = ref(false)
 const usageStatsByKey = ref<Record<string, CodexRelayKeyUsageStats>>({})
 
+const toDateTimeLocalValue = (date: Date) => {
+  const offsetMs = date.getTimezoneOffset() * 60 * 1000
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16)
+}
+
+const customUsageStart = ref(toDateTimeLocalValue(new Date(Date.now() - 60 * 60 * 1000)))
+const customUsageEnd = ref(toDateTimeLocalValue(new Date()))
+
 const usageTotals = computed(() => {
   return Object.values(usageStatsByKey.value).reduce(
     (total, stats) => ({
@@ -99,6 +108,13 @@ const formatUsageBucketLabel = (bucket: string) => {
   if (Number.isNaN(date.getTime())) return bucket
   if (usageRange.value === '1w' || usageRange.value === '1mo') {
     return `${padTimeUnit(date.getMonth() + 1)}-${padTimeUnit(date.getDate())}`
+  }
+  if (usageRange.value === 'custom') {
+    const start = new Date(customUsageStart.value)
+    const end = new Date(customUsageEnd.value)
+    if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && end.getTime() - start.getTime() > 24 * 60 * 60 * 1000) {
+      return `${padTimeUnit(date.getMonth() + 1)}-${padTimeUnit(date.getDate())} ${padTimeUnit(date.getHours())}:${padTimeUnit(date.getMinutes())}`
+    }
   }
   return `${padTimeUnit(date.getHours())}:${padTimeUnit(date.getMinutes())}`
 }
@@ -149,11 +165,24 @@ const loadUsage = async () => {
     return
   }
 
+  let start: string | undefined
+  let end: string | undefined
+  if (usageRange.value === 'custom') {
+    const startDate = new Date(customUsageStart.value)
+    const endDate = new Date(customUsageEnd.value)
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) || endDate <= startDate) {
+      showToast(t('keys.errors.invalidCustomRange'), 'error')
+      return
+    }
+    start = startDate.toISOString()
+    end = endDate.toISOString()
+  }
+
   usageLoading.value = true
   try {
     const entries = await Promise.all(
       keys.value.map(async (key) => {
-        const stats = await fetchCodexRelayKeyUsage(key.id, usageRange.value)
+        const stats = await fetchCodexRelayKeyUsage(key.id, usageRange.value, start, end)
         return [key.id, stats] as const
       }),
     )
@@ -253,6 +282,18 @@ const handleDeleteKey = async (key: CodexRelayKeyListItem) => {
   }
 }
 
+const handleUsageRangeClick = (range: CodexRelayKeyUsageRange) => {
+  usageRange.value = range
+  if (range !== 'custom') {
+    void loadUsage()
+  }
+}
+
+const handleApplyCustomUsageRange = () => {
+  usageRange.value = 'custom'
+  void loadUsage()
+}
+
 const chartData = computed(() => {
   const firstStats = keys.value
     .map((key) => usageStatsByKey.value[key.id])
@@ -309,10 +350,6 @@ const chartOptions: ChartOptions<'line'> = {
     },
   },
 }
-
-watch(usageRange, () => {
-  void loadUsage()
-})
 
 onMounted(async () => {
   await loadKeys()
@@ -439,9 +476,22 @@ onMounted(async () => {
                 v-for="range in ranges"
                 :key="range.value"
                 :class="{ active: usageRange === range.value }"
-                @click="usageRange = range.value"
+                @click="handleUsageRangeClick(range.value)"
               >
                 {{ t(range.labelKey) }}
+              </button>
+            </div>
+            <div v-if="usageRange === 'custom'" class="custom-range-controls">
+              <label>
+                <span>{{ t('keys.customRange.start') }}</span>
+                <input v-model="customUsageStart" type="datetime-local" />
+              </label>
+              <label>
+                <span>{{ t('keys.customRange.end') }}</span>
+                <input v-model="customUsageEnd" type="datetime-local" />
+              </label>
+              <button type="button" @click="handleApplyCustomUsageRange">
+                {{ t('keys.customRange.apply') }}
               </button>
             </div>
             <div class="metric-tabs">
@@ -752,6 +802,43 @@ button:disabled {
   color: #fff;
 }
 
+.custom-range-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  background: var(--mac-surface-strong);
+}
+
+.custom-range-controls label {
+  display: grid;
+  gap: 4px;
+  color: var(--mac-text-secondary);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.custom-range-controls input {
+  min-height: 32px;
+  border: 1px solid var(--mac-border);
+  border-radius: 6px;
+  background: var(--mac-surface);
+  color: var(--mac-text);
+  padding: 0 8px;
+}
+
+.custom-range-controls button {
+  min-height: 32px;
+  border: none;
+  border-radius: 6px;
+  padding: 0 12px;
+  background: var(--mac-accent);
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .usage-summary {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -813,8 +900,14 @@ button:disabled {
   }
 
   .range-tabs,
-  .metric-tabs {
+  .metric-tabs,
+  .custom-range-controls {
     overflow-x: auto;
+  }
+
+  .custom-range-controls {
+    width: 100%;
+    flex-wrap: wrap;
   }
 
   .key-actions {

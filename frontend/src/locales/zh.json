@@ -645,7 +645,13 @@
       "fiveHours": "5 小时",
       "oneDay": "1 天",
       "oneWeek": "1 周",
-      "oneMonth": "1 月"
+      "oneMonth": "1 月",
+      "custom": "自定义"
+    },
+    "customRange": {
+      "start": "开始时间",
+      "end": "结束时间",
+      "apply": "查询"
     },
     "chart": {
       "tokens": "Token 消耗",
@@ -657,7 +663,8 @@
     },
     "errors": {
       "loadUsage": "加载密钥用量失败",
-      "rename": "重命名密钥失败"
+      "rename": "重命名密钥失败",
+      "invalidCustomRange": "请选择有效的开始和结束时间"
     }
   }
 }

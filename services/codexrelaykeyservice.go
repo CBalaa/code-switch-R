@@ -299,14 +299,18 @@ func (s *CodexRelayKeyService) ValidateKeyMatch(candidate string) (*CodexRelayKe
 	return nil, nil
 }
 
-func (s *CodexRelayKeyService) GetUsageStats(id string, rangeKey string) (*CodexRelayKeyUsageStats, error) {
-	rangeKey, start, step := normalizeRelayKeyUsageRange(rangeKey)
-	now := time.Now().UTC().Truncate(step)
+func (s *CodexRelayKeyService) GetUsageStats(id string, rangeKey string, startRaw string, endRaw string) (*CodexRelayKeyUsageStats, error) {
+	rangeKey, start, end, step, err := resolveRelayKeyUsageWindow(rangeKey, startRaw, endRaw)
+	if err != nil {
+		return nil, err
+	}
+	queryEnd := end
+	bucketEnd := end.Truncate(step)
 	start = start.Truncate(step)
 
 	points := make([]CodexRelayKeyUsagePoint, 0)
 	pointByUnix := make(map[int64]int)
-	for bucket := start; !bucket.After(now); bucket = bucket.Add(step) {
+	for bucket := start; !bucket.After(bucketEnd); bucket = bucket.Add(step) {
 		unix := bucket.Unix()
 		pointByUnix[unix] = len(points)
 		points = append(points, CodexRelayKeyUsagePoint{
@@ -331,9 +335,10 @@ func (s *CodexRelayKeyService) GetUsageStats(id string, rangeKey string) (*Codex
 		FROM request_log
 		WHERE relay_key_id = ?
 			AND created_at >= ?
+			AND created_at < ?
 		GROUP BY bucket_unix
 		ORDER BY bucket_unix
-	`, int64(step.Seconds()), int64(step.Seconds()), id, start.Format("2006-01-02 15:04:05"))
+	`, int64(step.Seconds()), int64(step.Seconds()), id, start.Format("2006-01-02 15:04:05"), queryEnd.Format("2006-01-02 15:04:05"))
 	if err != nil {
 		return nil, err
 	}
@@ -370,6 +375,53 @@ func (s *CodexRelayKeyService) GetUsageStats(id string, rangeKey string) (*Codex
 	}
 
 	return stats, nil
+}
+
+func resolveRelayKeyUsageWindow(rangeKey string, startRaw string, endRaw string) (string, time.Time, time.Time, time.Duration, error) {
+	if strings.TrimSpace(startRaw) != "" || strings.TrimSpace(endRaw) != "" {
+		start, err := parseRelayKeyUsageTime(startRaw)
+		if err != nil {
+			return "", time.Time{}, time.Time{}, 0, fmt.Errorf("无效的开始时间: %w", err)
+		}
+		end, err := parseRelayKeyUsageTime(endRaw)
+		if err != nil {
+			return "", time.Time{}, time.Time{}, 0, fmt.Errorf("无效的结束时间: %w", err)
+		}
+		if !end.After(start) {
+			return "", time.Time{}, time.Time{}, 0, errors.New("结束时间必须晚于开始时间")
+		}
+		return "custom", start.UTC(), end.UTC(), relayKeyUsageStepForDuration(end.Sub(start)), nil
+	}
+
+	normalizedRange, start, step := normalizeRelayKeyUsageRange(rangeKey)
+	end := time.Now().UTC()
+	return normalizedRange, start, end, step, nil
+}
+
+func parseRelayKeyUsageTime(raw string) (time.Time, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}, errors.New("不能为空")
+	}
+	if value, err := time.Parse(time.RFC3339Nano, raw); err == nil {
+		return value, nil
+	}
+	return time.Parse(time.RFC3339, raw)
+}
+
+func relayKeyUsageStepForDuration(duration time.Duration) time.Duration {
+	switch {
+	case duration <= time.Hour:
+		return 5 * time.Minute
+	case duration <= 5*time.Hour:
+		return 15 * time.Minute
+	case duration <= 24*time.Hour:
+		return time.Hour
+	case duration <= 7*24*time.Hour:
+		return 6 * time.Hour
+	default:
+		return 24 * time.Hour
+	}
 }
 
 func normalizeRelayKeyUsageRange(rangeKey string) (string, time.Time, time.Duration) {
