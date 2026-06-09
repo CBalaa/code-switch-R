@@ -1705,6 +1705,18 @@ export class Provider {
     "apiEndpoint"?: string;
 
     /**
+     * Responses 协议端点（可选）
+     * 当入站请求为 /responses 或 /v1/responses 时优先使用。
+     */
+    "responsesEndpoint"?: string;
+
+    /**
+     * Chat Completions 协议端点（可选）
+     * 当入站请求为 /v1/chat/completions 时优先使用。
+     */
+    "chatEndpoint"?: string;
+
+    /**
      * 模型白名单 - Provider 原生支持的模型名
      * 使用 map 实现 O(1) 查找，向后兼容（omitempty）
      */
@@ -1749,8 +1761,8 @@ export class Provider {
     /**
      * 上游协议类型 - anthropic / openai_chat / auto
      * anthropic: 上游使用 Anthropic Messages API（默认）
-     * openai_chat: 上游使用 OpenAI Chat Completions API，自动转换请求/响应格式
-     * auto: 根据 APIEndpoint 自动检测（包含 /chat/completions 则为 openai_chat）
+     * openai_chat: 上游使用 OpenAI Compatible API（/responses 或 /chat/completions），自动转换请求/响应格式
+     * auto: 根据 APIEndpoint 自动检测（包含 /responses 或 /chat/completions 则为 openai_chat）
      */
     "upstreamProtocol"?: string;
 
@@ -1806,18 +1818,18 @@ export class Provider {
      * Creates a new Provider instance from a string or object.
      */
     static createFrom($$source: any = {}): Provider {
-        const $$createField10_0 = $$createType18;
-        const $$createField11_0 = $$createType4;
-        const $$createField15_0 = $$createType22;
+        const $$createField12_0 = $$createType18;
+        const $$createField13_0 = $$createType4;
+        const $$createField17_0 = $$createType22;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("supportedModels" in $$parsedSource) {
-            $$parsedSource["supportedModels"] = $$createField10_0($$parsedSource["supportedModels"]);
+            $$parsedSource["supportedModels"] = $$createField12_0($$parsedSource["supportedModels"]);
         }
         if ("modelMapping" in $$parsedSource) {
-            $$parsedSource["modelMapping"] = $$createField11_0($$parsedSource["modelMapping"]);
+            $$parsedSource["modelMapping"] = $$createField13_0($$parsedSource["modelMapping"]);
         }
         if ("availabilityConfig" in $$parsedSource) {
-            $$parsedSource["availabilityConfig"] = $$createField15_0($$parsedSource["availabilityConfig"]);
+            $$parsedSource["availabilityConfig"] = $$createField17_0($$parsedSource["availabilityConfig"]);
         }
         return new Provider($$parsedSource as Partial<Provider>);
     }

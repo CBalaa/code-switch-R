@@ -34,6 +34,14 @@ type Provider struct {
 	// 留空则使用平台默认（claude: /v1/messages, codex: /responses）
 	APIEndpoint string `json:"apiEndpoint,omitempty"`
 
+	// Responses 协议端点（可选）
+	// 当入站请求为 /responses 或 /v1/responses 时优先使用。
+	ResponsesEndpoint string `json:"responsesEndpoint,omitempty"`
+
+	// Chat Completions 协议端点（可选）
+	// 当入站请求为 /v1/chat/completions 时优先使用。
+	ChatEndpoint string `json:"chatEndpoint,omitempty"`
+
 	// 模型白名单 - Provider 原生支持的模型名
 	// 使用 map 实现 O(1) 查找，向后兼容（omitempty）
 	SupportedModels map[string]bool `json:"supportedModels,omitempty"`
@@ -420,6 +428,8 @@ func (ps *ProviderService) DuplicateProvider(kind string, sourceID int64) (*Prov
 		Enabled:              false, // 默认禁用，避免与源供应商冲突
 		Level:                source.Level,
 		APIEndpoint:          source.APIEndpoint,          // 复制端点配置
+		ResponsesEndpoint:    source.ResponsesEndpoint,    // 复制 Responses 端点配置
+		ChatEndpoint:         source.ChatEndpoint,         // 复制 Chat 端点配置
 		UpstreamProtocol:     source.UpstreamProtocol,     // 复制上游协议配置
 		SupportsWebSearch:    source.SupportsWebSearch,    // 复制 WebSearch 兼容开关
 		SupportsCountTokens:  source.SupportsCountTokens,  // 复制 count_tokens 支持开关
@@ -530,7 +540,7 @@ func (p *Provider) GetEffectiveModel(requestedModel string) string {
 // GetEffectiveEndpoint 获取有效的 API 端点
 // 优先使用用户配置的端点，否则使用平台默认
 func (p *Provider) GetEffectiveEndpoint(defaultEndpoint string) string {
-	ep := strings.TrimSpace(p.APIEndpoint)
+	ep := strings.TrimSpace(p.endpointForRoute(defaultEndpoint))
 	if ep == "" {
 		return defaultEndpoint
 	}
@@ -547,6 +557,21 @@ func (p *Provider) GetEffectiveEndpoint(defaultEndpoint string) string {
 	}
 
 	return ep
+}
+
+func (p *Provider) endpointForRoute(defaultEndpoint string) string {
+	route := strings.ToLower(strings.TrimSpace(defaultEndpoint))
+	if strings.Contains(route, "/chat/completions") {
+		if ep := strings.TrimSpace(p.ChatEndpoint); ep != "" {
+			return ep
+		}
+	}
+	if strings.Contains(route, "/responses") {
+		if ep := strings.TrimSpace(p.ResponsesEndpoint); ep != "" {
+			return ep
+		}
+	}
+	return p.APIEndpoint
 }
 
 // UpstreamProtocolType 上游协议类型

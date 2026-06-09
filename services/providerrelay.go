@@ -396,6 +396,8 @@ func (prs *ProviderRelayService) registerRoutes(router gin.IRouter) {
 	router.POST("/v1/messages", claudeAuth, prs.proxyHandler("claude", "/v1/messages"))
 	router.POST("/v1/messages/count_tokens", claudeAuth, prs.proxyHandler("claude", "/v1/messages/count_tokens"))
 	router.POST("/responses", codexAuth, prs.proxyHandler("codex", "/responses"))
+	router.POST("/v1/responses", codexAuth, prs.proxyHandler("codex", "/v1/responses"))
+	router.POST("/v1/chat/completions", codexAuth, prs.proxyHandler("codex", "/v1/chat/completions"))
 
 	// /v1/models 端点（OpenAI-compatible API）
 	// 支持 Claude 和 Codex 平台
@@ -414,14 +416,10 @@ func (prs *ProviderRelayService) registerRoutes(router gin.IRouter) {
 }
 
 func (prs *ProviderRelayService) resolveRelayEndpoint(kind string, provider Provider, routeEndpoint string) string {
-	if strings.TrimSpace(provider.APIEndpoint) != "" {
-		return provider.GetEffectiveEndpoint(routeEndpoint)
-	}
-
 	if strings.EqualFold(kind, "claude") &&
 		routeEndpoint == "/v1/messages" &&
 		provider.GetUpstreamProtocol() == UpstreamProtocolOpenAIChat {
-		return "/v1/responses"
+		return provider.GetEffectiveEndpoint("/v1/responses")
 	}
 
 	return provider.GetEffectiveEndpoint(routeEndpoint)

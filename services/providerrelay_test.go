@@ -16,6 +16,35 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+func TestResolveRelayEndpointUsesProtocolSpecificEndpoint(t *testing.T) {
+	relay := &ProviderRelayService{}
+	provider := Provider{
+		APIEndpoint:       "/legacy",
+		ResponsesEndpoint: "/v1/responses",
+		ChatEndpoint:      "/v1/chat/completions",
+	}
+
+	if got := relay.resolveRelayEndpoint("codex", provider, "/responses"); got != "/v1/responses" {
+		t.Fatalf("codex responses endpoint = %q, want /v1/responses", got)
+	}
+	if got := relay.resolveRelayEndpoint("codex", provider, "/v1/chat/completions"); got != "/v1/chat/completions" {
+		t.Fatalf("codex chat endpoint = %q, want /v1/chat/completions", got)
+	}
+}
+
+func TestResolveRelayEndpointUsesResponsesEndpointForClaudeOpenAICompatible(t *testing.T) {
+	relay := &ProviderRelayService{}
+	provider := Provider{
+		APIEndpoint:       "/legacy",
+		ResponsesEndpoint: "/v1/responses",
+		UpstreamProtocol:  string(UpstreamProtocolOpenAIChat),
+	}
+
+	if got := relay.resolveRelayEndpoint("claude", provider, "/v1/messages"); got != "/v1/responses" {
+		t.Fatalf("claude openai-compatible endpoint = %q, want /v1/responses", got)
+	}
+}
+
 // ==================== ReplaceModelInRequestBody 测试 ====================
 
 func TestReplaceModelInRequestBody(t *testing.T) {

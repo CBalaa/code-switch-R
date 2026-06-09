@@ -517,15 +517,25 @@
                   />
                 </label>
 
-                <!-- API 端点（可选）-->
+                <!-- 协议端点（可选）-->
                 <label class="form-field">
-                  <span>{{ t('components.main.form.labels.apiEndpoint') }}</span>
+                  <span>{{ t('components.main.form.labels.responsesEndpoint') }}</span>
                   <BaseInput
-                    v-model="modalState.form.apiEndpoint"
+                    v-model="modalState.form.responsesEndpoint"
                     type="text"
-                    :placeholder="t('components.main.form.placeholders.apiEndpoint')"
+                    :placeholder="t('components.main.form.placeholders.responsesEndpoint')"
                   />
-                  <span class="field-hint">{{ t('components.main.form.hints.apiEndpoint') }}</span>
+                  <span class="field-hint">{{ t('components.main.form.hints.responsesEndpoint') }}</span>
+                </label>
+
+                <label class="form-field">
+                  <span>{{ t('components.main.form.labels.chatEndpoint') }}</span>
+                  <BaseInput
+                    v-model="modalState.form.chatEndpoint"
+                    type="text"
+                    :placeholder="t('components.main.form.placeholders.chatEndpoint')"
+                  />
+                  <span class="field-hint">{{ t('components.main.form.hints.chatEndpoint') }}</span>
                 </label>
 
                 <!-- 上游协议类型 -->
@@ -2150,6 +2160,8 @@ type VendorForm = {
   modelMapping?: Record<string, string>
   level?: number
   apiEndpoint?: string
+  responsesEndpoint?: string
+  chatEndpoint?: string
   // === 可用性监控配置（新） ===
   availabilityMonitorEnabled?: boolean
   connectivityAutoBlacklist?: boolean
@@ -2199,6 +2211,8 @@ const defaultFormValues = (platform?: string): VendorForm => ({
   supportedModels: {},
   modelMapping: {},
   apiEndpoint: '', // API 端点（可选）
+  responsesEndpoint: '',
+  chatEndpoint: '',
   upstreamProtocol: 'auto', // 上游协议类型（anthropic/openai_chat/auto）
   // 可用性监控配置（新）
   availabilityMonitorEnabled: false,
@@ -2231,6 +2245,22 @@ const getLevelDescription = (level: number) => {
   }
   return descriptions[level] || t('components.main.levelDesc.normal')
 }
+
+const isResponsesEndpointValue = (value?: string) => {
+  const normalized = value?.trim().toLowerCase() ?? ''
+  return normalized.includes('/responses')
+}
+
+const isChatEndpointValue = (value?: string) => {
+  const normalized = value?.trim().toLowerCase() ?? ''
+  return normalized.includes('/chat/completions')
+}
+
+const legacyResponsesEndpoint = (card: AutomationCard) =>
+  card.responsesEndpoint || (isResponsesEndpointValue(card.apiEndpoint) ? card.apiEndpoint : '')
+
+const legacyChatEndpoint = (card: AutomationCard) =>
+  card.chatEndpoint || (isChatEndpointValue(card.apiEndpoint) ? card.apiEndpoint : '')
 
 // 归一化 level：空/非法视为 1（最高优先级），范围限制 1-10
 const normalizeLevel = (level: number | string | undefined): number => {
@@ -2312,6 +2342,8 @@ const openEditModal = (card: AutomationCard) => {
     supportedModels: card.supportedModels || {},
     modelMapping: card.modelMapping || {},
     apiEndpoint: card.apiEndpoint || '',
+    responsesEndpoint: legacyResponsesEndpoint(card),
+    chatEndpoint: legacyChatEndpoint(card),
     upstreamProtocol: card.upstreamProtocol || 'auto',
     // 可用性监控配置（新）- 兼容从旧字段迁移
     availabilityMonitorEnabled:
@@ -2400,6 +2432,8 @@ const submitModal = async (): Promise<boolean> => {
       supportedModels: modalState.form.supportedModels || {},
       modelMapping: modalState.form.modelMapping || {},
       apiEndpoint: modalState.form.apiEndpoint || '',
+      responsesEndpoint: modalState.form.responsesEndpoint || '',
+      chatEndpoint: modalState.form.chatEndpoint || '',
       upstreamProtocol: modalState.form.upstreamProtocol || 'auto',
       // 可用性监控配置（新）
       availabilityMonitorEnabled: !!modalState.form.availabilityMonitorEnabled,
@@ -2440,6 +2474,8 @@ const submitModal = async (): Promise<boolean> => {
       supportedModels: modalState.form.supportedModels || {},
       modelMapping: modalState.form.modelMapping || {},
       apiEndpoint: modalState.form.apiEndpoint || '',
+      responsesEndpoint: modalState.form.responsesEndpoint || '',
+      chatEndpoint: modalState.form.chatEndpoint || '',
       upstreamProtocol: modalState.form.upstreamProtocol || 'auto',
       // 可用性监控配置（新）
       availabilityMonitorEnabled: !!modalState.form.availabilityMonitorEnabled,
