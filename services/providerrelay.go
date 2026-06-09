@@ -167,6 +167,10 @@ func (prs *ProviderRelayService) isCodexStreamGuardEnabled() bool {
 	return settings.EnableCodexStreamGuard
 }
 
+func (prs *ProviderRelayService) shouldUseCodexStreamGuard(kind, endpoint string) bool {
+	return strings.EqualFold(kind, "codex") && isResponsesEndpoint(endpoint) && prs.isCodexStreamGuardEnabled()
+}
+
 func (prs *ProviderRelayService) shouldRequireProviderEnabled(kind string) bool {
 	if !strings.EqualFold(kind, "codex") {
 		return true
@@ -972,6 +976,13 @@ func (prs *ProviderRelayService) forwardRequest(
 	if _, ok := headers["Accept"]; !ok {
 		headers["Accept"] = "application/json"
 	}
+	if isStream {
+		deleteHeaderCaseInsensitive(headers, "Accept")
+		deleteHeaderCaseInsensitive(headers, "Accept-Encoding")
+		deleteHeaderCaseInsensitive(headers, "Content-Encoding")
+		headers["Accept"] = "text/event-stream"
+		headers["Accept-Encoding"] = "identity"
+	}
 
 	requestLog := &ReqeustLog{
 		Platform:   kind,
@@ -1094,7 +1105,7 @@ func (prs *ProviderRelayService) forwardRequest(
 			// 使用协议转换 Hook
 			_, copyErr = writeStreamingResponse(c.Writer, resp, requestLog, protocolConvertHook(sseConverter, kind, requestLog))
 		} else if isStreamResponse(resp, isStream) {
-			if kind == "codex" && prs.isCodexStreamGuardEnabled() {
+			if prs.shouldUseCodexStreamGuard(kind, endpoint) {
 				var responseWritten bool
 				_, responseWritten, copyErr = writeCodexGuardedStreamingResponse(c.Writer, resp, requestLog, ReqeustLogHook(c, kind, requestLog))
 				if copyErr != nil && (errors.Is(copyErr, errCodexEmptyStream) || !responseWritten) {
@@ -1120,7 +1131,7 @@ func (prs *ProviderRelayService) forwardRequest(
 			// 使用协议转换 Hook
 			_, copyErr = writeStreamingResponse(c.Writer, resp, requestLog, protocolConvertHook(sseConverter, kind, requestLog))
 		} else if isStreamResponse(resp, isStream) {
-			if kind == "codex" && prs.isCodexStreamGuardEnabled() {
+			if prs.shouldUseCodexStreamGuard(kind, endpoint) {
 				var responseWritten bool
 				_, responseWritten, copyErr = writeCodexGuardedStreamingResponse(c.Writer, resp, requestLog, ReqeustLogHook(c, kind, requestLog))
 				if copyErr != nil && (errors.Is(copyErr, errCodexEmptyStream) || !responseWritten) {
@@ -1381,6 +1392,7 @@ func writeStreamingResponse(w http.ResponseWriter, resp *xrequest.Response, requ
 	}
 
 	copyStreamingResponseHeaders(w.Header(), raw.Header)
+	normalizeStreamingResponseHeaders(w.Header())
 	status := resp.StatusCode()
 	if status == 0 {
 		status = http.StatusOK
@@ -1511,13 +1523,7 @@ func writeCodexGuardedStreamingResponse(w http.ResponseWriter, resp *xrequest.Re
 			return
 		}
 		copyStreamingResponseHeaders(w.Header(), raw.Header)
-		if w.Header().Get("Content-Type") == "" {
-			w.Header().Set("Content-Type", "text/event-stream")
-		}
-		w.Header().Set("Cache-Control", appendCacheControlDirective(w.Header().Get("Cache-Control"), "no-transform"))
-		if w.Header().Get("Content-Encoding") == "" {
-			w.Header().Set("Content-Encoding", "identity")
-		}
+		normalizeStreamingResponseHeaders(w.Header())
 		status := resp.StatusCode()
 		if status == 0 {
 			status = http.StatusOK
@@ -1706,7 +1712,7 @@ func writeStreamingLine(w http.ResponseWriter, line []byte, requestLog *ReqeustL
 func copyStreamingResponseHeaders(dst, src http.Header) {
 	for key, values := range src {
 		switch strings.ToLower(key) {
-		case "content-length", "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
+		case "content-length", "content-encoding", "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
 			"te", "trailer", "transfer-encoding", "upgrade":
 			continue
 		}
@@ -1718,6 +1724,13 @@ func copyStreamingResponseHeaders(dst, src http.Header) {
 	if dst.Get("Cache-Control") == "" {
 		dst.Set("Cache-Control", "no-cache")
 	}
+}
+
+func normalizeStreamingResponseHeaders(header http.Header) {
+	header.Set("Content-Type", "text/event-stream; charset=utf-8")
+	header.Set("Cache-Control", appendCacheControlDirective(header.Get("Cache-Control"), "no-transform"))
+	header.Del("Content-Encoding")
+	header.Del("Content-Length")
 }
 
 func appendCacheControlDirective(value, directive string) string {

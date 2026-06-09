@@ -265,6 +265,41 @@ func TestWriteStreamingResponseFlushesFirstLineImmediately(t *testing.T) {
 	}
 }
 
+func TestWriteStreamingResponseNormalizesSSEHeaders(t *testing.T) {
+	resp := xrequest.NewResponse(&http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Type":     []string{"text/html; charset=utf-8"},
+			"Content-Encoding": []string{"gzip"},
+			"Content-Length":   []string{"999"},
+			"Cache-Control":    []string{"no-cache"},
+		},
+		Body: io.NopCloser(strings.NewReader("data: {\"choices\":[{\"delta\":{\"content\":\"你\"}}]}\n\ndata: [DONE]\n\n")),
+	})
+
+	recorder := newStreamingRecorder()
+	requestLog := &ReqeustLog{startedAt: time.Now()}
+	if _, err := writeStreamingResponse(recorder, resp, requestLog); err != nil {
+		t.Fatalf("writeStreamingResponse returned error: %v", err)
+	}
+
+	if got := recorder.header.Get("Content-Type"); got != "text/event-stream; charset=utf-8" {
+		t.Fatalf("Content-Type = %q, want text/event-stream; charset=utf-8", got)
+	}
+	if got := recorder.header.Get("Content-Encoding"); got != "" {
+		t.Fatalf("Content-Encoding = %q, want empty", got)
+	}
+	if got := recorder.header.Get("Content-Length"); got != "" {
+		t.Fatalf("Content-Length = %q, want empty", got)
+	}
+	if got := recorder.header.Get("Cache-Control"); !strings.Contains(got, "no-transform") {
+		t.Fatalf("Cache-Control = %q, want no-transform", got)
+	}
+	if got := recorder.BodyString(); !strings.Contains(got, "data: [DONE]") {
+		t.Fatalf("expected streamed body, got %q", got)
+	}
+}
+
 func TestWriteCodexGuardedStreamingResponseRejectsEmptyStreamAfterKeepAlive(t *testing.T) {
 	resp := xrequest.NewResponse(&http.Response{
 		StatusCode: http.StatusOK,
@@ -291,6 +326,20 @@ func TestWriteCodexGuardedStreamingResponseRejectsEmptyStreamAfterKeepAlive(t *t
 	}
 	if recorder.status != http.StatusOK {
 		t.Fatalf("status = %d, want 200 for keepalive", recorder.status)
+	}
+}
+
+func TestShouldUseCodexStreamGuardOnlyForResponses(t *testing.T) {
+	relay := &ProviderRelayService{}
+
+	if !relay.shouldUseCodexStreamGuard("codex", "/responses") {
+		t.Fatalf("expected Codex Responses stream guard to be enabled by default")
+	}
+	if relay.shouldUseCodexStreamGuard("codex", "/v1/chat/completions") {
+		t.Fatalf("expected Codex Chat Completions to bypass stream guard")
+	}
+	if relay.shouldUseCodexStreamGuard("claude", "/v1/responses") {
+		t.Fatalf("expected non-Codex streams to bypass Codex stream guard")
 	}
 }
 
