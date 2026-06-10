@@ -58,9 +58,12 @@ func (s *CliConfigService) currentCodexRelayKey() (string, error) {
 type CLIPlatform string
 
 const (
-	PlatformClaude CLIPlatform = "claude"
-	PlatformCodex  CLIPlatform = "codex"
-	PlatformGemini CLIPlatform = "gemini"
+	PlatformClaude          CLIPlatform = "claude"
+	PlatformOpenAIResponses CLIPlatform = "openai-responses"
+	PlatformOpenAIChat      CLIPlatform = "openai-chat"
+	PlatformGemini          CLIPlatform = "gemini"
+	// Deprecated: use PlatformOpenAIResponses
+	PlatformCodex CLIPlatform = "codex"
 )
 
 // CLIConfigField 配置字段信息
@@ -107,9 +110,11 @@ type CLITemplate struct {
 
 // CLITemplates 所有平台的模板存储
 type CLITemplates struct {
-	Claude CLITemplate `json:"claude"`
-	Codex  CLITemplate `json:"codex"`
-	Gemini CLITemplate `json:"gemini"`
+	Claude          CLITemplate `json:"claude"`
+	OpenAIResponses CLITemplate `json:"openai-responses"`
+	OpenAIChat      CLITemplate `json:"openai-chat"`
+	Gemini          CLITemplate `json:"gemini"`
+	Codex           CLITemplate `json:"codex"` // Deprecated, kept for backward compat
 }
 
 // getTemplatesPath 获取模板存储路径
@@ -333,7 +338,7 @@ func (s *CliConfigService) GetConfigSnapshots(platform string, apiUrl string, ap
 		if previewDirect {
 			// 复用 provider 快照推导 providerKey
 			providerKey := "preview-provider"
-			if providers, err := loadProviderSnapshot("codex"); err == nil {
+			if providers, err := loadProviderSnapshot("openai-responses"); err == nil {
 				for _, p := range providers {
 					if urlsEqualFold(p.APIURL, apiUrl) && p.APIKey == apiKey {
 						providerKey = sanitizeProviderKey(p.Name, int(p.ID))

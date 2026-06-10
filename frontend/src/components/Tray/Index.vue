@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, proxyRefs, ref } from 'vue'
 import { Call } from '@wailsio/runtime'
 import { fetchProxyStatus } from '../../services/claudeSettings'
 
-type Platform = 'claude' | 'codex'
+type Platform = 'claude' | 'openai-responses'
 
 const rootRef = ref<HTMLElement | null>(null)
 let refreshBusy = false
@@ -37,8 +37,8 @@ const createTrayCard = (platform: Platform, brandName: string, brandIcon: string
 }
 
 const claudeCard = createTrayCard('claude', 'Claude Code', 'C')
-const codexCard = createTrayCard('codex', 'Codex', 'X')
-const cards = [claudeCard, codexCard]
+const responsesCard = createTrayCard('openai-responses', 'OpenAI Responses', 'R')
+const cards = [claudeCard, responsesCard]
 
 const resizeToContent = async () => {
   await nextTick()

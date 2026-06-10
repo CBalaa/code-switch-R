@@ -324,7 +324,7 @@ func TestCodexResponsesRequireManagedKey(t *testing.T) {
 	defer upstreamServer.Close()
 
 	providerService, relayService := newTestRelayService(t)
-	err := providerService.SaveProviders("codex", []Provider{
+	err := providerService.SaveProviders("openai-responses", []Provider{
 		{
 			ID:               1,
 			Name:             "CodexProvider",

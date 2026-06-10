@@ -22,9 +22,11 @@ type Prompt struct {
 
 // PromptConfig 提示词配置（按平台分组）
 type PromptConfig struct {
-	Claude map[string]Prompt `json:"claude"`
-	Codex  map[string]Prompt `json:"codex"`
-	Gemini map[string]Prompt `json:"gemini"`
+	Claude          map[string]Prompt `json:"claude"`
+	OpenAIResponses map[string]Prompt `json:"openai-responses"`
+	OpenAIChat      map[string]Prompt `json:"openai-chat"`
+	Codex           map[string]Prompt `json:"codex"` // Deprecated
+	Gemini          map[string]Prompt `json:"gemini"`
 }
 
 // PromptService 提示词管理服务
@@ -83,8 +85,10 @@ func (s *PromptService) GetPrompts(platform string) (map[string]Prompt, error) {
 	switch platform {
 	case "claude":
 		return s.deepCopyMap(s.config.Claude), nil
-	case "codex":
-		return s.deepCopyMap(s.config.Codex), nil
+	case "codex", "openai-responses":
+		return s.deepCopyMap(s.config.OpenAIResponses), nil
+	case "openai-chat":
+		return s.deepCopyMap(s.config.OpenAIChat), nil
 	case "gemini":
 		return s.deepCopyMap(s.config.Gemini), nil
 	default:
@@ -342,8 +346,10 @@ func (s *PromptService) getPromptsForPlatform(platform string) (*map[string]Prom
 	switch platform {
 	case "claude":
 		return &s.config.Claude, nil
-	case "codex":
-		return &s.config.Codex, nil
+	case "codex", "openai-responses":
+		return &s.config.OpenAIResponses, nil
+	case "openai-chat":
+		return &s.config.OpenAIChat, nil
 	case "gemini":
 		return &s.config.Gemini, nil
 	default:
@@ -363,7 +369,10 @@ func (s *PromptService) getPromptFilePathReadOnly(platform string) (string, erro
 	case "claude":
 		dir = filepath.Join(home, ".claude")
 		filename = "CLAUDE.md"
-	case "codex":
+	case "codex", "openai-responses":
+		dir = filepath.Join(home, ".codex")
+		filename = "AGENTS.md"
+	case "openai-chat":
 		dir = filepath.Join(home, ".codex")
 		filename = "AGENTS.md"
 	case "gemini":

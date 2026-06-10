@@ -30,7 +30,7 @@ type Provider struct {
 	Enabled bool   `json:"enabled"`
 
 	// API 端点路径（可选）- 覆盖平台默认端点
-	// 如：GLM 模型需要使用 /v1/chat/completions 而非 /v1/messages
+	// 如：GLM 模型需要使用 /chat/completions 而非 /v1/messages
 	// 留空则使用平台默认（claude: /v1/messages, codex: /responses）
 	APIEndpoint string `json:"apiEndpoint,omitempty"`
 
@@ -39,7 +39,7 @@ type Provider struct {
 	ResponsesEndpoint string `json:"responsesEndpoint,omitempty"`
 
 	// Chat Completions 协议端点（可选）
-	// 当入站请求为 /v1/chat/completions 时优先使用。
+	// 当入站请求为 /chat/completions 时优先使用。
 	ChatEndpoint string `json:"chatEndpoint,omitempty"`
 
 	// 模型白名单 - Provider 原生支持的模型名
@@ -135,8 +135,10 @@ func providerFilePath(kind string) (string, error) {
 	switch strings.ToLower(kind) {
 	case "claude", "claude-code", "claude_code":
 		filename = "claude-code.json"
-	case "codex":
-		filename = "codex.json"
+	case "codex", "openai-responses":
+		filename = "openai-responses.json"
+	case "openai-chat", "openai_chat":
+		filename = "openai-chat.json"
 	default:
 		// 支持自定义 CLI 工具的供应商存储：custom:{tool-id}
 		if strings.HasPrefix(kind, "custom:") {
@@ -247,6 +249,11 @@ func (ps *ProviderService) saveProvidersLocked(kind string, providers []Provider
 }
 
 func (ps *ProviderService) LoadProviders(kind string) ([]Provider, error) {
+	// 数据迁移：如果 openai-responses/openai-chat 文件不存在，从 codex.json 复制
+	if err := ps.migrateFromCodexIfNeeded(kind); err != nil {
+		log.Printf("[ProviderService] 从 codex.json 迁移失败 (kind=%s): %v\n", kind, err)
+	}
+
 	path, err := providerFilePath(kind)
 	if err != nil {
 		return nil, err
@@ -338,6 +345,53 @@ func (ps *ProviderService) loadProvidersNoLock(kind string) ([]Provider, error) 
 	}
 
 	return envelope.Providers, nil
+}
+
+// migrateFromCodexIfNeeded 检查是否需要从旧的 codex.json 迁移到新的 openai-responses.json/openai-chat.json
+// 如果目标文件不存在但 codex.json 存在，则自动复制
+func (ps *ProviderService) migrateFromCodexIfNeeded(kind string) error {
+	if kind != "openai-responses" && kind != "openai-chat" {
+		return nil
+	}
+
+	targetPath, err := providerFilePath(kind)
+	if err != nil {
+		return err
+	}
+
+	// 目标文件已存在，不需要迁移
+	if _, err := os.Stat(targetPath); err == nil {
+		return nil
+	}
+
+	// 查找旧的 codex.json
+	codexPath, err := providerFilePath("codex")
+	if err != nil {
+		return err
+	}
+
+	codexData, err := os.ReadFile(codexPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // 没有 codex.json，无需迁移
+		}
+		return err
+	}
+
+	if len(codexData) == 0 {
+		return nil // codex.json 为空，无需迁移
+	}
+
+	// 复制 codex.json 到目标文件
+	if err := os.MkdirAll(filepath.Dir(targetPath), 0o700); err != nil {
+		return err
+	}
+	if err := os.WriteFile(targetPath, codexData, 0o600); err != nil {
+		return err
+	}
+
+	fmt.Printf("[ProviderService] 已从 codex.json 自动迁移到 %s (kind=%s)\n", filepath.Base(targetPath), kind)
+	return nil
 }
 
 // migrateFromLegacy 将旧可用性字段迁移到新可用性字段
@@ -547,7 +601,7 @@ func (p *Provider) GetEffectiveEndpoint(defaultEndpoint string) string {
 
 	// 校验：必须是相对路径，不能是完整 URL
 	if strings.HasPrefix(ep, "http://") || strings.HasPrefix(ep, "https://") {
-		log.Printf("[Provider] 警告: apiEndpoint 应该是相对路径（如 /v1/chat/completions），而非完整 URL: %s，使用默认端点", ep)
+		log.Printf("[Provider] 警告: apiEndpoint 应该是相对路径（如 /chat/completions），而非完整 URL: %s，使用默认端点", ep)
 		return defaultEndpoint
 	}
 

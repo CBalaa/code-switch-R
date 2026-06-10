@@ -94,8 +94,8 @@ func (s *DeepLinkService) ParseDeepLinkURL(urlStr string) (*DeepLinkImportReques
 	if app == "" {
 		return nil, fmt.Errorf("缺少 'app' 参数")
 	}
-	if app != "claude" && app != "codex" && app != "gemini" {
-		return nil, fmt.Errorf("无效的 app 类型: 必须是 'claude', 'codex', 或 'gemini', 得到 '%s'", app)
+	if app != "claude" && app != "codex" && app != "openai-responses" && app != "openai-chat" && app != "gemini" {
+		return nil, fmt.Errorf("无效的 app 类型: 必须是 'claude', 'openai-responses', 'openai-chat', 或 'gemini', 得到 '%s'", app)
 	}
 
 	name := params.Get("name")
@@ -196,8 +196,10 @@ func (s *DeepLinkService) ImportProviderFromDeepLink(request *DeepLinkImportRequ
 	switch merged.App {
 	case "claude":
 		kind = "claude"
-	case "codex":
-		kind = "codex"
+	case "codex", "openai-responses":
+		kind = "openai-responses"
+	case "openai-chat":
+		kind = "openai-chat"
 	case "gemini":
 		// Gemini 暂不支持通过 ProviderService 添加，返回友好提示
 		return "", fmt.Errorf("Gemini 供应商导入暂不支持，请使用 Gemini 页面手动添加")
@@ -295,7 +297,9 @@ func (s *DeepLinkService) parseAndMergeConfig(request *DeepLinkImportRequest) (*
 	switch request.App {
 	case "claude":
 		s.mergeClaudeConfig(&merged, configData)
-	case "codex":
+	case "codex", "openai-responses":
+		s.mergeCodexConfig(&merged, configData)
+	case "openai-chat":
 		s.mergeCodexConfig(&merged, configData)
 	case "gemini":
 		s.mergeGeminiConfig(&merged, configData)

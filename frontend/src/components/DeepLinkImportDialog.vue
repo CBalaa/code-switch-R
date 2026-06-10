@@ -416,9 +416,14 @@ const maskApiKey = (key: string): string => {
   color: #a78bfa;
 }
 
-.app-badge.app-codex {
+.app-badge.app-openai-responses {
   background: rgba(96, 165, 250, 0.2);
   color: #60a5fa;
+}
+
+.app-badge.app-openai-chat {
+  background: rgba(96, 165, 250, 0.15);
+  color: #93c5fd;
 }
 
 .app-badge.app-gemini {

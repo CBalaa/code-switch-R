@@ -403,7 +403,7 @@
             </label>
             <!-- 直连应用按钮 -->
             <button
-              v-if="activeTab !== 'others'"
+              v-if="supportsDirectApply(activeTab)"
               class="ghost-icon direct-apply-btn"
               :class="{ 'is-active': isDirectApplied(card) && !activeProxyState }"
               :disabled="activeProxyState"
@@ -518,7 +518,7 @@
                 </label>
 
                 <!-- 协议端点（可选）-->
-                <label class="form-field">
+                <label v-if="showResponsesEndpointField" class="form-field">
                   <span>{{ t('components.main.form.labels.responsesEndpoint') }}</span>
                   <BaseInput
                     v-model="modalState.form.responsesEndpoint"
@@ -528,7 +528,7 @@
                   <span class="field-hint">{{ t('components.main.form.hints.responsesEndpoint') }}</span>
                 </label>
 
-                <label class="form-field">
+                <label v-if="showChatEndpointField" class="form-field">
                   <span>{{ t('components.main.form.labels.chatEndpoint') }}</span>
                   <BaseInput
                     v-model="modalState.form.chatEndpoint"
@@ -705,7 +705,7 @@
                   </BaseButton>
                   <!-- 保存并应用：仅在编辑模式、非代理模式、非 others 平台时显示 -->
                   <BaseButton
-                    v-if="modalState.editingId && modalState.tabId !== 'others' && !activeProxyState"
+                    v-if="modalState.editingId && supportsDirectApply(modalState.tabId) && !activeProxyState"
                     type="button"
                     variant="primary"
                     @click="submitAndApplyModal"
@@ -959,13 +959,15 @@ const releaseApiUrl = 'https://api.github.com/repos/Rogers-F/code-switch-R/relea
 
 const proxyStates = reactive<Record<ProviderTab, boolean>>({
   claude: false,
-  codex: false,
+  'openai-responses': false,
+  'openai-chat': false,
   gemini: false,
   others: false,
 })
 const proxyBusy = reactive<Record<ProviderTab, boolean>>({
   claude: false,
-  codex: false,
+  'openai-responses': false,
+  'openai-chat': false,
   gemini: false,
   others: false,
 })
@@ -973,19 +975,23 @@ const proxyBusy = reactive<Record<ProviderTab, boolean>>({
 // 直连应用状态
 const directAppliedIds = reactive<Record<ProviderTab, string | number | null>>({
   claude: null,
-  codex: null,
+  'openai-responses': null,
+  'openai-chat': null,
   gemini: null,
   others: null,
 })
 
+const supportsDirectApply = (tab: ProviderTab) =>
+  tab !== 'others' && tab !== 'openai-chat'
+
 const refreshDirectAppliedStatus = async (tab: ProviderTab = activeTab.value) => {
-  if (tab === 'others') return
+  if (!supportsDirectApply(tab)) return
 
   try {
     let id: string | number | null = null
     if (tab === 'claude') {
       id = await Call.ByName('codeswitch/services.ClaudeSettingsService.GetDirectAppliedProviderID')
-    } else if (tab === 'codex') {
+    } else if (tab === 'openai-responses') {
       id = await Call.ByName('codeswitch/services.CodexSettingsService.GetDirectAppliedProviderID')
     } else if (tab === 'gemini') {
       id = await Call.ByName('codeswitch/services.GeminiService.GetDirectAppliedProviderID')
@@ -1002,7 +1008,7 @@ const handleDirectApply = async (card: AutomationCard) => {
   try {
     if (tab === 'claude') {
       await Call.ByName('codeswitch/services.ClaudeSettingsService.ApplySingleProvider', card.id)
-    } else if (tab === 'codex') {
+    } else if (tab === 'openai-responses') {
       await Call.ByName('codeswitch/services.CodexSettingsService.ApplySingleProvider', card.id)
     } else if (tab === 'gemini') {
       // Gemini 使用字符串 ID，需要从 cache 中找到原始 provider
@@ -1031,7 +1037,11 @@ const isDirectApplied = (card: AutomationCard) => {
   return card.id === appliedId
 }
 
-const isProviderSwitchDisabled = () => activeTab.value === 'codex' && !activeProxyState.value
+const providerSwitchDependsOnManagedProxy = () =>
+  activeTab.value === 'openai-responses' || activeTab.value === 'openai-chat'
+
+const isProviderSwitchDisabled = () =>
+  providerSwitchDependsOnManagedProxy() && !activeProxyState.value
 
 const providerSwitchTitle = () =>
   isProviderSwitchDisabled() ? t('components.main.providers.codexSwitchDisabled') : ''
@@ -1043,19 +1053,22 @@ const handleProviderSwitchChange = () => {
 
 const providerStatsMap = reactive<Record<ProviderTab, Record<string, ProviderDailyStat>>>({
   claude: {},
-  codex: {},
+  'openai-responses': {},
+  'openai-chat': {},
   gemini: {},
   others: {},
 })
 const providerStatsLoading = reactive<Record<ProviderTab, boolean>>({
   claude: false,
-  codex: false,
+  'openai-responses': false,
+  'openai-chat': false,
   gemini: false,
   others: false,
 })
 const providerStatsLoaded = reactive<Record<ProviderTab, boolean>>({
   claude: false,
-  codex: false,
+  'openai-responses': false,
+  'openai-chat': false,
   gemini: false,
   others: false,
 })
@@ -1083,7 +1096,8 @@ const onConfigFileSaved = () => {
 // 黑名单状态
 const blacklistStatusMap = reactive<Record<ProviderTab, Record<string, BlacklistStatus>>>({
   claude: {},
-  codex: {},
+  'openai-responses': {},
+  'openai-chat': {},
   gemini: {},
   others: {},
 })
@@ -1092,7 +1106,8 @@ let blacklistTimer: number | undefined
 // 可用性旧结果（已废弃，保留用于兼容）
 const connectivityResultsMap = reactive<Record<ProviderTab, Record<number, ConnectivityResult>>>({
   claude: {},
-  codex: {},
+  'openai-responses': {},
+  'openai-chat': {},
   gemini: {},
   others: {},
 })
@@ -1100,7 +1115,8 @@ const connectivityResultsMap = reactive<Record<ProviderTab, Record<number, Conne
 // 可用性监控状态（新）
 const availabilityResultsMap = reactive<Record<ProviderTab, Record<number, ProviderTimeline>>>({
   claude: {},
-  codex: {},
+  'openai-responses': {},
+  'openai-chat': {},
   gemini: {},
   others: {},
 })
@@ -1114,7 +1130,8 @@ interface LastUsedProvider {
 }
 const lastUsedProviders = reactive<Record<string, LastUsedProvider | null>>({
   claude: null,
-  codex: null,
+  'openai-responses': null,
+  'openai-chat': null,
   gemini: null,
   others: null,
 })
@@ -1208,7 +1225,8 @@ interface GeminiProvider {
 
 const tabs = [
   { id: 'claude', label: 'Claude Code' },
-  { id: 'codex', label: 'Codex' },
+  { id: 'openai-responses', label: 'OpenAI Responses' },
+  { id: 'openai-chat', label: 'OpenAI Chat' },
   { id: 'gemini', label: 'Gemini' },
   { id: 'others', label: '其他' },
 ] as const
@@ -1251,7 +1269,8 @@ const saveTabOrder = (order: ProviderTab[]) => {
 
 const cards = reactive<Record<ProviderTab, AutomationCard[]>>({
   claude: createAutomationCards(automationCardGroups.claude),
-  codex: createAutomationCards(automationCardGroups.codex),
+  'openai-responses': createAutomationCards(automationCardGroups['openai-responses']),
+  'openai-chat': createAutomationCards(automationCardGroups['openai-chat']),
   gemini: [],
   others: [],
 })
@@ -1487,7 +1506,7 @@ const refreshProxyState = async (tab: ProviderTab) => {
       const status = await fetchGeminiProxyStatus()
       proxyStates[tab] = Boolean(status?.enabled)
     } else {
-      const status = await fetchProxyStatus(tab as 'claude' | 'codex')
+      const status = await fetchProxyStatus(tab as 'claude' | 'openai-responses' | 'openai-chat')
       proxyStates[tab] = Boolean(status?.enabled)
     }
   } catch (error) {
@@ -1522,9 +1541,9 @@ const onProxyToggle = async () => {
       }
     } else {
       if (nextState) {
-        await enableProxy(tab as 'claude' | 'codex')
+        await enableProxy(tab as 'claude' | 'openai-responses' | 'openai-chat')
       } else {
-        await disableProxy(tab as 'claude' | 'codex')
+        await disableProxy(tab as 'claude' | 'openai-responses' | 'openai-chat')
       }
     }
     proxyStates[tab] = nextState
@@ -1545,7 +1564,7 @@ const loadProviderStats = async (tab: ProviderTab) => {
   providerStatsLoading[tab] = true
   try {
     // Gemini 统计数据目前通过相同的日志接口，直接查询
-    const stats = await fetchProviderDailyStats(tab as 'claude' | 'codex' | 'gemini')
+    const stats = await fetchProviderDailyStats(tab as 'claude' | 'openai-responses' | 'gemini')
     const mapped: Record<string, ProviderDailyStat> = {}
     ;(stats ?? []).forEach((stat) => {
       mapped[normalizeProviderKey(stat.provider)] = stat
@@ -2018,7 +2037,8 @@ const activeCards = computed(() => cards[activeTab.value] ?? [])
 const connectivityTestModelOptions = computed(() => {
   const options: Record<string, string[]> = {
     claude: ['claude-haiku-4-5-20251001', 'claude-sonnet-4-5-20250929'],
-    codex: ['gpt-5.1', 'gpt-5.1-codex'],
+    'openai-responses': ['gpt-5.1', 'gpt-5.1-codex'],
+    'openai-chat': ['gpt-5.1', 'gpt-5.1-mini'],
     gemini: ['gemini-2.5-flash', 'gemini-2.5-pro'],
   }
   return options[modalState.tabId] || options.claude
@@ -2027,7 +2047,7 @@ const connectivityTestModelOptions = computed(() => {
 // 可用性测试端点选项
 const connectivityEndpointOptions = [
   { value: '/v1/messages', label: '/v1/messages (Anthropic)' },
-  { value: '/v1/chat/completions', label: '/v1/chat/completions (OpenAI)' },
+  { value: '/chat/completions', label: '/chat/completions (OpenAI Chat)' },
   { value: '/responses', label: '/responses (Codex)' },
 ]
 
@@ -2042,9 +2062,10 @@ const getDefaultEndpoint = (platform: string, upstreamProtocol = 'auto') => {
   }
   const defaults: Record<string, string> = {
     claude: '/v1/messages',
-    codex: '/responses',
+    'openai-responses': '/responses',
+    'openai-chat': '/chat/completions',
   }
-  return defaults[platform] || '/v1/chat/completions'
+  return defaults[platform] || '/chat/completions'
 }
 
 // 获取平台默认认证方式（默认 Bearer，与 v2.2.x 保持一致）
@@ -2092,7 +2113,7 @@ const currentProxyLabel = computed(() => {
   const tab = activeTab.value
   if (tab === 'claude') {
     return t('components.main.relayToggle.hostClaude')
-  } else if (tab === 'codex') {
+  } else if (tab === 'openai-responses') {
     return t('components.main.relayToggle.hostCodex')
   } else if (tab === 'gemini') {
     return t('components.main.relayToggle.hostGemini')
@@ -2308,6 +2329,30 @@ const upstreamProtocolOptions = computed(() => [
   { value: 'openai_chat', label: t('components.main.form.upstreamProtocol.openaiChat'), desc: t('components.main.form.upstreamProtocol.openaiChatDesc') },
 ])
 
+const platformSupportsResponsesEndpoint = (platform: ProviderTab) => platform !== 'openai-chat'
+const platformSupportsChatEndpoint = (platform: ProviderTab) => platform !== 'openai-responses'
+
+const showResponsesEndpointField = computed(() =>
+  platformSupportsResponsesEndpoint(modalState.tabId)
+)
+
+const showChatEndpointField = computed(() =>
+  platformSupportsChatEndpoint(modalState.tabId)
+)
+
+const protocolEndpointsForSave = () => ({
+  apiEndpoint:
+    modalState.tabId === 'openai-responses' || modalState.tabId === 'openai-chat'
+      ? ''
+      : modalState.form.apiEndpoint || '',
+  responsesEndpoint: platformSupportsResponsesEndpoint(modalState.tabId)
+    ? modalState.form.responsesEndpoint || ''
+    : '',
+  chatEndpoint: platformSupportsChatEndpoint(modalState.tabId)
+    ? modalState.form.chatEndpoint || ''
+    : '',
+})
+
 const resolveEffectiveAuthType = () =>
   customAuthHeader.value.trim() || selectedAuthType.value || getDefaultAuthType(modalState.tabId)
 
@@ -2418,6 +2463,8 @@ const submitModal = async (): Promise<boolean> => {
     return false
   }
 
+  const protocolEndpoints = protocolEndpointsForSave()
+
   if (editingCard.value) {
     // 仅当 level 变化时才重新排序，避免破坏同级拖拽顺序
     const prevLevel = normalizeLevel(editingCard.value.level)
@@ -2431,9 +2478,9 @@ const submitModal = async (): Promise<boolean> => {
       enabled: modalState.form.enabled,
       supportedModels: modalState.form.supportedModels || {},
       modelMapping: modalState.form.modelMapping || {},
-      apiEndpoint: modalState.form.apiEndpoint || '',
-      responsesEndpoint: modalState.form.responsesEndpoint || '',
-      chatEndpoint: modalState.form.chatEndpoint || '',
+      apiEndpoint: protocolEndpoints.apiEndpoint,
+      responsesEndpoint: protocolEndpoints.responsesEndpoint,
+      chatEndpoint: protocolEndpoints.chatEndpoint,
       upstreamProtocol: modalState.form.upstreamProtocol || 'auto',
       // 可用性监控配置（新）
       availabilityMonitorEnabled: !!modalState.form.availabilityMonitorEnabled,
@@ -2473,9 +2520,9 @@ const submitModal = async (): Promise<boolean> => {
       enabled: modalState.form.enabled,
       supportedModels: modalState.form.supportedModels || {},
       modelMapping: modalState.form.modelMapping || {},
-      apiEndpoint: modalState.form.apiEndpoint || '',
-      responsesEndpoint: modalState.form.responsesEndpoint || '',
-      chatEndpoint: modalState.form.chatEndpoint || '',
+      apiEndpoint: protocolEndpoints.apiEndpoint,
+      responsesEndpoint: protocolEndpoints.responsesEndpoint,
+      chatEndpoint: protocolEndpoints.chatEndpoint,
       upstreamProtocol: modalState.form.upstreamProtocol || 'auto',
       // 可用性监控配置（新）
       availabilityMonitorEnabled: !!modalState.form.availabilityMonitorEnabled,
@@ -2516,7 +2563,7 @@ const submitAndApplyModal = async () => {
   // 1. 执行普通保存逻辑
   const editingId = modalState.editingId
   const tabId = modalState.tabId as ProviderTab
-  if (!editingId || tabId === 'others') return
+  if (!editingId || !supportsDirectApply(tabId)) return
 
   // 获取当前编辑的卡片
   const editingCard = cards[tabId]?.find(c => c.id === editingId)
@@ -2533,7 +2580,7 @@ const submitAndApplyModal = async () => {
   try {
     if (tabId === 'claude') {
       await Call.ByName('codeswitch/services.ClaudeSettingsService.ApplySingleProvider', editingId)
-    } else if (tabId === 'codex') {
+    } else if (tabId === 'openai-responses') {
       await Call.ByName('codeswitch/services.CodexSettingsService.ApplySingleProvider', editingId)
     } else if (tabId === 'gemini') {
       // Gemini 使用字符串 ID，需要从 cache 中找到原始 provider

@@ -25,8 +25,10 @@ const (
 	skillStoreFile = "skill.json"
 
 	// 平台常量
-	skillPlatformClaude = "claude"
-	skillPlatformCodex  = "codex"
+	skillPlatformClaude          = "claude"
+	skillPlatformOpenAIResponses = "openai-responses"
+	skillPlatformOpenAIChat      = "openai-chat"
+	skillPlatformCodex           = "codex" // Deprecated
 
 	// 安装位置常量
 	skillLocationUser    = "user"
@@ -52,7 +54,7 @@ type Skill struct {
 	// 新增字段
 	Enabled         bool   `json:"enabled"`                     // 是否启用（从 SKILL.md 读取）
 	LicenseFile     string `json:"license_file,omitempty"`      // 许可证文件路径
-	Platform        string `json:"platform,omitempty"`          // "claude" | "codex"
+	Platform        string `json:"platform,omitempty"`          // "claude" | "openai-responses" | "openai-chat"
 	InstallLocation string `json:"install_location,omitempty"`  // "user" | "project"
 
 	// 仓库字段
@@ -96,7 +98,7 @@ type installRequest struct {
 	RepoOwner string `json:"repo_owner"`
 	RepoName  string `json:"repo_name"`
 	Branch    string `json:"repo_branch"`
-	Platform  string `json:"platform"`  // "claude" | "codex"
+	Platform  string `json:"platform"`  // "claude" | "openai-responses" | "openai-chat"
 	Location  string `json:"location"`  // "user" | "project"
 }
 
@@ -120,7 +122,7 @@ func NewSkillService() *SkillService {
 }
 
 // getInstallPath 根据平台和位置返回 skills 目录路径
-// platform: "claude" | "codex"
+// platform: "claude" | "openai-responses" | "openai-chat"
 // location: "user" | "project"
 func (ss *SkillService) getInstallPath(platform, location string) (string, error) {
 	var basePath string
@@ -146,7 +148,7 @@ func (ss *SkillService) getInstallPath(platform, location string) (string, error
 
 	var configDir string
 	switch platform {
-	case skillPlatformCodex:
+	case skillPlatformCodex, skillPlatformOpenAIResponses, skillPlatformOpenAIChat:
 		configDir = ".codex"
 	case skillPlatformClaude:
 		fallthrough

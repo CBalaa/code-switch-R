@@ -64,7 +64,7 @@ func (s *EnvCheckService) getKeywordsForApp(app string) []string {
 	switch strings.ToLower(app) {
 	case "claude":
 		return []string{"ANTHROPIC"}
-	case "codex":
+	case "openai-responses", "openai-chat":
 		return []string{"OPENAI"}
 	case "gemini":
 		return []string{"GEMINI", "GOOGLE_GEMINI"}

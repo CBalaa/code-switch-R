@@ -23,9 +23,11 @@ const (
 	codexConfigFile  = "config.toml"
 	geminiDirName    = ".gemini"
 	geminiConfigFile = "settings.json"
-	platClaudeCode   = "claude-code"
-	platCodex        = "codex"
-	platGemini       = "gemini"
+	platClaudeCode        = "claude-code"
+	platOpenAIResponses   = "openai-responses"
+	platOpenAIChat        = "openai-chat"
+	platGemini            = "gemini"
+	platCodex             = "codex" // Deprecated
 )
 
 var builtInServers = map[string]rawMCPServer{
@@ -401,8 +403,10 @@ func normalizePlatform(value string) (string, bool) {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "claude", "claude_code", "claude-code":
 		return "claude-code", true
-	case "codex":
-		return "codex", true
+	case "codex", "openai-responses":
+		return "openai-responses", true
+	case "openai-chat":
+		return "openai-chat", true
 	case "gemini", "gemini-cli", "gemini_cli":
 		return "gemini", true
 	default:

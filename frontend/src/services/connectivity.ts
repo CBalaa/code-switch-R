@@ -34,7 +34,7 @@ const SERVICE = 'codeswitch/services.ConnectivityTestService'
 
 /**
  * 测试指定平台的所有启用检测的供应商
- * @param platform 'claude' | 'codex' | 'gemini'
+ * @param platform 'claude' | 'openai-responses' | 'openai-chat' | 'gemini'
  */
 export const testAllProviders = async (platform: string): Promise<ConnectivityResult[]> => {
   return Call.ByName(`${SERVICE}.TestAll`, platform)
@@ -42,7 +42,7 @@ export const testAllProviders = async (platform: string): Promise<ConnectivityRe
 
 /**
  * 获取指定平台的测试结果（不触发新测试）
- * @param platform 'claude' | 'codex' | 'gemini'
+ * @param platform 'claude' | 'openai-responses' | 'openai-chat' | 'gemini'
  */
 export const getConnectivityResults = async (platform: string): Promise<ConnectivityResult[]> => {
   return Call.ByName(`${SERVICE}.GetResults`, platform)
@@ -57,7 +57,7 @@ export const getAllConnectivityResults = async (): Promise<Record<string, Connec
 
 /**
  * 手动触发单个供应商测试
- * @param platform 'claude' | 'codex' | 'gemini'
+ * @param platform 'claude' | 'openai-responses' | 'openai-chat' | 'gemini'
  * @param providerId provider ID
  */
 export const runSingleTest = async (platform: string, providerId: number): Promise<ConnectivityResult> => {

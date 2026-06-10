@@ -118,9 +118,10 @@ func NewHealthCheckService(
 		settingsService:  settingsService,
 		failCounters:     make(map[string]*AvailabilityFailureCounter),
 		latestResults: map[string]map[int64]*HealthCheckResult{
-			"claude": {},
-			"codex":  {},
-			"gemini": {},
+			"claude":           {},
+			"openai-responses": {},
+			"openai-chat":      {},
+			"gemini":           {},
 		},
 		pollInterval: time.Duration(DefaultPollIntervalSeconds) * time.Second,
 		client: &http.Client{
@@ -192,7 +193,7 @@ func (hcs *HealthCheckService) GetLatestResults() (map[string][]ProviderTimeline
 	results := make(map[string][]ProviderTimeline)
 
 	// 遍历所有平台
-	for _, platform := range []string{"claude", "codex"} {
+	for _, platform := range []string{"claude", "openai-responses", "openai-chat"} {
 		providers, err := hcs.providerService.LoadProviders(platform)
 		if err != nil {
 			log.Printf("[HealthCheck] 加载 %s 供应商失败: %v", platform, err)
@@ -455,7 +456,7 @@ func (hcs *HealthCheckService) RunSingleCheck(platform string, providerID int64)
 func (hcs *HealthCheckService) RunAllChecks() (map[string][]HealthCheckResult, error) {
 	results := make(map[string][]HealthCheckResult)
 
-	for _, platform := range []string{"claude", "codex"} {
+	for _, platform := range []string{"claude", "openai-responses", "openai-chat"} {
 		platformResults := hcs.checkAllProviders(platform)
 		results[platform] = platformResults
 	}
@@ -684,7 +685,9 @@ func (hcs *HealthCheckService) getEffectiveModel(provider *Provider, platform st
 			return "gpt-4.1-mini"
 		}
 		return "claude-haiku-4-5-20251001"
-	case "codex":
+	case "openai-responses":
+		return "gpt-4o-mini"
+	case "openai-chat":
 		return "gpt-4o-mini"
 	case "gemini":
 		return "gemini-1.5-flash"
@@ -718,10 +721,12 @@ func (hcs *HealthCheckService) getEffectiveEndpoint(provider *Provider, platform
 			return "/v1/responses"
 		}
 		return "/v1/messages"
-	case "codex":
+	case "openai-responses":
 		return "/responses"
+	case "openai-chat":
+		return "/chat/completions"
 	default:
-		return "/v1/chat/completions"
+		return "/chat/completions"
 	}
 }
 
@@ -990,7 +995,7 @@ func (hcs *HealthCheckService) SetAutoAvailabilityPolling(enabled bool) {
 
 // runAllPlatformChecks 执行所有平台的检测
 func (hcs *HealthCheckService) runAllPlatformChecks() {
-	platforms := []string{"claude", "codex"}
+	platforms := []string{"claude", "openai-responses", "openai-chat"}
 	for _, platform := range platforms {
 		hcs.checkAllProviders(platform)
 	}

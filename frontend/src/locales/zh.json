@@ -151,7 +151,7 @@
     },
     "main": {
       "hero": {
-        "eyebrow": "Claude & Codex 供应商总览",
+        "eyebrow": "Claude & OpenAI 供应商总览",
         "title": "实时掌握 AI 编程供给",
         "lead": "集中查看供应商状态、代理开关与今日使用情况"
       },
@@ -163,7 +163,7 @@
       "relayToggle": {
         "label": "Claude proxy",
         "hostClaude": "托管 Claude Code",
-        "hostCodex": "托管 Codex",
+        "hostCodex": "托管 OpenAI Responses",
         "hostGemini": "托管 Gemini CLI",
         "hostOthers": "托管自定义 CLI",
         "tooltip": "通过本地转发托管 API 访问，统一管理密钥与配额。",
@@ -220,7 +220,7 @@
         "loading": "刷新中...",
         "noData": "今日暂无数据",
         "lastUsed": "正在使用",
-        "codexSwitchDisabled": "开启“托管 Codex”后可使用此开关"
+        "codexSwitchDisabled": ""
       },
       "directApply": {
         "title": "直接应用",
@@ -261,7 +261,7 @@
           "apiKey": "sk-xxxxx",
           "apiEndpoint": "留空使用平台默认，如 Claude 兼容供应商常用 /v1/responses",
           "responsesEndpoint": "例如：/responses 或 /v1/responses",
-          "chatEndpoint": "例如：/v1/chat/completions",
+          "chatEndpoint": "例如：/chat/completions",
           "officialSite": "https://vendor.com",
           "icon": "例如：aicoding、kimi",
           "availabilityTestModel": "留空则使用平台默认模型",
@@ -275,9 +275,9 @@
         "noIconResults": "未找到匹配的图标",
         "hints": {
           "level": "数字越小优先级越高，Level 1 会被优先尝试，失败后依次尝试 Level 2、Level 3 等",
-          "apiEndpoint": "覆盖平台默认端点。留空使用默认（Claude: Anthropic 为 /v1/messages，OpenAI Compatible 为 /v1/responses；Codex: /responses）。GLM 模型请使用 /v1/chat/completions",
+          "apiEndpoint": "覆盖平台默认端点。留空使用默认（Claude: Anthropic 为 /v1/messages，OpenAI Compatible 为 /v1/responses；OpenAI Chat: /chat/completions）。GLM 模型请使用 /chat/completions",
           "responsesEndpoint": "客户端请求 /responses 或 /v1/responses 时使用此端点；留空则使用旧 API 端点或平台默认端点",
-          "chatEndpoint": "客户端请求 /v1/chat/completions 时使用此端点；留空则使用旧 API 端点或平台默认端点",
+          "chatEndpoint": "客户端请求 /chat/completions 时使用此端点；留空则使用旧 API 端点或平台默认端点",
           "upstreamProtocol": "指定上游 API 的协议类型。选择 auto 时根据端点自动检测；选择 OpenAI Compatible 时会把 Claude Messages 请求转换到 OpenAI Responses 或 Chat Completions",
           "availabilityMonitor": "启用后会定期进行健康检查，监控此供应商的可用性状态",
           "connectivityAutoBlacklist": "可用性检查失败时自动拉黑该供应商",
@@ -381,7 +381,7 @@
     "logs": {
       "eyebrow": "请求追踪",
       "title": "代理请求日志",
-      "subtitle": "查看 Claude Code、Codex 与 Gemini 代理的最新访问记录。",
+      "subtitle": "查看 Claude Code、OpenAI 与 Gemini 代理的最新访问记录。",
       "loading": "加载中...",
       "refresh": "刷新",
       "applyFilters": "应用筛选",
@@ -460,7 +460,7 @@
         "weekdaySat": "周六",
         "weekdaySun": "周日",
         "trayPanelClaude": "Claude Code",
-        "trayPanelCodex": "Codex",
+        "trayPanelCodex": "OpenAI Responses",
         "autoStart": "开机自启动",
         "switchNotify": "切换通知",
         "switchNotifyHint": "供应商切换或拉黑时发送系统通知",

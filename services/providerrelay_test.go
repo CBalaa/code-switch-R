@@ -21,14 +21,14 @@ func TestResolveRelayEndpointUsesProtocolSpecificEndpoint(t *testing.T) {
 	provider := Provider{
 		APIEndpoint:       "/legacy",
 		ResponsesEndpoint: "/v1/responses",
-		ChatEndpoint:      "/v1/chat/completions",
+		ChatEndpoint:      "/chat/completions",
 	}
 
 	if got := relay.resolveRelayEndpoint("codex", provider, "/responses"); got != "/v1/responses" {
 		t.Fatalf("codex responses endpoint = %q, want /v1/responses", got)
 	}
-	if got := relay.resolveRelayEndpoint("codex", provider, "/v1/chat/completions"); got != "/v1/chat/completions" {
-		t.Fatalf("codex chat endpoint = %q, want /v1/chat/completions", got)
+	if got := relay.resolveRelayEndpoint("codex", provider, "/chat/completions"); got != "/chat/completions" {
+		t.Fatalf("codex chat endpoint = %q, want /chat/completions", got)
 	}
 }
 
@@ -370,7 +370,7 @@ func TestShouldUseCodexStreamGuardOnlyForResponses(t *testing.T) {
 	if !relay.shouldUseCodexStreamGuard("codex", "/responses") {
 		t.Fatalf("expected Codex Responses stream guard to be enabled by default")
 	}
-	if relay.shouldUseCodexStreamGuard("codex", "/v1/chat/completions") {
+	if relay.shouldUseCodexStreamGuard("codex", "/chat/completions") {
 		t.Fatalf("expected Codex Chat Completions to bypass stream guard")
 	}
 	if relay.shouldUseCodexStreamGuard("claude", "/v1/responses") {
@@ -461,6 +461,12 @@ func TestCodexProviderEnabledRequiredOnlyInManagedProxyMode(t *testing.T) {
 	if relay.shouldRequireProviderEnabled("codex") != false {
 		t.Fatalf("codex should ignore provider enabled when managed proxy is disabled")
 	}
+	if relay.shouldRequireProviderEnabled("openai-responses") != false {
+		t.Fatalf("openai-responses should ignore provider enabled when managed proxy is disabled")
+	}
+	if relay.shouldRequireProviderEnabled("openai-chat") != false {
+		t.Fatalf("openai-chat should ignore provider enabled when managed proxy is disabled")
+	}
 
 	codexDir := filepath.Join(testHome, codexSettingsDir)
 	if err := os.MkdirAll(codexDir, 0o700); err != nil {
@@ -478,6 +484,12 @@ wire_api = "responses"
 	}
 	if relay.shouldRequireProviderEnabled("codex") != true {
 		t.Fatalf("codex should require provider enabled when managed proxy is enabled")
+	}
+	if relay.shouldRequireProviderEnabled("openai-responses") != true {
+		t.Fatalf("openai-responses should require provider enabled when managed proxy is enabled")
+	}
+	if relay.shouldRequireProviderEnabled("openai-chat") != true {
+		t.Fatalf("openai-chat should require provider enabled when managed proxy is enabled")
 	}
 }
 
@@ -501,7 +513,7 @@ func TestSelectCodexEmptyStreamRetryProviderDoesNotFallbackToOtherProvider(t *te
 	if err != nil {
 		t.Fatalf("marshal providers: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "codex.json"), payload, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "openai-responses.json"), payload, 0o600); err != nil {
 		t.Fatalf("write providers: %v", err)
 	}
 
@@ -542,7 +554,7 @@ func TestCodexDirectAppliedProviderIDDetectedInManualMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal providers: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "codex.json"), payload, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "openai-responses.json"), payload, 0o600); err != nil {
 		t.Fatalf("write providers: %v", err)
 	}
 
@@ -575,12 +587,28 @@ wire_api = "responses"
 		t.Fatalf("direct applied provider id = %v, want 2", id)
 	}
 
+	id, required = relay.codexDirectAppliedProviderFilter("openai-responses", false)
+	if !required {
+		t.Fatalf("openai-responses manual mode should require direct applied provider")
+	}
+	if id == nil || *id != 2 {
+		t.Fatalf("openai-responses direct applied provider id = %v, want 2", id)
+	}
+
 	id, required = relay.codexDirectAppliedProviderFilter("codex", true)
 	if required {
 		t.Fatalf("managed mode should not require direct applied provider")
 	}
 	if id != nil {
 		t.Fatalf("managed mode should not use direct applied provider id, got %v", *id)
+	}
+
+	id, required = relay.codexDirectAppliedProviderFilter("openai-responses", true)
+	if required {
+		t.Fatalf("openai-responses managed mode should not require direct applied provider")
+	}
+	if id != nil {
+		t.Fatalf("openai-responses managed mode should not use direct applied provider id, got %v", *id)
 	}
 }
 
@@ -595,6 +623,14 @@ func TestCodexDirectAppliedProviderRequiredInManualMode(t *testing.T) {
 	}
 	if id != nil {
 		t.Fatalf("manual mode without direct apply should not select a provider, got %v", *id)
+	}
+
+	id, required = relay.codexDirectAppliedProviderFilter("openai-responses", false)
+	if !required {
+		t.Fatalf("openai-responses manual mode should require direct applied provider")
+	}
+	if id != nil {
+		t.Fatalf("openai-responses manual mode without direct apply should not select a provider, got %v", *id)
 	}
 }
 

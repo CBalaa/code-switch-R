@@ -1699,7 +1699,7 @@ export class Provider {
 
     /**
      * API 端点路径（可选）- 覆盖平台默认端点
-     * 如：GLM 模型需要使用 /v1/chat/completions 而非 /v1/messages
+     * 如：GLM 模型需要使用 /chat/completions 而非 /v1/messages
      * 留空则使用平台默认（claude: /v1/messages, codex: /responses）
      */
     "apiEndpoint"?: string;
@@ -1712,7 +1712,7 @@ export class Provider {
 
     /**
      * Chat Completions 协议端点（可选）
-     * 当入站请求为 /v1/chat/completions 时优先使用。
+     * 当入站请求为 /chat/completions 时优先使用。
      */
     "chatEndpoint"?: string;
 

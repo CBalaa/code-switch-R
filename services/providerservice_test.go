@@ -200,6 +200,11 @@ func TestDetectUpstreamProtocol(t *testing.T) {
 		},
 		{
 			name:     "OpenAI Chat Completions",
+			endpoint: "/chat/completions",
+			want:     UpstreamProtocolOpenAIChat,
+		},
+		{
+			name:     "OpenAI Chat Completions legacy v1 path",
 			endpoint: "/v1/chat/completions",
 			want:     UpstreamProtocolOpenAIChat,
 		},
@@ -223,14 +228,14 @@ func TestProviderGetEffectiveEndpointUsesProtocolSpecificEndpoint(t *testing.T) 
 	provider := Provider{
 		APIEndpoint:       "/legacy",
 		ResponsesEndpoint: "/responses",
-		ChatEndpoint:      "/v1/chat/completions",
+		ChatEndpoint:      "/chat/completions",
 	}
 
 	if got := provider.GetEffectiveEndpoint("/responses"); got != "/responses" {
 		t.Fatalf("responses endpoint = %q, want /responses", got)
 	}
-	if got := provider.GetEffectiveEndpoint("/v1/chat/completions"); got != "/v1/chat/completions" {
-		t.Fatalf("chat endpoint = %q, want /v1/chat/completions", got)
+	if got := provider.GetEffectiveEndpoint("/chat/completions"); got != "/chat/completions" {
+		t.Fatalf("chat endpoint = %q, want /chat/completions", got)
 	}
 	if got := provider.GetEffectiveEndpoint("/v1/messages"); got != "/legacy" {
 		t.Fatalf("legacy endpoint = %q, want /legacy", got)
@@ -243,7 +248,7 @@ func TestProviderGetEffectiveEndpointFallsBackToLegacyEndpoint(t *testing.T) {
 	if got := provider.GetEffectiveEndpoint("/responses"); got != "/v1/responses" {
 		t.Fatalf("responses fallback = %q, want /v1/responses", got)
 	}
-	if got := provider.GetEffectiveEndpoint("/v1/chat/completions"); got != "/v1/responses" {
+	if got := provider.GetEffectiveEndpoint("/chat/completions"); got != "/v1/responses" {
 		t.Fatalf("chat fallback = %q, want /v1/responses", got)
 	}
 }

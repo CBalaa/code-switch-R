@@ -21,8 +21,10 @@ func providerFilePathNoCreate(kind string) (string, error) {
 	switch strings.ToLower(kind) {
 	case "claude", "claude-code", "claude_code":
 		filename = "claude-code.json"
-	case "codex":
-		filename = "codex.json"
+	case "codex", "openai-responses":
+		filename = "openai-responses.json"
+	case "openai-chat":
+		filename = "openai-chat.json"
 	default:
 		return "", nil
 	}

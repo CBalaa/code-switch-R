@@ -441,7 +441,8 @@ const lockedFieldKeys = computed(() => {
 
 const platformLabels: Record<CLIPlatform, string> = {
   claude: 'Claude Code',
-  codex: 'Codex',
+  'openai-responses': 'OpenAI Responses',
+  'openai-chat': 'OpenAI Chat',
   gemini: 'Gemini',
 }
 
@@ -492,8 +493,8 @@ const lockedFields = computed(() => {
         }
       }
 
-      // Codex 平台：注入 base_url（config.toml）和 OPENAI_API_KEY（auth.json）
-      if (props.platform === 'codex') {
+      // OpenAI Responses 平台：注入 base_url（config.toml）和 OPENAI_API_KEY（auth.json）
+      if (props.platform === 'openai-responses') {
         // config.toml 中的 base_url 字段（支持任意 providerKey）
         if (field.key.includes('.base_url') && baseUrl) {
           newField.value = baseUrl
@@ -1014,7 +1015,8 @@ const applyParsedConfig = (data: Record<string, any>) => {
       }
       break
     }
-    case 'codex': {
+    case 'openai-responses':
+    case 'openai-chat': {
       if (typeof data.model === 'string') next.model = data.model
       if (typeof data.model_reasoning_effort === 'string') next.model_reasoning_effort = data.model_reasoning_effort
       if (typeof data.disable_response_storage !== 'undefined') {

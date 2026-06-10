@@ -77,9 +77,10 @@ func NewConnectivityTestService(
 		blacklistService: blacklistService,
 		settingsService:  settingsService,
 		results: map[string]map[int64]*ConnectivityResult{
-			"claude": {},
-			"codex":  {},
-			"gemini": {},
+			"claude":           {},
+			"openai-responses": {},
+			"openai-chat":      {},
+			"gemini":           {},
 		},
 		autoTestEnabled: false,
 		client: &http.Client{
@@ -225,10 +226,12 @@ func (cts *ConnectivityTestService) getEffectiveEndpoint(provider *Provider, pla
 			return "/v1/responses"
 		}
 		return "/v1/messages"
-	case "codex":
+	case "openai-responses":
 		return "/responses"
+	case "openai-chat":
+		return "/chat/completions"
 	default:
-		return "/v1/chat/completions"
+		return "/chat/completions"
 	}
 }
 
@@ -284,7 +287,7 @@ func (cts *ConnectivityTestService) buildTestRequest(platform string, provider *
 		return data, "output"
 	}
 
-	// 默认 OpenAI 格式: /v1/chat/completions
+	// 默认 OpenAI 格式: /chat/completions
 	reqBody := map[string]interface{}{
 		"model":      model,
 		"max_tokens": 1,
@@ -655,7 +658,7 @@ func (cts *ConnectivityTestService) stopAutoTest() {
 func (cts *ConnectivityTestService) runAllPlatformTests() {
 	// 仅轮询 ProviderService 支持的平台，避免无意义的错误日志
 	// Gemini 使用独立的 GeminiService，暂未接入
-	platforms := []string{"claude", "codex"}
+	platforms := []string{"claude", "openai-responses", "openai-chat"}
 	for _, platform := range platforms {
 		cts.TestAll(platform)
 	}

@@ -28,7 +28,7 @@ const SETTINGS_SERVICE = 'codeswitch/services.SettingsService'
 
 /**
  * 获取指定平台的黑名单状态列表
- * @param platform 'claude' | 'codex'
+ * @param platform 'claude' | 'openai-responses' | 'openai-chat'
  */
 export const getBlacklistStatus = async (platform: string): Promise<BlacklistStatus[]> => {
   return Call.ByName(`${BLACKLIST_SERVICE}.GetBlacklistStatus`, platform)
@@ -36,7 +36,7 @@ export const getBlacklistStatus = async (platform: string): Promise<BlacklistSta
 
 /**
  * 手动解除拉黑
- * @param platform 'claude' | 'codex'
+ * @param platform 'claude' | 'openai-responses' | 'openai-chat'
  * @param providerName provider 名称
  */
 export const manualUnblock = async (platform: string, providerName: string): Promise<void> => {

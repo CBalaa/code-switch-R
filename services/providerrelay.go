@@ -75,9 +75,10 @@ func NewProviderRelayService(providerService *ProviderService, geminiService *Ge
 		httpClient:          newRelayHTTPClient(),
 		addr:                addr,
 		lastUsed: map[string]*LastUsedProvider{
-			"claude": nil,
-			"codex":  nil,
-			"gemini": nil,
+			"claude":           nil,
+			"openai-responses": nil,
+			"openai-chat":      nil,
+			"gemini":           nil,
 		},
 		rrLastStart: make(map[string]string),
 	}
@@ -168,10 +169,33 @@ func (prs *ProviderRelayService) isCodexStreamGuardEnabled() bool {
 }
 
 func (prs *ProviderRelayService) shouldUseCodexStreamGuard(kind, endpoint string) bool {
+	// openai-responses 走 stream guard（Codex 客户端走这个端点）
+	// openai-chat 不走 stream guard
+	if kind == "openai-responses" {
+		return isResponsesEndpoint(endpoint) && prs.isCodexStreamGuardEnabled()
+	}
 	return strings.EqualFold(kind, "codex") && isResponsesEndpoint(endpoint) && prs.isCodexStreamGuardEnabled()
 }
 
 func (prs *ProviderRelayService) shouldRequireProviderEnabled(kind string) bool {
+	if kind == "openai-responses" {
+		codexSettings := NewCodexSettingsService(prs.Addr(), prs.codexRelayKeys)
+		status, err := codexSettings.ProxyStatus()
+		if err != nil {
+			fmt.Printf("[WARN] 读取 OpenAI Responses 托管状态失败，保守使用 provider 开关: %v\n", err)
+			return true
+		}
+		return status.Enabled
+	}
+	if kind == "openai-chat" {
+		codexSettings := NewCodexSettingsService(prs.Addr(), prs.codexRelayKeys)
+		status, err := codexSettings.ProxyStatus()
+		if err != nil {
+			fmt.Printf("[WARN] 读取 OpenAI Chat 托管状态失败，保守使用 provider 开关: %v\n", err)
+			return true
+		}
+		return status.Enabled
+	}
 	if !strings.EqualFold(kind, "codex") {
 		return true
 	}
@@ -185,7 +209,13 @@ func (prs *ProviderRelayService) shouldRequireProviderEnabled(kind string) bool 
 }
 
 func (prs *ProviderRelayService) codexDirectAppliedProviderFilter(kind string, requireProviderEnabled bool) (*int64, bool) {
-	if !strings.EqualFold(kind, "codex") || requireProviderEnabled {
+	if kind == "openai-chat" {
+		return nil, false
+	}
+	if kind != "openai-responses" && !strings.EqualFold(kind, "codex") {
+		return nil, false
+	}
+	if requireProviderEnabled {
 		return nil, false
 	}
 	codexSettings := NewCodexSettingsService(prs.Addr(), prs.codexRelayKeys)
@@ -335,7 +365,7 @@ func (prs *ProviderRelayService) Start() error {
 func (prs *ProviderRelayService) validateConfig() []string {
 	warnings := make([]string, 0)
 
-	for _, kind := range []string{"claude", "codex"} {
+	for _, kind := range []string{"claude", "openai-responses", "openai-chat"} {
 		providers, err := prs.providerService.LoadProviders(kind)
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("[%s] 加载配置失败: %v", kind, err))
@@ -399,9 +429,10 @@ func (prs *ProviderRelayService) registerRoutes(router gin.IRouter) {
 
 	router.POST("/v1/messages", claudeAuth, prs.proxyHandler("claude", "/v1/messages"))
 	router.POST("/v1/messages/count_tokens", claudeAuth, prs.proxyHandler("claude", "/v1/messages/count_tokens"))
-	router.POST("/responses", codexAuth, prs.proxyHandler("codex", "/responses"))
-	router.POST("/v1/responses", codexAuth, prs.proxyHandler("codex", "/v1/responses"))
-	router.POST("/v1/chat/completions", codexAuth, prs.proxyHandler("codex", "/v1/chat/completions"))
+	router.POST("/responses", codexAuth, prs.proxyHandler("openai-responses", "/responses"))
+	router.POST("/v1/responses", codexAuth, prs.proxyHandler("openai-responses", "/v1/responses"))
+	router.POST("/chat/completions", codexAuth, prs.proxyHandler("openai-chat", "/chat/completions"))
+	router.POST("/v1/chat/completions", codexAuth, prs.proxyHandler("openai-chat", "/chat/completions"))
 
 	// /v1/models 端点（OpenAI-compatible API）
 	// 支持 Claude 和 Codex 平台
@@ -885,7 +916,7 @@ func (prs *ProviderRelayService) forwardRequest(
 
 	// Codex 客户端本身就是 OpenAI Responses 协议，请求体和响应体都应直接透传。
 	// 只有 Claude / 自定义 CLI 的 Anthropic Messages 入口才需要做协议转换。
-	shouldConvertOpenAICompatiblePayload := kind != "codex"
+	shouldConvertOpenAICompatiblePayload := kind != "codex" && kind != "openai-responses" && kind != "openai-chat"
 
 	// 如果上游是 OpenAI Compatible，需要转换请求体
 	if upstreamProtocol == UpstreamProtocolOpenAIChat && shouldConvertOpenAICompatiblePayload {
@@ -2003,7 +2034,7 @@ func ReqeustLogHook(c *gin.Context, kind string, usage *ReqeustLog) func(data []
 
 		parserFn := ClaudeCodeParseTokenUsageFromResponse
 		switch kind {
-		case "codex":
+		case "codex", "openai-responses":
 			parserFn = CodexParseTokenUsageFromResponse
 		case "gemini":
 			parserFn = GeminiParseTokenUsageFromResponse

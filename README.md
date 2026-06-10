@@ -181,7 +181,7 @@ sudo systemctl enable --now codeswitch
 sudo journalctl -u codeswitch -f
 ```
 
-更新程序后的常见流程：
+普通机器上更新程序后的常见流程：
 
 ```bash
 cd /home/chh/gitprojects/code-switch-R
@@ -192,6 +192,167 @@ conda activate code-switch-go-build-cgo
 go build -o codeswitch-web .
 sudo systemctl restart codeswitch
 ```
+
+生产机 `rn` 不按这个流程在远程编译。`rn` 配置低，统一按下一节的发布规范：本地构建、本地验证、只上传构建产物，远程只负责运行。
+
+## rn 生产发布规范
+
+`rn` 是当前公网服务所在机器，约定如下：
+
+| 项目 | 值 |
+|------|----|
+| SSH 别名 | `rn` |
+| 本地仓库 | `/home/chh/gitprojects/code-switch-R` |
+| 远程部署目录 | `/home/chh/apps/code-switch` |
+| systemd 服务 | `codeswitch.service` |
+| Web 管理入口 | `https://wcisman.cc` |
+| API Relay 入口 | `https://api.wcisman.cc` |
+| 远程本机 Web 端口 | `127.0.0.1:8080` |
+| 远程本机 Relay 端口 | `127.0.0.1:18100` |
+
+### 1. 本地构建
+
+在本地仓库构建前端和后端：
+
+```bash
+cd /home/chh/gitprojects/code-switch-R/frontend
+npm install
+npm run build
+
+cd /home/chh/gitprojects/code-switch-R
+go test ./...
+go build -o codeswitch-web .
+tar -C frontend -czf /tmp/codeswitch-frontend-dist.tgz dist
+```
+
+构建完成后，本地应至少有：
+
+- `codeswitch-web`
+- `/tmp/codeswitch-frontend-dist.tgz`
+- `frontend/dist/`
+
+### 2. 上传到 rn
+
+只上传构建产物，不在 `rn` 上跑 `npm install`、`npm run build` 或 `go build`：
+
+```bash
+STAMP="$(date +%Y%m%d-%H%M%S)"
+REMOTE_DIR="/home/chh/apps/code-switch"
+
+ssh rn "mkdir -p $REMOTE_DIR/frontend"
+scp /home/chh/gitprojects/code-switch-R/codeswitch-web "rn:$REMOTE_DIR/codeswitch-web.new"
+scp /tmp/codeswitch-frontend-dist.tgz "rn:/tmp/codeswitch-frontend-dist.$STAMP.tgz"
+
+ssh rn "
+  set -e
+  cd $REMOTE_DIR
+
+  rm -rf frontend/dist.new
+  mkdir -p frontend/dist.new
+  tar -xzf /tmp/codeswitch-frontend-dist.$STAMP.tgz -C frontend/dist.new --strip-components=1
+
+  if [ -f codeswitch-web ]; then
+    cp codeswitch-web codeswitch-web.bak.$STAMP
+  fi
+
+  if [ -d frontend/dist ]; then
+    rm -rf frontend/dist.bak.$STAMP
+    mv frontend/dist frontend/dist.bak.$STAMP
+  fi
+
+  mv frontend/dist.new frontend/dist
+  mv codeswitch-web.new codeswitch-web
+  chmod +x codeswitch-web
+"
+```
+
+### 3. 远程启动方式
+
+`rn` 上只用 systemd 管理服务，不要手工长期运行：
+
+```bash
+./codeswitch-web
+```
+
+手工运行只适合临时排查；排查结束后必须退出，避免占用 `8080` 或 `18100`，导致 systemd 启动失败。
+
+发布后让 root 或有 sudo 权限的用户执行：
+
+```bash
+sudo systemctl restart codeswitch.service
+systemctl status codeswitch.service --no-pager -l
+```
+
+正常状态应为：
+
+```text
+Active: active (running)
+```
+
+### 4. 发布后验证
+
+在 `rn` 上验证本机端口和路由：
+
+```bash
+ss -ltnp | grep -E ':(8080|18100) '
+curl -fsS http://127.0.0.1:8080/healthz
+curl -i -sS -X POST http://127.0.0.1:18100/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{}'
+curl -i -sS -X POST http://127.0.0.1:18100/responses \
+  -H 'Content-Type: application/json' \
+  -d '{}'
+```
+
+预期：
+
+- `8080` 和 `18100` 都有监听
+- `healthz` 返回 `{"ok":true}`
+- `/chat/completions` 和 `/responses` 不应该返回 `404`
+- 未带 relay key 时，API 路由返回 `401` 属于正常结果
+
+再从本地或任意外部机器验证公网反代：
+
+```bash
+curl -fsS https://wcisman.cc/healthz
+curl -i -sS -X POST https://api.wcisman.cc/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{}'
+```
+
+同样地，公网 API 未带 relay key 时返回 `401` 是正常的；如果返回 `404` 或 HTML 页面，通常说明反代或后端路由没有命中 API handler。
+
+### 5. 故障排查
+
+如果 `systemctl status` 显示 `activating (auto-restart)`、`failed` 或 `inactive (dead)`，先看日志：
+
+```bash
+sudo journalctl -u codeswitch.service -n 160 --no-pager
+```
+
+如果日志里出现端口占用，例如 `bind: address already in use`，检查是谁占用了端口：
+
+```bash
+ss -ltnp | grep -E ':(8080|18100) '
+ps -eo pid,ppid,stat,lstart,cmd | grep -E '/home/chh/apps/code-switch/codeswitch-web|codeswitch.service' | grep -v grep
+```
+
+只结束当前部署目录下的旧进程，不要用宽泛的 `pkill -x codeswitch-web`，因为同一台机器上可能还有其他目录里的同名服务：
+
+```bash
+kill <旧进程PID>
+sleep 2
+systemctl restart codeswitch.service
+```
+
+如果普通 `kill` 无效，再确认 PID 确实是 `/home/chh/apps/code-switch/codeswitch-web` 后使用：
+
+```bash
+kill -9 <旧进程PID>
+systemctl restart codeswitch.service
+```
+
+完成后重新执行“发布后验证”里的所有检查。
 
 ## 远程访问和安全建议
 

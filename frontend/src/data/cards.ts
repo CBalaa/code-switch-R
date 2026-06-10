@@ -46,7 +46,7 @@ export type AutomationCard = {
   upstreamProtocol?: string
 }
 
-export const automationCardGroups: Record<'claude' | 'codex', AutomationCard[]> = {
+export const automationCardGroups: Record<'claude' | 'openai-responses' | 'openai-chat', AutomationCard[]> = {
   claude: [
     {
       id: 100,
@@ -93,7 +93,7 @@ export const automationCardGroups: Record<'claude' | 'codex', AutomationCard[]> 
       enabled: false,
     },
   ],
-  codex: [
+  'openai-responses': [
     {
       id: 201,
       name: 'AICoding.sh',
@@ -106,6 +106,7 @@ export const automationCardGroups: Record<'claude' | 'codex', AutomationCard[]> 
       enabled: false,
     },
   ],
+  'openai-chat': [],
 }
 
 export function createAutomationCards(data: AutomationCard[] = []): AutomationCard[] {
