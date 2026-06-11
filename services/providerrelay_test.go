@@ -813,6 +813,56 @@ func TestClaudeCodeParseTokenUsageFromResponse(t *testing.T) {
 	}
 }
 
+func TestOpenAIChatParseTokenUsageFromResponse(t *testing.T) {
+	var usage ReqeustLog
+
+	OpenAIChatParseTokenUsageFromResponse(`{
+		"usage": {
+			"prompt_tokens": 7,
+			"completion_tokens": 8,
+			"total_tokens": 15,
+			"prompt_tokens_details": {"cached_tokens": 3},
+			"completion_tokens_details": {"reasoning_tokens": 4}
+		}
+	}`, &usage)
+
+	if usage.InputTokens != 7 {
+		t.Fatalf("InputTokens = %d, want 7", usage.InputTokens)
+	}
+	if usage.OutputTokens != 8 {
+		t.Fatalf("OutputTokens = %d, want 8", usage.OutputTokens)
+	}
+	if usage.CacheReadTokens != 3 {
+		t.Fatalf("CacheReadTokens = %d, want 3", usage.CacheReadTokens)
+	}
+	if usage.ReasoningTokens != 4 {
+		t.Fatalf("ReasoningTokens = %d, want 4", usage.ReasoningTokens)
+	}
+}
+
+func TestEnsureOpenAIChatStreamUsage(t *testing.T) {
+	body := []byte(`{"model":"gpt-4","messages":[],"stream":true}`)
+
+	updated := ensureOpenAIChatStreamUsage(body)
+
+	if !gjson.GetBytes(updated, "stream_options.include_usage").Bool() {
+		t.Fatalf("stream_options.include_usage was not injected: %s", string(updated))
+	}
+	if gjson.GetBytes(updated, "model").String() != "gpt-4" {
+		t.Fatalf("model changed unexpectedly: %s", string(updated))
+	}
+}
+
+func TestEnsureOpenAIChatStreamUsagePreservesExistingValue(t *testing.T) {
+	body := []byte(`{"model":"gpt-4","stream_options":{"include_usage":true}}`)
+
+	updated := ensureOpenAIChatStreamUsage(body)
+
+	if string(updated) != string(body) {
+		t.Fatalf("body changed unexpectedly: got %s want %s", string(updated), string(body))
+	}
+}
+
 func TestDeleteHeaderCaseInsensitive(t *testing.T) {
 	headers := map[string]string{
 		"Authorization":     "Bearer upstream-key",

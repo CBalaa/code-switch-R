@@ -893,6 +893,10 @@ func (prs *ProviderRelayService) forwardRequest(
 	}
 	_ = convertInfo // 避免未使用警告
 
+	if kind == "openai-chat" && isStream {
+		bodyBytes = ensureOpenAIChatStreamUsage(bodyBytes)
+	}
+
 	removeInboundAuthHeaders(headers)
 
 	// 根据认证方式设置请求头（默认 Bearer，与 v2.2.x 保持一致）
@@ -1069,6 +1073,8 @@ func (prs *ProviderRelayService) forwardRequest(
 			} else {
 				_, copyErr = writeStreamingResponse(c.Writer, resp, requestLog, ReqeustLogHook(c, kind, requestLog))
 			}
+		} else if kind == "openai-chat" {
+			copyErr = writeOpenAIChatJSONResponse(c.Writer, resp, requestLog)
 		} else {
 			_, copyErr = resp.ToHttpResponseWriter(c.Writer, ReqeustLogHook(c, kind, requestLog))
 		}
@@ -1101,6 +1107,8 @@ func (prs *ProviderRelayService) forwardRequest(
 			} else {
 				_, copyErr = writeStreamingResponse(c.Writer, resp, requestLog, ReqeustLogHook(c, kind, requestLog))
 			}
+		} else if kind == "openai-chat" {
+			copyErr = writeOpenAIChatJSONResponse(c.Writer, resp, requestLog)
 		} else {
 			_, copyErr = resp.ToHttpResponseWriter(c.Writer, ReqeustLogHook(c, kind, requestLog))
 		}
@@ -1767,6 +1775,39 @@ func writeTransformedJSONResponse(w http.ResponseWriter, resp *xrequest.Response
 	return err
 }
 
+func writeOpenAIChatJSONResponse(w http.ResponseWriter, resp *xrequest.Response, requestLog *ReqeustLog) error {
+	if resp == nil || resp.RawResponse == nil {
+		return fmt.Errorf("empty upstream response")
+	}
+
+	body := resp.Bytes()
+	OpenAIChatParseTokenUsageFromResponse(string(body), requestLog)
+
+	for key, values := range resp.Headers() {
+		lowerKey := strings.ToLower(key)
+		switch lowerKey {
+		case "content-length", "content-encoding", "transfer-encoding", "connection":
+			continue
+		}
+		for _, value := range values {
+			w.Header().Add(key, value)
+		}
+	}
+
+	if w.Header().Get("Content-Type") == "" {
+		w.Header().Set("Content-Type", "application/json")
+	}
+	w.Header().Del("Content-Length")
+	status := resp.StatusCode()
+	if status == 0 {
+		status = http.StatusOK
+	}
+	w.WriteHeader(status)
+
+	_, err := w.Write(body)
+	return err
+}
+
 // extractUpstreamError 从供应商响应中提取原始错误信息（最多 512 字节）
 func extractUpstreamError(resp *xrequest.Response) string {
 	if resp == nil {
@@ -1963,6 +2004,8 @@ func ReqeustLogHook(c *gin.Context, kind string, usage *ReqeustLog) func(data []
 		switch kind {
 		case "codex", "openai-responses":
 			parserFn = CodexParseTokenUsageFromResponse
+		case "openai-chat":
+			parserFn = OpenAIChatParseTokenUsageFromResponse
 		}
 		parseEventPayload(payload, parserFn, usage)
 		markFirstTextFromSSEPayload(payload, usage)
@@ -2105,6 +2148,39 @@ func CodexParseTokenUsageFromResponse(data string, usage *ReqeustLog) {
 		usage.inputTokensIncludeCacheRead = true
 	}
 	usage.ReasoningTokens += int(gjson.Get(data, "response.usage.output_tokens_details.reasoning_tokens").Int())
+}
+
+func OpenAIChatParseTokenUsageFromResponse(data string, usage *ReqeustLog) {
+	if usage == nil {
+		return
+	}
+	usageResult := gjson.Get(data, "usage")
+	if !usageResult.Exists() {
+		return
+	}
+
+	usage.InputTokens += int(usageResult.Get("prompt_tokens").Int())
+	usage.OutputTokens += int(usageResult.Get("completion_tokens").Int())
+	cacheReadTokens := usageResult.Get("prompt_tokens_details.cached_tokens").Int()
+	usage.CacheReadTokens += int(cacheReadTokens)
+	if cacheReadTokens > 0 {
+		usage.inputTokensIncludeCacheRead = true
+	}
+	usage.ReasoningTokens += int(usageResult.Get("completion_tokens_details.reasoning_tokens").Int())
+}
+
+func ensureOpenAIChatStreamUsage(bodyBytes []byte) []byte {
+	if !json.Valid(bodyBytes) {
+		return bodyBytes
+	}
+	if gjson.GetBytes(bodyBytes, "stream_options.include_usage").Bool() {
+		return bodyBytes
+	}
+	updated, err := sjson.SetBytes(bodyBytes, "stream_options.include_usage", true)
+	if err != nil {
+		return bodyBytes
+	}
+	return updated
 }
 
 // ReplaceModelInRequestBody 替换请求体中的模型名
