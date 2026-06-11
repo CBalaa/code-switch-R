@@ -23,7 +23,10 @@ import (
 
 var errorType = reflect.TypeOf((*error)(nil)).Elem()
 
-const maxFaviconBytes = 512 * 1024
+const (
+	maxFaviconBytes         = 512 * 1024
+	maxFaviconHTMLHeadBytes = 1024 * 1024
+)
 
 var faviconLinkPattern = regexp.MustCompile(`(?is)<link\b[^>]*>`)
 
@@ -239,9 +242,12 @@ func serveProviderFavicon(c *gin.Context) {
 	cachePath, err := faviconCachePath(siteURL)
 	if err == nil {
 		if data, readErr := os.ReadFile(cachePath); readErr == nil && len(data) > 0 {
-			c.Header("Cache-Control", "public, max-age=604800")
-			c.Data(http.StatusOK, detectFaviconContentType(data, cachePath, ""), data)
-			return
+			if contentType := detectFaviconContentType(data, cachePath, ""); contentType != "" {
+				c.Header("Cache-Control", "public, max-age=604800")
+				c.Data(http.StatusOK, contentType, data)
+				return
+			}
+			_ = os.Remove(cachePath)
 		}
 	}
 
@@ -307,7 +313,7 @@ func fetchProviderFavicon(ctx context.Context, siteURL string) ([]byte, string, 
 		return data, contentType, nil
 	}
 
-	html, err := fetchURLBytes(ctx, siteURL, "text/html,*/*", 256*1024)
+	html, err := fetchURLHeadHTML(ctx, siteURL)
 	if err != nil {
 		return nil, "", err
 	}
@@ -358,6 +364,49 @@ func fetchURLBytes(ctx context.Context, targetURL string, accept string, limit i
 	}
 	if int64(len(data)) > limit {
 		return nil, fmt.Errorf("response too large")
+	}
+	return data, nil
+}
+
+func fetchURLHeadHTML(ctx context.Context, targetURL string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, targetURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "text/html,*/*")
+	req.Header.Set("User-Agent", "CodeSwitch/1.0 favicon fetcher")
+
+	client := &http.Client{Timeout: 4 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("upstream status %d", resp.StatusCode)
+	}
+
+	var data []byte
+	buf := make([]byte, 8192)
+	for len(data) < maxFaviconHTMLHeadBytes {
+		remaining := maxFaviconHTMLHeadBytes - len(data)
+		readBuf := buf
+		if remaining < len(readBuf) {
+			readBuf = readBuf[:remaining]
+		}
+		n, readErr := resp.Body.Read(readBuf)
+		if n > 0 {
+			data = append(data, readBuf[:n]...)
+			if strings.Contains(strings.ToLower(string(data)), "</head>") {
+				return data, nil
+			}
+		}
+		if readErr != nil {
+			if readErr == io.EOF {
+				return data, nil
+			}
+			return nil, readErr
+		}
 	}
 	return data, nil
 }
@@ -424,10 +473,14 @@ func detectFaviconContentType(data []byte, source string, fallback string) strin
 	if strings.HasPrefix(strings.ToLower(detected), "image/") {
 		return detected
 	}
-	if strings.HasSuffix(lowerSource, ".ico") {
+	if strings.HasSuffix(lowerSource, ".ico") && isICOData(data) {
 		return "image/x-icon"
 	}
 	return fallback
+}
+
+func isICOData(data []byte) bool {
+	return len(data) >= 4 && data[0] == 0x00 && data[1] == 0x00 && (data[2] == 0x01 || data[2] == 0x02) && data[3] == 0x00
 }
 
 func streamEvents(c *gin.Context, hub *services.EventHub) {
