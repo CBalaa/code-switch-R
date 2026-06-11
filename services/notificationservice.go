@@ -32,7 +32,7 @@ type SwitchNotification struct {
 	FromProvider string // 原供应商
 	ToProvider   string // 新供应商
 	Reason       string // 切换原因
-	Platform     string // 平台：claude/codex/gemini
+	Platform     string // 平台
 }
 
 // NewNotificationService 创建通知服务
@@ -165,47 +165,5 @@ func (ns *NotificationService) emitSwitchEvent(info SwitchNotification) {
 		"toProvider":   info.ToProvider,
 		"reason":       info.Reason,
 		"timestamp":    time.Now().UnixMilli(),
-	})
-}
-
-// NotifyProviderBlacklisted 发送供应商被拉黑通知
-func (ns *NotificationService) NotifyProviderBlacklisted(platform, providerName string, level int, durationMinutes int) {
-	if !ns.isEnabled() {
-		return
-	}
-
-	go func() {
-		// 简化通知内容
-		title := "Code Switch"
-		body := fmt.Sprintf("%s 已拉黑 %d 分钟", providerName, durationMinutes)
-
-		// 发送事件到前端
-		ns.emitBlacklistEvent(platform, providerName, level, durationMinutes)
-
-		if !ns.desktopNotify {
-			return
-		}
-
-		// 使用 beeep 发送系统通知，带应用图标
-		if err := beeep.Notify(title, body, ns.iconPath); err != nil {
-			log.Printf("[Notification] 发送拉黑通知失败: %v", err)
-		} else {
-			log.Printf("[Notification] 已发送拉黑通知: %s (L%d, %d分钟)", providerName, level, durationMinutes)
-		}
-	}()
-}
-
-// emitBlacklistEvent 发送拉黑事件到前端
-// @author sm
-func (ns *NotificationService) emitBlacklistEvent(platform, providerName string, level, durationMinutes int) {
-	if ns.emitter == nil {
-		return
-	}
-	ns.emitter.Emit("provider:blacklisted", map[string]interface{}{
-		"platform":        platform,
-		"providerName":    providerName,
-		"level":           level,
-		"durationMinutes": durationMinutes,
-		"timestamp":       time.Now().UnixMilli(),
 	})
 }

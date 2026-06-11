@@ -14,7 +14,7 @@ import (
 // ========== 错误定义 ==========
 
 // ErrClientRequestRejected 客户端请求被拒绝（不支持的格式/功能）
-// 该错误会导致直接返回 400，不触发 provider 切换和拉黑
+// 该错误会导致直接返回 400，不触发 provider 切换
 var ErrClientRequestRejected = errors.New("client request rejected")
 
 // NewClientRequestRejectedError 创建带原因的客户端请求拒绝错误

@@ -41,7 +41,6 @@
             <option value="claude">Claude</option>
             <option value="openai-responses">OpenAI Responses</option>
             <option value="openai-chat">OpenAI Chat</option>
-            <option value="gemini">Gemini</option>
           </select>
         </label>
         <label class="filter-field">

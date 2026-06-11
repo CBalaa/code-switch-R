@@ -15,6 +15,26 @@
   --mac-text-secondary: #6e6e73;
   --mac-accent: #0a84ff;
   --app-background: linear-gradient(180deg, #f6f7fb 0%, #eef1f7 50%, #e7ebf5 100%);
+
+  /* Pool & generic card color tokens */
+  --color-bg: #ffffff;
+  --color-bg-surface: rgba(255, 255, 255, 0.6);
+  --color-bg-header: rgba(0, 0, 0, 0.02);
+  --color-bg-hover: rgba(0, 0, 0, 0.04);
+  --color-bg-input: #ffffff;
+  --color-bg-key: rgba(59, 130, 246, 0.06);
+  --color-bg-secondary: #f5f5f7;
+  --color-bg-tertiary: rgba(0, 0, 0, 0.06);
+  --color-border: #e5e7eb;
+  --color-border-hover: #c4c8d0;
+  --color-danger: #ef4444;
+  --color-primary: #3b82f6;
+  --color-primary-bg: rgba(59, 130, 246, 0.06);
+  --color-accent: #0ea5e9;
+  --color-text: #1f2937;
+  --color-text-primary: #1f2937;
+  --color-text-secondary: #6b7280;
+  --color-text-tertiary: #9ca3af;
 }
 
 html.dark {
@@ -29,6 +49,26 @@ html.dark {
   --mac-text-secondary: #b7bac7;
   --mac-accent: #0a84ff;
   --app-background: linear-gradient(180deg, #0f1116 0%, #11131a 45%, #0d0f15 100%);
+
+  /* Pool & generic card color tokens — dark overrides */
+  --color-bg: #1e2030;
+  --color-bg-surface: rgba(255, 255, 255, 0.04);
+  --color-bg-header: rgba(255, 255, 255, 0.04);
+  --color-bg-hover: rgba(255, 255, 255, 0.06);
+  --color-bg-input: #1e2030;
+  --color-bg-key: rgba(59, 130, 246, 0.10);
+  --color-bg-secondary: #21232c;
+  --color-bg-tertiary: rgba(255, 255, 255, 0.06);
+  --color-border: rgba(255, 255, 255, 0.08);
+  --color-border-hover: rgba(255, 255, 255, 0.15);
+  --color-danger: #f87171;
+  --color-primary: #3b82f6;
+  --color-primary-bg: rgba(59, 130, 246, 0.12);
+  --color-accent: #38bdf8;
+  --color-text: #f5f5f7;
+  --color-text-primary: #f5f5f7;
+  --color-text-secondary: #b7bac7;
+  --color-text-tertiary: #6b7280;
 }
 
 html,
@@ -426,27 +466,6 @@ html.dark .mac-sidebar-item:hover {
 
 /* general-shell inherits padding via .general-page */
 
-.github-icon.github-upgrade {
-  color: #0ea5e9;
-  animation: github-upgrade 1.5s ease-in-out infinite;
-  position: relative;
-}
-
-@keyframes github-upgrade {
-  0% {
-    transform: translateY(0);
-    box-shadow: 0 0 0 rgba(14, 165, 233, 0.4);
-  }
-  50% {
-    transform: translateY(-2px);
-    box-shadow: 0 0 12px rgba(14, 165, 233, 0.65);
-  }
-  100% {
-    transform: translateY(0);
-    box-shadow: 0 0 0 rgba(14, 165, 233, 0.4);
-  }
-}
-
 /* 更新徽章基础样式 */
 .update-badge {
   position: absolute;
@@ -475,11 +494,6 @@ html.dark .mac-sidebar-item:hover {
   background: #10b981; /* 绿色 */
   box-shadow: 0 2px 8px rgba(16, 185, 129, 0.4);
   animation: badge-pulse 2s ease-in-out infinite;
-}
-
-/* 更新就绪时的 GitHub 图标颜色 */
-.github-icon.update-ready svg {
-  color: #10b981;
 }
 
 /* 徽章脉冲动画 */
@@ -1274,6 +1288,14 @@ html.dark .ghost-icon:hover {
 }
 
 .form-field span {
+  font-size: 0.85rem;
+  color: var(--mac-text-secondary);
+}
+
+.label-with-hint {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   font-size: 0.85rem;
   color: var(--mac-text-secondary);
 }

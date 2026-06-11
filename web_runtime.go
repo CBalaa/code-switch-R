@@ -30,7 +30,6 @@ type appRuntime struct {
 	appService         *AppService
 	providerService    *services.ProviderService
 	settingsService    *services.SettingsService
-	blacklistService   *services.BlacklistService
 	claudeSettings     *services.ClaudeSettingsService
 	codexSettings      *services.CodexSettingsService
 	cliConfigService   *services.CliConfigService
@@ -48,13 +47,11 @@ type appRuntime struct {
 	connectivityTest   *services.ConnectivityTestService
 	healthCheckService *services.HealthCheckService
 	versionService     *VersionService
-	geminiService      *services.GeminiService
 	consoleService     *services.ConsoleService
 	customCliService   *services.CustomCliService
 	networkService     *services.NetworkService
 	providerRelay      *services.ProviderRelayService
-
-	blacklistStopChan chan struct{}
+	poolService        *services.ProviderPoolService
 }
 
 func newAppRuntime() (*appRuntime, error) {
@@ -74,7 +71,9 @@ func newAppRuntime() (*appRuntime, error) {
 		return nil, fmt.Errorf("初始化后台安全配置失败: %w", err)
 	}
 	codexRelayKeys := services.NewCodexRelayKeyService()
-	bootstrapNetworkService := services.NewNetworkService(defaultRelayAddr, nil, nil, nil, codexRelayKeys)
+	poolService := services.NewProviderPoolService()
+	poolService.SetBindingChecker(codexRelayKeys) // 注入 binding checker，删除 pool 时检查 key 绑定
+	bootstrapNetworkService := services.NewNetworkService(defaultRelayAddr, nil, nil, codexRelayKeys)
 	relayAddr := defaultRelayAddr
 	if networkSettings, err := bootstrapNetworkService.GetNetworkSettings(); err != nil {
 		log.Printf("读取网络监听设置失败（使用默认 relay 地址）: %v", err)
@@ -84,9 +83,7 @@ func newAppRuntime() (*appRuntime, error) {
 	eventHub := services.NewEventHub()
 	notificationService := services.NewNotificationService(appSettings)
 	notificationService.SetEventEmitter(eventHub)
-	blacklistService := services.NewBlacklistService(settingsService, notificationService)
-	geminiService := services.NewGeminiService(relayAddr)
-	providerRelay := services.NewProviderRelayService(providerService, geminiService, codexRelayKeys, blacklistService, notificationService, appSettings, relayAddr)
+	providerRelay := services.NewProviderRelayService(providerService, poolService, codexRelayKeys, notificationService, appSettings, relayAddr)
 	claudeSettings := services.NewClaudeSettingsService(providerRelay.Addr(), codexRelayKeys)
 	codexSettings := services.NewCodexSettingsService(providerRelay.Addr(), codexRelayKeys)
 	cliConfigService := services.NewCliConfigService(providerRelay.Addr(), codexRelayKeys)
@@ -97,15 +94,20 @@ func newAppRuntime() (*appRuntime, error) {
 	envCheckService := services.NewEnvCheckService()
 	deeplinkService := services.NewDeepLinkService(providerService)
 	speedTestService := services.NewSpeedTestService()
-	connectivityTestService := services.NewConnectivityTestService(providerService, blacklistService, settingsService)
-	healthCheckService := services.NewHealthCheckService(providerService, blacklistService, settingsService)
+	connectivityTestService := services.NewConnectivityTestService(providerService, settingsService)
+	healthCheckService := services.NewHealthCheckService(providerService, settingsService)
 	if err := healthCheckService.Start(); err != nil {
 		return nil, fmt.Errorf("初始化健康检查服务失败: %w", err)
 	}
 	versionService := NewVersionService()
 	consoleService := services.NewConsoleService()
 	customCliService := services.NewCustomCliService(providerRelay.Addr())
-	networkService := services.NewNetworkService(providerRelay.Addr(), claudeSettings, codexSettings, geminiService, codexRelayKeys)
+	networkService := services.NewNetworkService(providerRelay.Addr(), claudeSettings, codexSettings, codexRelayKeys)
+
+	// 启动前确保默认池子和 relay key 绑定存在
+	if err := providerRelay.EnsureDefaultPoolsAndBindings(); err != nil {
+		log.Printf("初始化 provider pools 失败: %v", err)
+	}
 
 	if err := providerRelay.Start(); err != nil {
 		return nil, fmt.Errorf("启动代理服务失败: %w", err)
@@ -122,24 +124,6 @@ func newAppRuntime() (*appRuntime, error) {
 			log.Printf("刷新 Claude relay key 失败: %v", err)
 		}
 	}
-
-	blacklistStopChan := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(1 * time.Minute)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ticker.C:
-				if err := blacklistService.AutoRecoverExpired(); err != nil {
-					log.Printf("自动恢复黑名单失败: %v", err)
-				}
-			case <-blacklistStopChan:
-				log.Println("黑名单定时器已停止")
-				return
-			}
-		}
-	}()
 
 	go func() {
 		time.Sleep(3 * time.Second)
@@ -163,7 +147,6 @@ func newAppRuntime() (*appRuntime, error) {
 		appService:         &AppService{},
 		providerService:    providerService,
 		settingsService:    settingsService,
-		blacklistService:   blacklistService,
 		claudeSettings:     claudeSettings,
 		codexSettings:      codexSettings,
 		cliConfigService:   cliConfigService,
@@ -181,21 +164,15 @@ func newAppRuntime() (*appRuntime, error) {
 		connectivityTest:   connectivityTestService,
 		healthCheckService: healthCheckService,
 		versionService:     versionService,
-		geminiService:      geminiService,
 		consoleService:     consoleService,
 		customCliService:   customCliService,
 		networkService:     networkService,
 		providerRelay:      providerRelay,
-		blacklistStopChan:  blacklistStopChan,
+		poolService:        poolService,
 	}, nil
 }
 
 func (rt *appRuntime) shutdown() {
-	if rt.blacklistStopChan != nil {
-		close(rt.blacklistStopChan)
-		rt.blacklistStopChan = nil
-	}
-
 	if rt.healthCheckService != nil {
 		rt.healthCheckService.Stop()
 	}
@@ -216,7 +193,6 @@ func (rt *appRuntime) registerServices(registry *rpcRegistry) {
 	registry.Register("main.VersionService", rt.versionService)
 	registry.Register("codeswitch/services.ProviderService", rt.providerService)
 	registry.Register("codeswitch/services.SettingsService", rt.settingsService)
-	registry.Register("codeswitch/services.BlacklistService", rt.blacklistService)
 	registry.Register("codeswitch/services.ClaudeSettingsService", rt.claudeSettings)
 	registry.Register("codeswitch/services.CodexSettingsService", rt.codexSettings)
 	registry.Register("codeswitch/services.CliConfigService", rt.cliConfigService)
@@ -230,11 +206,12 @@ func (rt *appRuntime) registerServices(registry *rpcRegistry) {
 	registry.Register("codeswitch/services.SpeedTestService", rt.speedTestService)
 	registry.Register("codeswitch/services.ConnectivityTestService", rt.connectivityTest)
 	registry.Register("codeswitch/services.HealthCheckService", rt.healthCheckService)
-	registry.Register("codeswitch/services.GeminiService", rt.geminiService)
 	registry.Register("codeswitch/services.ConsoleService", rt.consoleService)
 	registry.Register("codeswitch/services.CustomCliService", rt.customCliService)
 	registry.Register("codeswitch/services.NetworkService", rt.networkService)
 	registry.Register("codeswitch/services.ProviderRelayService", rt.providerRelay)
+	registry.Register("codeswitch/services.ProviderPoolService", rt.poolService)
+	registry.Register("codeswitch/services.CodexRelayKeyService", rt.codexRelayKeys)
 }
 
 func getenvDefault(key, fallback string) string {

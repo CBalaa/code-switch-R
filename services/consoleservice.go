@@ -214,8 +214,8 @@ func shouldFilterLog(message string) bool {
 	// 2. 过滤掉包含 JSON 结构的日志（GetLogs 的返回值被序列化）
 	// 检测是否包含日志的 JSON 结构特征
 	if strings.Contains(message, `"timestamp":`) &&
-	   strings.Contains(message, `"level":`) &&
-	   strings.Contains(message, `"message":`) {
+		strings.Contains(message, `"level":`) &&
+		strings.Contains(message, `"message":`) {
 		return true
 	}
 

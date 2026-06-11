@@ -87,13 +87,6 @@ export function SetAvailabilityMonitorEnabled(platform: string, providerID: numb
 }
 
 /**
- * SetConnectivityAutoBlacklist 启用/禁用指定 Provider 的连通性自动拉黑
- */
-export function SetConnectivityAutoBlacklist(platform: string, providerID: number, enabled: boolean): $CancellablePromise<void> {
-    return $Call.ByID(2480620645, platform, providerID, enabled);
-}
-
-/**
  * Start Wails 生命周期方法
  */
 export function Start(): $CancellablePromise<void> {

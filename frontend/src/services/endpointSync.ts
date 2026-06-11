@@ -1,18 +1,17 @@
 /**
  * 端点同步服务
- * 从 Claude、OpenAI Responses、OpenAI Chat、Gemini 四个平台获取供应商 API 端点
+ * 从 Claude、OpenAI Responses、OpenAI Chat 三个平台获取供应商 API 端点
  * @author sm
  */
 
 import { LoadProviders } from '../../bindings/codeswitch/services/providerservice'
-import { GetProviders as GetGeminiProviders } from '../../bindings/codeswitch/services/geminiservice'
 
 /**
  * 同步的端点数据结构
  */
 export interface SyncedEndpoint {
   url: string                                          // 标准化的基础 URL
-  source: 'claude' | 'openai-responses' | 'openai-chat' | 'gemini'   // 来源平台
+  source: 'claude' | 'openai-responses' | 'openai-chat'   // 来源平台
   providerName: string                     // 供应商名称
 }
 
@@ -111,28 +110,7 @@ export async function fetchAllProviderEndpoints(): Promise<SyncedEndpoint[]> {
     console.error('获取 OpenAI Chat 供应商失败:', error)
   }
 
-  try {
-    // 4. 获取 Gemini 供应商
-    const geminiProviders = await GetGeminiProviders()
-    if (Array.isArray(geminiProviders)) {
-      geminiProviders.forEach((p: any) => {
-        if (p.baseUrl && p.baseUrl.trim()) {
-          const baseUrl = extractBaseUrl(p.baseUrl)
-          if (baseUrl) {
-            endpoints.push({
-              url: baseUrl,
-              source: 'gemini',
-              providerName: p.name || 'Gemini Provider'
-            })
-          }
-        }
-      })
-    }
-  } catch (error) {
-    console.error('获取 Gemini 供应商失败:', error)
-  }
-
-  // 5. 去重：相同 URL 只保留第一个
+  // 4. 去重：相同 URL 只保留第一个
   const uniqueEndpoints = new Map<string, SyncedEndpoint>()
   endpoints.forEach(ep => {
     if (!uniqueEndpoints.has(ep.url)) {

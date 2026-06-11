@@ -32,7 +32,6 @@ export interface ProviderTimeline {
   providerName: string
   platform: string
   availabilityMonitorEnabled: boolean
-  connectivityAutoBlacklist: boolean
   availabilityConfig?: AvailabilityConfig | null // 高级配置
   items: HealthCheckResult[]
   latest: HealthCheckResult | null
@@ -107,17 +106,6 @@ export async function setAvailabilityMonitorEnabled(
   enabled: boolean
 ): Promise<void> {
   return Call.ByName(`${SERVICE_PATH}.SetAvailabilityMonitorEnabled`, platform, providerId, enabled)
-}
-
-/**
- * 启用/禁用指定 Provider 的可用性失败自动拉黑
- */
-export async function setConnectivityAutoBlacklist(
-  platform: string,
-  providerId: number,
-  enabled: boolean
-): Promise<void> {
-  return Call.ByName(`${SERVICE_PATH}.SetConnectivityAutoBlacklist`, platform, providerId, enabled)
 }
 
 /**

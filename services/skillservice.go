@@ -52,10 +52,10 @@ type Skill struct {
 	Installed   bool   `json:"installed"`
 
 	// 新增字段
-	Enabled         bool   `json:"enabled"`                     // 是否启用（从 SKILL.md 读取）
-	LicenseFile     string `json:"license_file,omitempty"`      // 许可证文件路径
-	Platform        string `json:"platform,omitempty"`          // "claude" | "openai-responses" | "openai-chat"
-	InstallLocation string `json:"install_location,omitempty"`  // "user" | "project"
+	Enabled         bool   `json:"enabled"`                    // 是否启用（从 SKILL.md 读取）
+	LicenseFile     string `json:"license_file,omitempty"`     // 许可证文件路径
+	Platform        string `json:"platform,omitempty"`         // "claude" | "openai-responses" | "openai-chat"
+	InstallLocation string `json:"install_location,omitempty"` // "user" | "project"
 
 	// 仓库字段
 	RepoOwner  string `json:"repo_owner,omitempty"`
@@ -98,8 +98,8 @@ type installRequest struct {
 	RepoOwner string `json:"repo_owner"`
 	RepoName  string `json:"repo_name"`
 	Branch    string `json:"repo_branch"`
-	Platform  string `json:"platform"`  // "claude" | "openai-responses" | "openai-chat"
-	Location  string `json:"location"`  // "user" | "project"
+	Platform  string `json:"platform"` // "claude" | "openai-responses" | "openai-chat"
+	Location  string `json:"location"` // "user" | "project"
 }
 
 type SkillService struct {

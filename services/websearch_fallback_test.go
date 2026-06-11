@@ -591,9 +591,24 @@ func TestClaudeWebSearchFallbackProxyHandlerJSON(t *testing.T) {
 		t.Fatalf("SaveProviders failed: %v", err)
 	}
 
+	// 保存 provider 后更新默认池子的成员并绑定 relay key
+	if relayService.poolService != nil {
+		pool, _ := relayService.poolService.GetPool("pool_claude_default")
+		if pool != nil {
+			pool.Mode = ProviderPoolModeManaged
+			pool.Members = []ProviderPoolMember{{ProviderID: 1, Enabled: true}}
+			_, _ = relayService.poolService.SavePool(pool)
+		}
+	}
+
 	router := gin.New()
 	relayService.registerRoutes(router)
 	relayKey, err := relayService.codexRelayKeys.EnsureDefaultKey()
+	if err != nil {
+		t.Fatalf("EnsureDefaultKey failed: %v", err)
+	}
+	// 显式绑定 relay key 到 claude 默认池子
+	_ = relayService.codexRelayKeys.SetPoolBinding(relayKey.ID, "claude", "pool_claude_default")
 	if err != nil {
 		t.Fatalf("EnsureDefaultKey failed: %v", err)
 	}
@@ -698,9 +713,24 @@ func TestClaudeWebSearchFallbackProxyHandlerSSE(t *testing.T) {
 		t.Fatalf("SaveProviders failed: %v", err)
 	}
 
+	// 保存 provider 后更新默认池子的成员并绑定 relay key
+	if relayService.poolService != nil {
+		pool, _ := relayService.poolService.GetPool("pool_claude_default")
+		if pool != nil {
+			pool.Mode = ProviderPoolModeManaged
+			pool.Members = []ProviderPoolMember{{ProviderID: 1, Enabled: true}}
+			_, _ = relayService.poolService.SavePool(pool)
+		}
+	}
+
 	router := gin.New()
 	relayService.registerRoutes(router)
 	relayKey, err := relayService.codexRelayKeys.EnsureDefaultKey()
+	if err != nil {
+		t.Fatalf("EnsureDefaultKey failed: %v", err)
+	}
+	// 显式绑定 relay key 到 claude 默认池子
+	_ = relayService.codexRelayKeys.SetPoolBinding(relayKey.ID, "claude", "pool_claude_default")
 	if err != nil {
 		t.Fatalf("EnsureDefaultKey failed: %v", err)
 	}

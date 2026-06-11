@@ -3,7 +3,7 @@
 
 /**
  * CliConfigService CLI 配置管理服务
- * 管理 Claude Code、Codex、Gemini 的 CLI 配置文件
+ * 管理 Claude Code、Codex 的 CLI 配置文件
  * @module
  */
 

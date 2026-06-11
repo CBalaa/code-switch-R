@@ -22,19 +22,21 @@ const (
 )
 
 type CodexRelayKey struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Key       string    `json:"key"`
-	Enabled   bool      `json:"enabled"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID           string            `json:"id"`
+	Name         string            `json:"name"`
+	Key          string            `json:"key"`
+	Enabled      bool              `json:"enabled"`
+	CreatedAt    time.Time         `json:"createdAt"`
+	PoolBindings map[string]string `json:"poolBindings,omitempty"` // platform -> poolID
 }
 
 type CodexRelayKeyListItem struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	MaskedKey string    `json:"maskedKey"`
-	Enabled   bool      `json:"enabled"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID           string            `json:"id"`
+	Name         string            `json:"name"`
+	MaskedKey    string            `json:"maskedKey"`
+	Enabled      bool              `json:"enabled"`
+	CreatedAt    time.Time         `json:"createdAt"`
+	PoolBindings map[string]string `json:"poolBindings,omitempty"` // platform -> poolID
 }
 
 type CodexRelayKeyCreateResult struct {
@@ -46,8 +48,9 @@ type CodexRelayKeyCreateResult struct {
 }
 
 type CodexRelayKeyMatch struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID           string            `json:"id"`
+	Name         string            `json:"name"`
+	PoolBindings map[string]string `json:"poolBindings,omitempty"` // platform -> poolID
 }
 
 type CodexRelayKeyUsagePoint struct {
@@ -101,11 +104,12 @@ func (s *CodexRelayKeyService) ListKeys() ([]CodexRelayKeyListItem, error) {
 	keys := make([]CodexRelayKeyListItem, 0, len(store.Keys))
 	for _, key := range store.Keys {
 		keys = append(keys, CodexRelayKeyListItem{
-			ID:        key.ID,
-			Name:      key.Name,
-			MaskedKey: maskCodexRelayKey(key.Key),
-			Enabled:   key.Enabled,
-			CreatedAt: key.CreatedAt,
+			ID:           key.ID,
+			Name:         key.Name,
+			MaskedKey:    maskCodexRelayKey(key.Key),
+			Enabled:      key.Enabled,
+			CreatedAt:    key.CreatedAt,
+			PoolBindings: key.PoolBindings,
 		})
 	}
 
@@ -292,7 +296,7 @@ func (s *CodexRelayKeyService) ValidateKeyMatch(candidate string) (*CodexRelayKe
 			continue
 		}
 		if subtle.ConstantTimeCompare([]byte(candidate), []byte(key.Key)) == 1 {
-			return &CodexRelayKeyMatch{ID: key.ID, Name: key.Name}, nil
+			return &CodexRelayKeyMatch{ID: key.ID, Name: key.Name, PoolBindings: key.PoolBindings}, nil
 		}
 	}
 
@@ -486,6 +490,116 @@ func generateCodexRelayKeyValue() (string, error) {
 		return "", fmt.Errorf("生成 Codex relay key 失败: %w", err)
 	}
 	return "csk_" + base64.RawURLEncoding.EncodeToString(buf), nil
+}
+
+// GetPoolBinding 获取 relay key 在指定 platform 上的池子绑定
+func (s *CodexRelayKeyService) GetPoolBinding(keyID string, platform string) (string, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	store, err := s.loadLocked()
+	if err != nil {
+		return "", false, err
+	}
+
+	for _, key := range store.Keys {
+		if key.ID == keyID {
+			if key.PoolBindings == nil {
+				return "", false, nil
+			}
+			poolID, ok := key.PoolBindings[platform]
+			return poolID, ok, nil
+		}
+	}
+
+	return "", false, fmt.Errorf("未找到 Codex relay key: %s", keyID)
+}
+
+// SetPoolBinding 设置 relay key 在指定 platform 上的池子绑定
+func (s *CodexRelayKeyService) SetPoolBinding(keyID string, platform string, poolID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	store, err := s.loadLocked()
+	if err != nil {
+		return err
+	}
+
+	for i := range store.Keys {
+		if store.Keys[i].ID == keyID {
+			if store.Keys[i].PoolBindings == nil {
+				store.Keys[i].PoolBindings = make(map[string]string)
+			}
+			if poolID == "" {
+				delete(store.Keys[i].PoolBindings, platform)
+			} else {
+				store.Keys[i].PoolBindings[platform] = poolID
+			}
+			return s.saveLocked(store)
+		}
+	}
+
+	return fmt.Errorf("未找到 Codex relay key: %s", keyID)
+}
+
+// IsPoolBoundToAnyKey 检查指定 poolID 是否被任何 relay key 绑定
+// 用于删除 pool 前的检查
+func (s *CodexRelayKeyService) IsPoolBoundToAnyKey(poolID string) (bool, []string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	store, err := s.loadLocked()
+	if err != nil {
+		return false, nil, err
+	}
+
+	boundKeys := make([]string, 0)
+	for _, key := range store.Keys {
+		if key.PoolBindings == nil {
+			continue
+		}
+		for _, boundPoolID := range key.PoolBindings {
+			if boundPoolID == poolID {
+				boundKeys = append(boundKeys, key.Name)
+				break
+			}
+		}
+	}
+
+	return len(boundKeys) > 0, boundKeys, nil
+}
+
+// EnsureDefaultPoolBindings 为所有 relay key 确保默认池子绑定
+// platformDefaults 提供 platform -> defaultPoolID 的映射
+func (s *CodexRelayKeyService) EnsureDefaultPoolBindings(platformDefaults map[string]string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	store, err := s.loadLocked()
+	if err != nil {
+		return err
+	}
+
+	changed := false
+	for i := range store.Keys {
+		if !store.Keys[i].Enabled {
+			continue
+		}
+		if store.Keys[i].PoolBindings == nil {
+			store.Keys[i].PoolBindings = make(map[string]string)
+		}
+		for platform, defaultPoolID := range platformDefaults {
+			if _, ok := store.Keys[i].PoolBindings[platform]; !ok {
+				store.Keys[i].PoolBindings[platform] = defaultPoolID
+				changed = true
+			}
+		}
+	}
+
+	if changed {
+		return s.saveLocked(store)
+	}
+	return nil
 }
 
 func maskCodexRelayKey(value string) string {

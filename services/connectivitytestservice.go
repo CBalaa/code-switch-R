@@ -52,9 +52,8 @@ type ConnectivityResult struct {
 
 // ConnectivityTestService 可用性测试服务（旧兼容服务）
 type ConnectivityTestService struct {
-	providerService  *ProviderService
-	blacklistService *BlacklistService
-	settingsService  *SettingsService
+	providerService *ProviderService
+	settingsService *SettingsService
 
 	mu      sync.RWMutex
 	results map[string]map[int64]*ConnectivityResult // platform -> providerID -> result
@@ -69,18 +68,15 @@ type ConnectivityTestService struct {
 // NewConnectivityTestService 创建可用性测试服务（旧兼容服务）
 func NewConnectivityTestService(
 	providerService *ProviderService,
-	blacklistService *BlacklistService,
 	settingsService *SettingsService,
 ) *ConnectivityTestService {
 	return &ConnectivityTestService{
-		providerService:  providerService,
-		blacklistService: blacklistService,
-		settingsService:  settingsService,
+		providerService: providerService,
+		settingsService: settingsService,
 		results: map[string]map[int64]*ConnectivityResult{
 			"claude":           {},
 			"openai-responses": {},
 			"openai-chat":      {},
-			"gemini":           {},
 		},
 		autoTestEnabled: false,
 		client: &http.Client{
@@ -163,8 +159,7 @@ func (cts *ConnectivityTestService) TestProvider(ctx context.Context, provider P
 	result.LatencyMs = latencyMs
 
 	if err != nil {
-		// 检测是否为超时错误 - 超时应视为"慢但可用"（黄色），而非"不可用"（红色）
-		// 这样可以避免慢响应的 Provider 被误判为失败而拉黑
+		// 检测是否为超时错误 - 超时视为"慢但可用"（黄色），而非"不可用"（红色）
 		if isTimeoutError(err) {
 			result.Status = StatusDegraded
 			result.SubStatus = SubStatusSlowLatency
@@ -480,9 +475,6 @@ func (cts *ConnectivityTestService) TestAll(platform string) []ConnectivityResul
 			cts.results[platform][p.ID] = result
 			cts.mu.Unlock()
 
-			// 与拉黑服务联动
-			cts.handleBlacklistIntegration(platform, p.Name, result)
-
 			mu.Lock()
 			results = append(results, *result)
 			mu.Unlock()
@@ -494,28 +486,6 @@ func (cts *ConnectivityTestService) TestAll(platform string) []ConnectivityResul
 
 	wg.Wait()
 	return results
-}
-
-// handleBlacklistIntegration 处理与拉黑服务的联动
-func (cts *ConnectivityTestService) handleBlacklistIntegration(platform, providerName string, result *ConnectivityResult) {
-	if cts.blacklistService == nil {
-		return
-	}
-
-	switch result.Status {
-	case StatusAvailable:
-		// 绿色：调用 RecordSuccess 清零失败计数
-		if err := cts.blacklistService.RecordSuccess(platform, providerName); err != nil {
-			log.Printf("[ConnectivityTest] RecordSuccess 失败: %v", err)
-		}
-	case StatusUnavailable:
-		// 红色：调用 RecordFailure 累计失败
-		if err := cts.blacklistService.RecordFailure(platform, providerName); err != nil {
-			log.Printf("[ConnectivityTest] RecordFailure 失败: %v", err)
-		}
-	case StatusDegraded:
-		// 黄色：不操作，避免误判
-	}
 }
 
 // GetResults 获取指定平台的测试结果
@@ -579,9 +549,6 @@ func (cts *ConnectivityTestService) RunSingleTest(platform string, providerID in
 	}
 	cts.results[platform][providerID] = result
 	cts.mu.Unlock()
-
-	// 与拉黑服务联动
-	cts.handleBlacklistIntegration(platform, targetProvider.Name, result)
 
 	return result, nil
 }
@@ -656,8 +623,6 @@ func (cts *ConnectivityTestService) stopAutoTest() {
 
 // runAllPlatformTests 执行所有平台的测试
 func (cts *ConnectivityTestService) runAllPlatformTests() {
-	// 仅轮询 ProviderService 支持的平台，避免无意义的错误日志
-	// Gemini 使用独立的 GeminiService，暂未接入
 	platforms := []string{"claude", "openai-responses", "openai-chat"}
 	for _, platform := range platforms {
 		cts.TestAll(platform)

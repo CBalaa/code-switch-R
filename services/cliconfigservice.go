@@ -13,7 +13,7 @@ import (
 )
 
 // CliConfigService CLI 配置管理服务
-// 管理 Claude Code、Codex、Gemini 的 CLI 配置文件
+// 管理 Claude Code、Codex 的 CLI 配置文件
 type CliConfigService struct {
 	relayAddr string
 	homeDir   string // 缓存的用户家目录（已校验）
@@ -61,7 +61,6 @@ const (
 	PlatformClaude          CLIPlatform = "claude"
 	PlatformOpenAIResponses CLIPlatform = "openai-responses"
 	PlatformOpenAIChat      CLIPlatform = "openai-chat"
-	PlatformGemini          CLIPlatform = "gemini"
 	// Deprecated: use PlatformOpenAIResponses
 	PlatformCodex CLIPlatform = "codex"
 )
@@ -90,7 +89,6 @@ type CLIConfig struct {
 	RawContent   string                 `json:"rawContent,omitempty"`   // 原始文件内容（用于高级编辑）
 	RawFiles     []CLIConfigFile        `json:"rawFiles,omitempty"`     // 多文件内容预览
 	ConfigFormat string                 `json:"configFormat,omitempty"` // "json" 或 "toml"
-	EnvContent   map[string]string      `json:"envContent,omitempty"`   // Gemini .env 内容
 	FilePath     string                 `json:"filePath,omitempty"`     // 配置文件路径
 	Editable     map[string]interface{} `json:"editable,omitempty"`     // 可编辑字段的当前值
 }
@@ -113,7 +111,6 @@ type CLITemplates struct {
 	Claude          CLITemplate `json:"claude"`
 	OpenAIResponses CLITemplate `json:"openai-responses"`
 	OpenAIChat      CLITemplate `json:"openai-chat"`
-	Gemini          CLITemplate `json:"gemini"`
 	Codex           CLITemplate `json:"codex"` // Deprecated, kept for backward compat
 }
 
@@ -134,8 +131,6 @@ func (s *CliConfigService) GetConfig(platform string) (*CLIConfig, error) {
 		return s.getClaudeConfig()
 	case PlatformCodex:
 		return s.getCodexConfig()
-	case PlatformGemini:
-		return s.getGeminiConfig()
 	default:
 		return nil, fmt.Errorf("不支持的平台: %s", platform)
 	}
@@ -404,69 +399,6 @@ func (s *CliConfigService) GetConfigSnapshots(platform string, apiUrl string, ap
 			Mode:         currentMode,
 		}, nil
 
-	case PlatformGemini:
-		envPath := s.getGeminiEnvPath()
-		currentEnv, err := readText(envPath)
-		if err != nil {
-			return nil, fmt.Errorf("读取 Gemini .env 失败: %w", err)
-		}
-
-		currentFiles := []CLIConfigFile{
-			{Path: envPath, Format: "env", Content: currentEnv},
-		}
-
-		// 计算当前模式：是否指向本地代理
-		currentMode := "direct"
-		if strings.TrimSpace(currentEnv) != "" {
-			envMap := parseEnvFile(currentEnv)
-			if strings.EqualFold(strings.TrimSpace(envMap["GOOGLE_GEMINI_BASE_URL"]), strings.TrimSpace(s.geminiBaseURL())) {
-				currentMode = "proxy"
-			}
-		}
-
-		// current 模式：Preview = Current（不做任何注入）
-		if effectiveMode == "current" {
-			// 深拷贝 currentFiles 避免引用共享
-			previewFiles := make([]CLIConfigFile, len(currentFiles))
-			copy(previewFiles, currentFiles)
-			return &CLIConfigSnapshots{
-				CurrentFiles: currentFiles,
-				PreviewFiles: previewFiles,
-				Mode:         currentMode,
-			}, nil
-		}
-
-		envMap := parseEnvFile(currentEnv)
-		if envMap == nil {
-			envMap = make(map[string]string)
-		}
-
-		if previewDirect {
-			if strings.TrimSpace(apiUrl) != "" {
-				envMap["GOOGLE_GEMINI_BASE_URL"] = strings.TrimSpace(apiUrl)
-			} else {
-				delete(envMap, "GOOGLE_GEMINI_BASE_URL")
-			}
-			if strings.TrimSpace(apiKey) != "" {
-				envMap["GEMINI_API_KEY"] = strings.TrimSpace(apiKey)
-			} else {
-				delete(envMap, "GEMINI_API_KEY")
-			}
-		} else {
-			envMap["GOOGLE_GEMINI_BASE_URL"] = s.geminiBaseURL()
-			envMap["GEMINI_API_KEY"] = "code-switch-r"
-		}
-
-		previewFiles := []CLIConfigFile{
-			{Path: envPath, Format: "env", Content: buildGeminiEnvContent(envMap)},
-		}
-
-		return &CLIConfigSnapshots{
-			CurrentFiles: currentFiles,
-			PreviewFiles: previewFiles,
-			Mode:         currentMode,
-		}, nil
-
 	default:
 		return nil, fmt.Errorf("不支持的平台: %s", platform)
 	}
@@ -484,8 +416,6 @@ func (s *CliConfigService) SaveConfig(platform string, editable map[string]inter
 		return s.saveClaudeConfig(editable)
 	case PlatformCodex:
 		return s.saveCodexConfig(editable)
-	case PlatformGemini:
-		return s.saveGeminiConfig(editable)
 	default:
 		return fmt.Errorf("不支持的平台: %s", platform)
 	}
@@ -518,12 +448,6 @@ func (s *CliConfigService) SaveConfigFileContent(platform string, filePath strin
 			return s.saveCodexAuthContent(authPath, content)
 		}
 		return fmt.Errorf("非法文件路径: %s", filePath)
-	case PlatformGemini:
-		envPath := filepath.Clean(s.getGeminiEnvPath())
-		if !samePath(cleaned, envPath) {
-			return fmt.Errorf("非法文件路径: %s", filePath)
-		}
-		return s.saveGeminiEnvContent(envPath, content)
 	default:
 		return fmt.Errorf("不支持的平台: %s", platform)
 	}
@@ -545,8 +469,6 @@ func (s *CliConfigService) GetTemplate(platform string) (*CLITemplate, error) {
 		return &templates.Claude, nil
 	case PlatformCodex:
 		return &templates.Codex, nil
-	case PlatformGemini:
-		return &templates.Gemini, nil
 	default:
 		return nil, fmt.Errorf("不支持的平台: %s", platform)
 	}
@@ -574,8 +496,6 @@ func (s *CliConfigService) SetTemplate(platform string, template map[string]inte
 		templates.Claude = tpl
 	case PlatformCodex:
 		templates.Codex = tpl
-	case PlatformGemini:
-		templates.Gemini = tpl
 	default:
 		return fmt.Errorf("不支持的平台: %s", platform)
 	}
@@ -590,8 +510,6 @@ func (s *CliConfigService) GetLockedFields(platform string) []string {
 		return []string{"env.ANTHROPIC_BASE_URL", "env.ANTHROPIC_AUTH_TOKEN"}
 	case PlatformCodex:
 		return []string{"model_provider", "preferred_auth_method", "model_providers.code-switch-r.base_url", "model_providers.code-switch-r.name", "model_providers.code-switch-r.wire_api"}
-	case PlatformGemini:
-		return []string{"GOOGLE_GEMINI_BASE_URL", "GEMINI_API_KEY"}
 	default:
 		return []string{}
 	}
@@ -612,8 +530,6 @@ func (s *CliConfigService) RestoreDefault(platform string) error {
 		configPath = s.getClaudeConfigPath()
 	case PlatformCodex:
 		configPath = s.getCodexConfigPath()
-	case PlatformGemini:
-		configPath = s.getGeminiEnvPath()
 	default:
 		return fmt.Errorf("不支持的平台: %s", platform)
 	}
@@ -625,11 +541,6 @@ func (s *CliConfigService) RestoreDefault(platform string) error {
 		switch p {
 		case PlatformCodex:
 			legacy := filepath.Join(filepath.Dir(configPath), "cc-studio.back.config.toml")
-			if FileExists(legacy) {
-				backupPath, err = legacy, nil
-			}
-		case PlatformGemini:
-			legacy := configPath + ".code-switch.backup"
 			if FileExists(legacy) {
 				backupPath, err = legacy, nil
 			}
@@ -645,11 +556,6 @@ func (s *CliConfigService) RestoreDefault(platform string) error {
 // baseURL 获取代理 URL
 func (s *CliConfigService) baseURL() string {
 	return RelayClientBaseURL(s.relayAddr)
-}
-
-// geminiBaseURL 获取 Gemini 代理 URL（包含 /gemini 前缀）
-func (s *CliConfigService) geminiBaseURL() string {
-	return s.baseURL() + "/gemini"
 }
 
 // ========== Claude 配置操作 ==========
@@ -1140,170 +1046,6 @@ func (s *CliConfigService) saveCodexAuthContent(authPath string, content string)
 	return AtomicWriteJSON(authPath, data)
 }
 
-// ========== Gemini 配置操作 ==========
-
-func (s *CliConfigService) getGeminiEnvPath() string {
-	return filepath.Join(s.homeDir, ".gemini", ".env")
-}
-
-func (s *CliConfigService) getGeminiConfig() (*CLIConfig, error) {
-	envPath := s.getGeminiEnvPath()
-	config := &CLIConfig{
-		Platform:     PlatformGemini,
-		ConfigFormat: "env",
-		FilePath:     envPath,
-		Fields:       []CLIConfigField{},
-		Editable:     make(map[string]interface{}),
-		EnvContent:   make(map[string]string),
-	}
-
-	// 读取 .env 文件
-	if content, err := os.ReadFile(envPath); err == nil {
-		raw := string(content)
-		config.RawContent = raw
-		config.RawFiles = append(config.RawFiles, CLIConfigFile{
-			Path:    envPath,
-			Format:  "env",
-			Content: raw,
-		})
-		config.EnvContent = parseEnvFile(raw)
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("读取 Gemini .env 失败: %w", err)
-	}
-
-	baseURL := s.geminiBaseURL()
-
-	// 锁定字段（如果启用了代理）
-	config.Fields = append(config.Fields,
-		CLIConfigField{
-			Key:    "GOOGLE_GEMINI_BASE_URL",
-			Value:  baseURL,
-			Locked: true,
-			Hint:   "由代理管理，指向本地代理服务",
-			Type:   "string",
-		},
-	)
-
-	// API Key (锁定字段，由系统管理)
-	apiKey := config.EnvContent["GEMINI_API_KEY"]
-	config.Fields = append(config.Fields, CLIConfigField{
-		Key:    "GEMINI_API_KEY",
-		Value:  apiKey,
-		Locked: true,
-		Hint:   "由系统管理，请勿手动修改",
-		Type:   "string",
-	})
-
-	model := config.EnvContent["GEMINI_MODEL"]
-	if model == "" {
-		model = "gemini-3-pro-preview"
-	}
-	config.Fields = append(config.Fields, CLIConfigField{
-		Key:    "GEMINI_MODEL",
-		Value:  model,
-		Locked: false,
-		Type:   "string",
-	})
-	config.Editable["GEMINI_MODEL"] = model
-
-	// 其他自定义环境变量
-	for k, v := range config.EnvContent {
-		if k != "GOOGLE_GEMINI_BASE_URL" && k != "GEMINI_API_KEY" && k != "GEMINI_MODEL" {
-			config.Fields = append(config.Fields, CLIConfigField{
-				Key:    k,
-				Value:  v,
-				Locked: false,
-				Type:   "string",
-			})
-			config.Editable[k] = v
-		}
-	}
-
-	return config, nil
-}
-
-func (s *CliConfigService) saveGeminiConfig(editable map[string]interface{}) error {
-	envPath := s.getGeminiEnvPath()
-
-	// 读取现有内容（保留用户的其他设置）
-	envMap := make(map[string]string)
-	if content, err := os.ReadFile(envPath); err == nil {
-		envMap = parseEnvFile(string(content))
-	}
-
-	// 创建备份
-	if _, err := CreateBackup(envPath); err != nil {
-		fmt.Printf("创建备份失败: %v\n", err)
-	}
-
-	// 设置锁定字段
-	envMap["GOOGLE_GEMINI_BASE_URL"] = s.geminiBaseURL()
-
-	// 锁定字段列表（这些字段不允许用户覆盖）
-	lockedFields := map[string]bool{
-		"GOOGLE_GEMINI_BASE_URL": true,
-		"GEMINI_API_KEY":         true,
-	}
-
-	// 合并用户编辑的所有字段（除了锁定字段）
-	for k, v := range editable {
-		// 跳过锁定字段
-		if lockedFields[k] {
-			continue
-		}
-		// 将值转换为字符串（.env 格式只支持字符串值）
-		if str, ok := v.(string); ok {
-			envMap[k] = str
-		} else {
-			// 对于非字符串类型，转换为字符串表示
-			envMap[k] = fmt.Sprintf("%v", v)
-		}
-	}
-
-	// 确保目录存在
-	if err := EnsureDir(filepath.Dir(envPath)); err != nil {
-		return err
-	}
-
-	// 序列化为 .env 格式
-	content := serializeEnvFile(envMap)
-
-	// 原子写入
-	return AtomicWriteText(envPath, content)
-}
-
-// saveGeminiEnvContent 将预览区编辑的 .env 写入磁盘，并强制覆盖代理锁定字段
-func (s *CliConfigService) saveGeminiEnvContent(envPath string, content string) error {
-	envMap := parseEnvFile(content)
-
-	// 强制写入锁定字段
-	envMap["GOOGLE_GEMINI_BASE_URL"] = s.geminiBaseURL()
-
-	// GEMINI_API_KEY 为系统锁定字段：优先保留磁盘中的现有值；不存在时写入占位值
-	existingAPIKey := ""
-	if oldContent, err := os.ReadFile(envPath); err == nil {
-		oldMap := parseEnvFile(string(oldContent))
-		existingAPIKey = oldMap["GEMINI_API_KEY"]
-	}
-	if existingAPIKey != "" {
-		envMap["GEMINI_API_KEY"] = existingAPIKey
-	} else if envMap["GEMINI_API_KEY"] == "" {
-		envMap["GEMINI_API_KEY"] = "code-switch-r"
-	}
-
-	if _, err := CreateBackup(envPath); err != nil {
-		fmt.Printf("创建备份失败: %v\n", err)
-	}
-
-	// 确保目录存在
-	if err := EnsureDir(filepath.Dir(envPath)); err != nil {
-		return err
-	}
-
-	// 原子写入
-	return AtomicWriteText(envPath, serializeEnvFile(envMap))
-}
-
 // ========== 模板管理 ==========
 
 func (s *CliConfigService) loadTemplates() (*CLITemplates, error) {
@@ -1364,4 +1106,4 @@ func samePath(a, b string) bool {
 	return filepath.Clean(a) == filepath.Clean(b)
 }
 
-// 注意: parseEnvFile 和 isValidEnvKey 已在 geminiservice.go 中定义
+// parseEnvFile 和 isValidEnvKey 定义在 envfile.go 中。

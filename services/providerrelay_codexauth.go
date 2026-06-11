@@ -13,6 +13,8 @@ import (
 const codexRelayKeyHeader = "X-Code-Switch-Key"
 
 const relayKeyIDContextKey = "relay_key_id"
+const relayKeyNameContextKey = "relay_key_name"
+const providerPoolIDContextKey = "provider_pool_id"
 
 func (prs *ProviderRelayService) claudeRelayAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -45,6 +47,8 @@ func (prs *ProviderRelayService) claudeRelayAuthMiddleware() gin.HandlerFunc {
 			return
 		}
 		c.Set(relayKeyIDContextKey, match.ID)
+		c.Set(relayKeyNameContextKey, match.Name)
+		c.Set("relay_key_pool_bindings", match.PoolBindings)
 
 		// 清理客户端传来的认证头，避免泄漏 relay key 给上游
 		c.Request.Header.Del("Authorization")
@@ -110,6 +114,8 @@ func (prs *ProviderRelayService) codexRelayAuthMiddleware() gin.HandlerFunc {
 			return
 		}
 		c.Set(relayKeyIDContextKey, match.ID)
+		c.Set(relayKeyNameContextKey, match.Name)
+		c.Set("relay_key_pool_bindings", match.PoolBindings)
 
 		// 上游认证由 provider 配置重新注入，避免把客户端传来的 relay key 转发出去。
 		c.Request.Header.Del("Authorization")
@@ -184,6 +190,36 @@ func relayKeyIDFromContext(c *gin.Context) string {
 		return ""
 	}
 	return strings.TrimSpace(keyID)
+}
+
+func relayKeyNameFromContext(c *gin.Context) string {
+	if c == nil {
+		return ""
+	}
+	value, ok := c.Get(relayKeyNameContextKey)
+	if !ok {
+		return ""
+	}
+	name, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(name)
+}
+
+func relayKeyPoolBindingsFromContext(c *gin.Context) map[string]string {
+	if c == nil {
+		return nil
+	}
+	value, ok := c.Get("relay_key_pool_bindings")
+	if !ok {
+		return nil
+	}
+	bindings, ok := value.(map[string]string)
+	if !ok {
+		return nil
+	}
+	return bindings
 }
 
 func extractBearerToken(value string) string {

@@ -16,7 +16,7 @@ import (
 	"github.com/daodao97/xgo/xdb"
 )
 
-// GlobalDBQueue 全局单次写入队列（用于异构写入：blacklist、settings 等）
+// GlobalDBQueue 全局单次写入队列（用于异构写入：settings 等）
 var GlobalDBQueue *DBWriteQueue
 
 // GlobalDBQueueLogs 全局批量写入队列（仅用于 request_log 同构写入）
@@ -30,7 +30,7 @@ func InitGlobalDBQueue() error {
 	}
 
 	// 队列 1：单次写入队列（禁用批量，用于异构写入）
-	// 用途：blacklist、app_settings 等不同表、不同操作的写入
+	// 用途：app_settings 等不同表、不同操作的写入
 	GlobalDBQueue = NewDBWriteQueue(db, 5000, false)
 
 	// 队列 2：批量写入队列（启用批量，仅用于 request_log）
@@ -129,12 +129,14 @@ type QueueStats struct {
 // ⚠️ **批量模式使用约束**（critical）：
 // - **仅用于同构写入**：批量通道（ExecBatch）只应用于相同表、相同操作的 SQL
 //   - ✅ 正确用法：所有 request_log 的 INSERT（同一表、同一操作、参数结构相同）
-//   - ❌ 错误用法：混入不同表的写入（request_log + provider_blacklist）
+//   - ❌ 错误用法：混入不同表的写入（request_log + app_settings）
 //   - ❌ 错误用法：混入不同操作（INSERT + UPDATE + DELETE）
+//
 // - **为什么必须同构**：
 //   - 统计模型假设批次延迟在所有任务间均匀分布（perTaskLatencyMs = batchLatencyMs / count）
 //   - 如果批次内有慢 SQL（触发器、复杂索引），会稀释快 SQL 的延迟统计
 //   - P99 延迟会被低估，无法真实反映单请求 SLA
+//
 // - **代码审查检查点**：
 //   - 搜索所有 ExecBatch/ExecBatchCtx 调用
 //   - 确认每个调用点只写入同一个表的同一种操作
@@ -569,24 +571,24 @@ func (q *DBWriteQueue) GetStats() QueueStats {
 // 📌 统计假设与局限性说明：
 //
 // 1. **平均延迟计算假设**：
-//    - 批量提交时，假设批次延迟在所有任务间均匀分布
-//    - 计算公式：AvgLatencyMs = (旧总延迟 + 批次延迟) / 新总任务数
-//    - 局限性：如果批次内不同 SQL 耗时差异巨大（如含触发器、复杂索引），统计会失真
+//   - 批量提交时，假设批次延迟在所有任务间均匀分布
+//   - 计算公式：AvgLatencyMs = (旧总延迟 + 批次延迟) / 新总任务数
+//   - 局限性：如果批次内不同 SQL 耗时差异巨大（如含触发器、复杂索引），统计会失真
 //
 // 2. **P99 延迟计算假设**：
-//    - 批量提交时，将批次延迟平均分摊到每个任务（perTaskLatencyMs = latencyMs / count）
-//    - 每个任务记录相同的延迟样本，用于 P99 计算
-//    - 局限性：真实情况下，批次内首个任务可能耗时更长（事务开启开销），最后一个任务可能更快
+//   - 批量提交时，将批次延迟平均分摊到每个任务（perTaskLatencyMs = latencyMs / count）
+//   - 每个任务记录相同的延迟样本，用于 P99 计算
+//   - 局限性：真实情况下，批次内首个任务可能耗时更长（事务开启开销），最后一个任务可能更快
 //
 // 3. **适用场景**：
-//    - ✅ 批次内所有 SQL 耗时相近（如 request_log INSERT，相同表结构、无触发器）
-//    - ✅ 关注整体系统性能趋势，而非单条 SQL 精确耗时
-//    - ❌ 批次内混合不同类型操作（INSERT + UPDATE + DELETE）
-//    - ❌ 需要精确追踪每条 SQL 的实际耗时
+//   - ✅ 批次内所有 SQL 耗时相近（如 request_log INSERT，相同表结构、无触发器）
+//   - ✅ 关注整体系统性能趋势，而非单条 SQL 精确耗时
+//   - ❌ 批次内混合不同类型操作（INSERT + UPDATE + DELETE）
+//   - ❌ 需要精确追踪每条 SQL 的实际耗时
 //
 // 4. **改进方向**（如需精确统计）：
-//    - 在 WriteTask 中添加 startTime 字段，worker 执行时逐个记录真实耗时
-//    - 成本：每个任务额外 8 字节（time.Time）+ 逐个更新统计的锁竞争
+//   - 在 WriteTask 中添加 startTime 字段，worker 执行时逐个记录真实耗时
+//   - 成本：每个任务额外 8 字节（time.Time）+ 逐个更新统计的锁竞争
 func (q *DBWriteQueue) updateStats(count int, latency time.Duration, err error) {
 	q.statsMu.Lock()
 	defer q.statsMu.Unlock()

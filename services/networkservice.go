@@ -39,7 +39,6 @@ func NewNetworkService(
 	relayAddr string,
 	_ *ClaudeSettingsService,
 	_ *CodexSettingsService,
-	_ *GeminiService,
 	_ *CodexRelayKeyService,
 ) *NetworkService {
 	home, err := getUserHomeDir()

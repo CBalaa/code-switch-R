@@ -58,22 +58,23 @@ func newTestRelayService(t *testing.T) (*ProviderService, *ProviderRelayService)
 	_ = os.Remove(filepath.Join(homeDir, ".codex", "auth.json"))
 
 	providerService := NewProviderService()
-	settingsService := NewSettingsService()
 	appSettings := NewAppSettingsService(nil)
 	codexRelayKeys := NewCodexRelayKeyService()
 	notificationService := NewNotificationService(appSettings)
-	blacklistService := NewBlacklistService(settingsService, notificationService)
-	geminiService := NewGeminiService("127.0.0.1:18100")
 
 	relayService := NewProviderRelayService(
 		providerService,
-		geminiService,
+		nil, // poolService
 		codexRelayKeys,
-		blacklistService,
 		notificationService,
 		appSettings,
 		"",
 	)
+
+	// 为测试创建默认池子和 relay key 绑定
+	if err := relayService.EnsureDefaultPoolsAndBindings(); err != nil {
+		t.Logf("[WARN] 测试环境初始化默认池子失败: %v", err)
+	}
 
 	return providerService, relayService
 }
@@ -360,6 +361,25 @@ wire_api = "responses"
 `
 	if err := os.WriteFile(filepath.Join(codexDir, codexConfigFileName), []byte(managedConfig), 0o600); err != nil {
 		t.Fatalf("写入 codex 托管配置失败: %v", err)
+	}
+
+	// 确保默认池子存在且 relay key 已绑定（codex-settings 已写入，需要重新推导模式）
+	if relayService.poolService != nil {
+		// 更新默认池子为托管模式（codex-settings 已启用托管）
+		pool, _ := relayService.poolService.GetPool("pool_openai-responses_default")
+		if pool != nil {
+			pool.Mode = ProviderPoolModeManaged
+			// 更新成员：加入新创建的 provider
+			pool.Members = []ProviderPoolMember{{ProviderID: 1, Enabled: true}}
+			_, _ = relayService.poolService.SavePool(pool)
+		}
+		// 确保 relay key 绑定
+		platformDefaults := map[string]string{
+			"openai-responses": "pool_openai-responses_default",
+			"openai-chat":      "pool_openai-chat_default",
+			"claude":           "pool_claude_default",
+		}
+		_ = relayService.codexRelayKeys.EnsureDefaultPoolBindings(platformDefaults)
 	}
 
 	router := gin.New()

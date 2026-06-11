@@ -426,11 +426,6 @@ const maskApiKey = (key: string): string => {
   color: #93c5fd;
 }
 
-.app-badge.app-gemini {
-  background: rgba(251, 146, 60, 0.2);
-  color: #fb923c;
-}
-
 .modal-footer {
   padding: 1.5rem;
   border-top: 1px solid var(--border-color);

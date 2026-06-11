@@ -3,18 +3,21 @@
     <div class="editor-header">
       <label class="editor-label">
         <span>{{ $t('components.provider.modelWhitelist.label') }}</span>
-        <button
-          type="button"
-          class="help-icon"
-          :data-tooltip="$t('components.provider.modelWhitelist.tooltip')"
-        >
-          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-            <path
-              d="M8 1a7 7 0 100 14A7 7 0 008 1zm0 13A6 6 0 118 2a6 6 0 010 12zm0-9.5a.75.75 0 01.75.75v4a.75.75 0 01-1.5 0v-4A.75.75 0 018 4.5zm0 7.5a1 1 0 100-2 1 1 0 000 2z"
-              fill="currentColor"
-            />
+        <span class="help-hint-inline" @mouseenter="tooltipVisible = true" @mouseleave="tooltipVisible = false">
+          <svg viewBox="0 0 24 24" class="qmark-icon" aria-hidden="true">
+            <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.5" />
+            <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+            <line x1="12" y1="17" x2="12.01" y2="17" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
           </svg>
-        </button>
+          <span v-if="tooltipVisible" class="hint-popup">
+            <span class="hint-popup-title">{{ $t('components.provider.modelWhitelist.tooltip') }}</span>
+            <span class="hint-popup-examples">
+              <code>claude-sonnet-4</code> – {{ $t('components.provider.modelWhitelist.examples.exact') }}<br/>
+              <code>claude-*</code> – {{ $t('components.provider.modelWhitelist.examples.prefix') }}<br/>
+              <code>anthropic/claude-*</code> – {{ $t('components.provider.modelWhitelist.examples.vendor') }}
+            </span>
+          </span>
+        </span>
       </label>
     </div>
 
@@ -61,23 +64,6 @@
       </BaseButton>
     </div>
 
-    <!-- 通配符示例和说明 -->
-    <div class="help-text">
-      <p class="help-example">
-        <strong>{{ $t('components.provider.modelWhitelist.examples.title') }}</strong>
-      </p>
-      <ul class="help-list">
-        <li>
-          <code>claude-sonnet-4</code> - {{ $t('components.provider.modelWhitelist.examples.exact') }}
-        </li>
-        <li>
-          <code>claude-*</code> - {{ $t('components.provider.modelWhitelist.examples.prefix') }}
-        </li>
-        <li>
-          <code>anthropic/claude-*</code> - {{ $t('components.provider.modelWhitelist.examples.vendor') }}
-        </li>
-      </ul>
-    </div>
   </div>
 </template>
 
@@ -104,6 +90,7 @@ const modelList = computed(() => {
 })
 
 const newModel = ref('')
+const tooltipVisible = ref(false)
 
 const isWildcard = (model: string) => model.includes('*')
 
@@ -167,22 +154,69 @@ watch(
   color: var(--foreground);
 }
 
-.help-icon {
+.help-hint-inline {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  padding: 2px;
-  border: none;
-  background: none;
-  color: var(--foreground-muted);
   cursor: help;
-  border-radius: 4px;
-  transition: all 0.2s;
 }
 
-.help-icon:hover {
-  color: var(--foreground);
-  background-color: var(--background-hover);
+.qmark-icon {
+  width: 14px;
+  height: 14px;
+  color: var(--foreground-muted);
+  transition: color 0.15s;
+}
+
+.help-hint-inline:hover .qmark-icon {
+  color: var(--accent-primary);
+}
+
+.hint-popup {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: -8px;
+  min-width: 200px;
+  max-width: 360px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: #1e293b;
+  color: #f1f5f9;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: normal;
+  z-index: 1000;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  pointer-events: none;
+}
+
+.hint-popup::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 16px;
+  border: 6px solid transparent;
+  border-top-color: #1e293b;
+}
+
+.hint-popup-title {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.hint-popup-examples {
+  display: block;
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.hint-popup-examples code {
+  padding: 1px 5px;
+  background: rgba(255,255,255,0.12);
+  border-radius: 3px;
+  font-family: 'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace;
+  font-size: 11px;
 }
 
 .model-tags {
@@ -249,39 +283,5 @@ watch(
 .model-input-row :deep(input) {
   flex: 1;
   font-family: 'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace;
-}
-
-.help-text {
-  padding: 12px;
-  background-color: var(--background-secondary);
-  border-radius: 8px;
-  font-size: 0.8125rem;
-  color: var(--foreground-muted);
-}
-
-.help-example {
-  margin-bottom: 8px;
-  color: var(--foreground);
-}
-
-.help-list {
-  margin: 0;
-  padding-left: 20px;
-  list-style: disc;
-}
-
-.help-list li {
-  margin-bottom: 4px;
-  line-height: 1.5;
-}
-
-.help-list code {
-  padding: 2px 6px;
-  background-color: var(--background);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  font-family: 'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace;
-  font-size: 0.75rem;
-  color: var(--accent-primary);
 }
 </style>

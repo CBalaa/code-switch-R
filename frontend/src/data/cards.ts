@@ -24,8 +24,6 @@ export type AutomationCard = {
   // === 可用性监控配置（新） ===
   // 可用性监控开关：是否启用后台健康检查
   availabilityMonitorEnabled?: boolean
-  // 可用性失败自动拉黑：检测失败时是否自动拉黑该供应商
-  connectivityAutoBlacklist?: boolean
   // 可用性高级配置：测试模型、端点和超时
   availabilityConfig?: {
     testModel?: string      // 测试用模型

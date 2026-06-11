@@ -454,7 +454,7 @@ func TestCodexProviderEnabledRequiredOnlyInManagedProxyMode(t *testing.T) {
 	testHome := t.TempDir()
 	t.Setenv("HOME", testHome)
 
-	relay := NewProviderRelayService(NewProviderService(), nil, nil, nil, nil, nil, DefaultRelayBindAddr)
+	relay := NewProviderRelayService(NewProviderService(), nil, nil, nil, nil, DefaultRelayBindAddr)
 	if relay.shouldRequireProviderEnabled("claude") != true {
 		t.Fatalf("claude should always require provider enabled")
 	}
@@ -517,8 +517,14 @@ func TestSelectCodexEmptyStreamRetryProviderDoesNotFallbackToOtherProvider(t *te
 		t.Fatalf("write providers: %v", err)
 	}
 
-	relay := NewProviderRelayService(NewProviderService(), nil, nil, nil, nil, nil, DefaultRelayBindAddr)
-	provider, ok, err := relay.selectCodexEmptyStreamRetryProvider("codex", "current-provider", "gpt-5.5")
+	relay := NewProviderRelayService(NewProviderService(), NewProviderPoolService(), nil, nil, nil, DefaultRelayBindAddr)
+
+	// 创建测试用的 pool
+	_, _ = relay.poolService.EnsureDefaultPool("openai-responses", []Provider{
+		{ID: 1, Name: "other-provider", Enabled: true},
+	}, DefaultPoolSeed{Mode: ProviderPoolModeManaged})
+
+	provider, ok, err := relay.selectCodexEmptyStreamRetryProvider("openai-responses", "pool_openai-responses_default", "current-provider", "gpt-5.5")
 	if err != nil {
 		t.Fatalf("select retry provider returned error: %v", err)
 	}
@@ -578,7 +584,7 @@ wire_api = "responses"
 		t.Fatalf("write codex auth: %v", err)
 	}
 
-	relay := NewProviderRelayService(NewProviderService(), nil, nil, nil, nil, nil, DefaultRelayBindAddr)
+	relay := NewProviderRelayService(NewProviderService(), nil, nil, nil, nil, DefaultRelayBindAddr)
 	id, required := relay.codexDirectAppliedProviderFilter("codex", false)
 	if !required {
 		t.Fatalf("manual mode should require direct applied provider")
@@ -616,7 +622,7 @@ func TestCodexDirectAppliedProviderRequiredInManualMode(t *testing.T) {
 	testHome := t.TempDir()
 	t.Setenv("HOME", testHome)
 
-	relay := NewProviderRelayService(NewProviderService(), nil, nil, nil, nil, nil, DefaultRelayBindAddr)
+	relay := NewProviderRelayService(NewProviderService(), nil, nil, nil, nil, DefaultRelayBindAddr)
 	id, required := relay.codexDirectAppliedProviderFilter("codex", false)
 	if !required {
 		t.Fatalf("manual mode should require direct applied provider")
@@ -656,16 +662,16 @@ func TestModelMappingEndToEnd(t *testing.T) {
 			"anthropic/claude-sonnet-4":   true,
 			"anthropic/claude-opus-4":     true,
 			"openai/gpt-4":                true,
-			"google/gemini-pro":           true,
+			"mistral/mistral-large":       true,
 			"meta-llama/llama-3.1-405b":   true,
 			"anthropic/claude-3.5-sonnet": true,
 			"anthropic/claude-3.5-haiku":  true,
 		},
 		ModelMapping: map[string]string{
-			"claude-*": "anthropic/claude-*",
-			"gpt-*":    "openai/gpt-*",
-			"gemini-*": "google/gemini-*",
-			"llama-*":  "meta-llama/llama-*",
+			"claude-*":  "anthropic/claude-*",
+			"gpt-*":     "openai/gpt-*",
+			"mistral-*": "mistral/mistral-*",
+			"llama-*":   "meta-llama/llama-*",
 		},
 	}
 
@@ -680,7 +686,7 @@ func TestModelMappingEndToEnd(t *testing.T) {
 		{"claude-3.5-sonnet", true, "anthropic/claude-3.5-sonnet"},
 		{"gpt-4", true, "openai/gpt-4"},
 		{"gpt-4-turbo", true, "openai/gpt-4-turbo"},
-		{"gemini-pro", true, "google/gemini-pro"},
+		{"mistral-large", true, "mistral/mistral-large"},
 		{"llama-3.1-405b", true, "meta-llama/llama-3.1-405b"},
 
 		// 不支持的模型

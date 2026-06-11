@@ -94,258 +94,6 @@ export class AvailabilityConfig {
 }
 
 /**
- * BlacklistLevelConfig 等级拉黑配置（v0.4.0 新增）
- */
-export class BlacklistLevelConfig {
-    /**
-     * 功能开关
-     * 是否启用等级拉黑
-     */
-    "enableLevelBlacklist": boolean;
-
-    /**
-     * 基础配置
-     * 失败阈值（连续失败次数）
-     */
-    "failureThreshold": number;
-
-    /**
-     * 去重窗口（秒）
-     */
-    "dedupeWindowSeconds": number;
-
-    /**
-     * 同 Provider 重试等待时间（秒），必须 > DedupeWindowSeconds
-     */
-    "retryWaitSeconds": number;
-
-    /**
-     * 降级配置
-     * 正常降级间隔（小时）
-     */
-    "normalDegradeIntervalHours": number;
-
-    /**
-     * 宽恕触发时间（小时）
-     */
-    "forgivenessHours": number;
-
-    /**
-     * 跳级惩罚窗口（小时）
-     */
-    "jumpPenaltyWindowHours": number;
-
-    /**
-     * 等级时长配置（分钟）
-     * L1 拉黑时长
-     */
-    "l1DurationMinutes": number;
-
-    /**
-     * L2 拉黑时长
-     */
-    "l2DurationMinutes": number;
-
-    /**
-     * L3 拉黑时长
-     */
-    "l3DurationMinutes": number;
-
-    /**
-     * L4 拉黑时长
-     */
-    "l4DurationMinutes": number;
-
-    /**
-     * L5 拉黑时长
-     */
-    "l5DurationMinutes": number;
-
-    /**
-     * 开关关闭时的行为
-     * fixed=固定拉黑, none=不拉黑
-     */
-    "fallbackMode": string;
-
-    /**
-     * 固定拉黑时长（分钟）
-     */
-    "fallbackDurationMinutes": number;
-
-    /** Creates a new BlacklistLevelConfig instance. */
-    constructor($$source: Partial<BlacklistLevelConfig> = {}) {
-        if (!("enableLevelBlacklist" in $$source)) {
-            this["enableLevelBlacklist"] = false;
-        }
-        if (!("failureThreshold" in $$source)) {
-            this["failureThreshold"] = 0;
-        }
-        if (!("dedupeWindowSeconds" in $$source)) {
-            this["dedupeWindowSeconds"] = 0;
-        }
-        if (!("retryWaitSeconds" in $$source)) {
-            this["retryWaitSeconds"] = 0;
-        }
-        if (!("normalDegradeIntervalHours" in $$source)) {
-            this["normalDegradeIntervalHours"] = 0;
-        }
-        if (!("forgivenessHours" in $$source)) {
-            this["forgivenessHours"] = 0;
-        }
-        if (!("jumpPenaltyWindowHours" in $$source)) {
-            this["jumpPenaltyWindowHours"] = 0;
-        }
-        if (!("l1DurationMinutes" in $$source)) {
-            this["l1DurationMinutes"] = 0;
-        }
-        if (!("l2DurationMinutes" in $$source)) {
-            this["l2DurationMinutes"] = 0;
-        }
-        if (!("l3DurationMinutes" in $$source)) {
-            this["l3DurationMinutes"] = 0;
-        }
-        if (!("l4DurationMinutes" in $$source)) {
-            this["l4DurationMinutes"] = 0;
-        }
-        if (!("l5DurationMinutes" in $$source)) {
-            this["l5DurationMinutes"] = 0;
-        }
-        if (!("fallbackMode" in $$source)) {
-            this["fallbackMode"] = "";
-        }
-        if (!("fallbackDurationMinutes" in $$source)) {
-            this["fallbackDurationMinutes"] = 0;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new BlacklistLevelConfig instance from a string or object.
-     */
-    static createFrom($$source: any = {}): BlacklistLevelConfig {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new BlacklistLevelConfig($$parsedSource as Partial<BlacklistLevelConfig>);
-    }
-}
-
-/**
- * BlacklistSettings 黑名单配置（基础配置，向后兼容）
- */
-export class BlacklistSettings {
-    /**
-     * 失败次数阈值
-     */
-    "failureThreshold": number;
-
-    /**
-     * 拉黑时长（分钟）
-     */
-    "durationMinutes": number;
-
-    /** Creates a new BlacklistSettings instance. */
-    constructor($$source: Partial<BlacklistSettings> = {}) {
-        if (!("failureThreshold" in $$source)) {
-            this["failureThreshold"] = 0;
-        }
-        if (!("durationMinutes" in $$source)) {
-            this["durationMinutes"] = 0;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new BlacklistSettings instance from a string or object.
-     */
-    static createFrom($$source: any = {}): BlacklistSettings {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new BlacklistSettings($$parsedSource as Partial<BlacklistSettings>);
-    }
-}
-
-/**
- * BlacklistStatus 黑名单状态（用于前端展示）
- */
-export class BlacklistStatus {
-    "platform": string;
-    "providerName": string;
-    "failureCount": number;
-    "blacklistedAt": time$0.Time | null;
-    "blacklistedUntil": time$0.Time | null;
-    "lastFailureAt": time$0.Time | null;
-    "isBlacklisted": boolean;
-
-    /**
-     * 剩余拉黑时间（秒）
-     */
-    "remainingSeconds": number;
-
-    /**
-     * v0.4.0 新增：等级拉黑相关字段
-     * 当前黑名单等级 (0-5)
-     */
-    "blacklistLevel": number;
-
-    /**
-     * 最后恢复时间
-     */
-    "lastRecoveredAt": time$0.Time | null;
-
-    /**
-     * 距离宽恕还剩多少秒（3小时倒计时）
-     */
-    "forgivenessRemaining": number;
-
-    /** Creates a new BlacklistStatus instance. */
-    constructor($$source: Partial<BlacklistStatus> = {}) {
-        if (!("platform" in $$source)) {
-            this["platform"] = "";
-        }
-        if (!("providerName" in $$source)) {
-            this["providerName"] = "";
-        }
-        if (!("failureCount" in $$source)) {
-            this["failureCount"] = 0;
-        }
-        if (!("blacklistedAt" in $$source)) {
-            this["blacklistedAt"] = null;
-        }
-        if (!("blacklistedUntil" in $$source)) {
-            this["blacklistedUntil"] = null;
-        }
-        if (!("lastFailureAt" in $$source)) {
-            this["lastFailureAt"] = null;
-        }
-        if (!("isBlacklisted" in $$source)) {
-            this["isBlacklisted"] = false;
-        }
-        if (!("remainingSeconds" in $$source)) {
-            this["remainingSeconds"] = 0;
-        }
-        if (!("blacklistLevel" in $$source)) {
-            this["blacklistLevel"] = 0;
-        }
-        if (!("lastRecoveredAt" in $$source)) {
-            this["lastRecoveredAt"] = null;
-        }
-        if (!("forgivenessRemaining" in $$source)) {
-            this["forgivenessRemaining"] = 0;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new BlacklistStatus instance from a string or object.
-     */
-    static createFrom($$source: any = {}): BlacklistStatus {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new BlacklistStatus($$parsedSource as Partial<BlacklistStatus>);
-    }
-}
-
-/**
  * CLIConfig CLI 配置数据
  */
 export class CLIConfig {
@@ -367,10 +115,6 @@ export class CLIConfig {
      */
     "configFormat"?: string;
 
-    /**
-     * Gemini .env 内容
-     */
-    "envContent"?: { [_ in string]?: string };
 
     /**
      * 配置文件路径
@@ -400,7 +144,6 @@ export class CLIConfig {
     static createFrom($$source: any = {}): CLIConfig {
         const $$createField1_0 = $$createType1;
         const $$createField3_0 = $$createType3;
-        const $$createField5_0 = $$createType4;
         const $$createField7_0 = $$createType5;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("fields" in $$parsedSource) {
@@ -408,9 +151,6 @@ export class CLIConfig {
         }
         if ("rawFiles" in $$parsedSource) {
             $$parsedSource["rawFiles"] = $$createField3_0($$parsedSource["rawFiles"]);
-        }
-        if ("envContent" in $$parsedSource) {
-            $$parsedSource["envContent"] = $$createField5_0($$parsedSource["envContent"]);
         }
         if ("editable" in $$parsedSource) {
             $$parsedSource["editable"] = $$createField7_0($$parsedSource["editable"]);
@@ -549,7 +289,6 @@ export enum CLIPlatform {
 
     PlatformClaude = "claude",
     PlatformCodex = "codex",
-    PlatformGemini = "gemini",
 };
 
 /**
@@ -820,7 +559,7 @@ export class DeepLinkImportRequest {
     "resource": string;
 
     /**
-     * 目标应用 (claude/codex/gemini)
+     * 目标应用 (claude/codex/openai-chat)
      */
     "app": string;
 
@@ -1013,215 +752,6 @@ export class EnvConflict {
     static createFrom($$source: any = {}): EnvConflict {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         return new EnvConflict($$parsedSource as Partial<EnvConflict>);
-    }
-}
-
-/**
- * GeminiAuthType 认证类型
- */
-export enum GeminiAuthType {
-    /**
-     * The Go zero value for the underlying type of the enum.
-     */
-    $zero = "",
-
-    /**
-     * Google 官方 OAuth
-     */
-    GeminiAuthOAuth = "oauth-personal",
-
-    /**
-     * API Key 认证
-     */
-    GeminiAuthAPIKey = "gemini-api-key",
-
-    /**
-     * PackyCode 合作方
-     */
-    GeminiAuthPackycode = "packycode",
-
-    /**
-     * 通用第三方
-     */
-    GeminiAuthGeneric = "generic",
-};
-
-/**
- * GeminiPreset 预设供应商
- */
-export class GeminiPreset {
-    "name": string;
-    "websiteUrl": string;
-    "apiKeyUrl"?: string;
-    "baseUrl"?: string;
-    "model"?: string;
-    "description"?: string;
-    "category": string;
-    "partnerPromotionKey"?: string;
-    "envConfig"?: { [_ in string]?: string };
-
-    /** Creates a new GeminiPreset instance. */
-    constructor($$source: Partial<GeminiPreset> = {}) {
-        if (!("name" in $$source)) {
-            this["name"] = "";
-        }
-        if (!("websiteUrl" in $$source)) {
-            this["websiteUrl"] = "";
-        }
-        if (!("category" in $$source)) {
-            this["category"] = "";
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new GeminiPreset instance from a string or object.
-     */
-    static createFrom($$source: any = {}): GeminiPreset {
-        const $$createField8_0 = $$createType4;
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("envConfig" in $$parsedSource) {
-            $$parsedSource["envConfig"] = $$createField8_0($$parsedSource["envConfig"]);
-        }
-        return new GeminiPreset($$parsedSource as Partial<GeminiPreset>);
-    }
-}
-
-/**
- * GeminiProvider Gemini 供应商配置
- */
-export class GeminiProvider {
-    "id": string;
-    "name": string;
-    "websiteUrl"?: string;
-    "apiKeyUrl"?: string;
-    "baseUrl"?: string;
-    "apiKey"?: string;
-    "model"?: string;
-    "description"?: string;
-
-    /**
-     * official, third_party, custom
-     */
-    "category"?: string;
-
-    /**
-     * 用于识别供应商类型
-     */
-    "partnerPromotionKey"?: string;
-    "enabled": boolean;
-
-    /**
-     * 优先级分组 (1-10, 默认 1)
-     */
-    "level"?: number;
-
-    /**
-     * .env 配置
-     */
-    "envConfig"?: { [_ in string]?: string };
-
-    /**
-     * settings.json 配置
-     */
-    "settingsConfig"?: { [_ in string]?: any };
-
-    /** Creates a new GeminiProvider instance. */
-    constructor($$source: Partial<GeminiProvider> = {}) {
-        if (!("id" in $$source)) {
-            this["id"] = "";
-        }
-        if (!("name" in $$source)) {
-            this["name"] = "";
-        }
-        if (!("enabled" in $$source)) {
-            this["enabled"] = false;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new GeminiProvider instance from a string or object.
-     */
-    static createFrom($$source: any = {}): GeminiProvider {
-        const $$createField15_0 = $$createType4;
-        const $$createField16_0 = $$createType5;
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("envConfig" in $$parsedSource) {
-            $$parsedSource["envConfig"] = $$createField15_0($$parsedSource["envConfig"]);
-        }
-        if ("settingsConfig" in $$parsedSource) {
-            $$parsedSource["settingsConfig"] = $$createField16_0($$parsedSource["settingsConfig"]);
-        }
-        return new GeminiProvider($$parsedSource as Partial<GeminiProvider>);
-    }
-}
-
-/**
- * GeminiProxyStatus Gemini 代理状态
- */
-export class GeminiProxyStatus {
-    "enabled": boolean;
-    "base_url": string;
-
-    /** Creates a new GeminiProxyStatus instance. */
-    constructor($$source: Partial<GeminiProxyStatus> = {}) {
-        if (!("enabled" in $$source)) {
-            this["enabled"] = false;
-        }
-        if (!("base_url" in $$source)) {
-            this["base_url"] = "";
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new GeminiProxyStatus instance from a string or object.
-     */
-    static createFrom($$source: any = {}): GeminiProxyStatus {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new GeminiProxyStatus($$parsedSource as Partial<GeminiProxyStatus>);
-    }
-}
-
-/**
- * GeminiStatus Gemini 配置状态
- */
-export class GeminiStatus {
-    "enabled": boolean;
-    "currentProvider"?: string;
-    "authType": GeminiAuthType;
-    "hasApiKey": boolean;
-    "hasBaseUrl": boolean;
-    "model"?: string;
-
-    /** Creates a new GeminiStatus instance. */
-    constructor($$source: Partial<GeminiStatus> = {}) {
-        if (!("enabled" in $$source)) {
-            this["enabled"] = false;
-        }
-        if (!("authType" in $$source)) {
-            this["authType"] = GeminiAuthType.$zero;
-        }
-        if (!("hasApiKey" in $$source)) {
-            this["hasApiKey"] = false;
-        }
-        if (!("hasBaseUrl" in $$source)) {
-            this["hasBaseUrl"] = false;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new GeminiStatus instance from a string or object.
-     */
-    static createFrom($$source: any = {}): GeminiStatus {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new GeminiStatus($$parsedSource as Partial<GeminiStatus>);
     }
 }
 
@@ -1527,7 +1057,6 @@ export class MCPServer {
     "enable_platform": string[];
     "enabled_in_claude": boolean;
     "enabled_in_codex": boolean;
-    "enabled_in_gemini": boolean;
     "missing_placeholders": string[];
 
     /** Creates a new MCPServer instance. */
@@ -1546,9 +1075,6 @@ export class MCPServer {
         }
         if (!("enabled_in_codex" in $$source)) {
             this["enabled_in_codex"] = false;
-        }
-        if (!("enabled_in_gemini" in $$source)) {
-            this["enabled_in_gemini"] = false;
         }
         if (!("missing_placeholders" in $$source)) {
             this["missing_placeholders"] = [];
@@ -1740,12 +1266,6 @@ export class Provider {
      */
     "availabilityMonitorEnabled"?: boolean;
 
-    /**
-     * 连通性自动拉黑开关 - 在 Provider 编辑页面配置
-     * 前置条件：AvailabilityMonitorEnabled 必须为 true
-     * 启用后，当健康检查连续失败达到阈值时自动拉黑
-     */
-    "connectivityAutoBlacklist"?: boolean;
 
     /**
      * 可用性高级配置 - 可选，在可用性页面的"高级配置"中设置
@@ -1900,8 +1420,6 @@ export class ProviderTimeline {
     "providerName": string;
     "platform": string;
     "availabilityMonitorEnabled": boolean;
-    "connectivityAutoBlacklist": boolean;
-
     /**
      * 高级配置
      */
@@ -1940,9 +1458,6 @@ export class ProviderTimeline {
         }
         if (!("availabilityMonitorEnabled" in $$source)) {
             this["availabilityMonitorEnabled"] = false;
-        }
-        if (!("connectivityAutoBlacklist" in $$source)) {
-            this["connectivityAutoBlacklist"] = false;
         }
         if (!("items" in $$source)) {
             this["items"] = [];
@@ -2014,7 +1529,7 @@ export class ReqeustLog {
     "id": number;
 
     /**
-     * claude、codex 或 gemini
+     * claude、openai-responses 或 openai-chat
      */
     "platform": string;
     "model": string;
@@ -2100,7 +1615,7 @@ export class ReqeustLog {
  */
 export class RetryConfig {
     /**
-     * 失败阈值（达到后触发拉黑）
+     * 失败阈值
      */
     "FailureThreshold": number;
 

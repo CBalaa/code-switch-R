@@ -60,11 +60,6 @@ type Provider struct {
 	// 启用后才会执行后台健康检查
 	AvailabilityMonitorEnabled bool `json:"availabilityMonitorEnabled,omitempty"`
 
-	// 可用性失败自动拉黑开关 - 在 Provider 编辑页面配置
-	// 前置条件：AvailabilityMonitorEnabled 必须为 true
-	// 启用后，当健康检查连续失败达到阈值时自动拉黑
-	ConnectivityAutoBlacklist bool `json:"connectivityAutoBlacklist,omitempty"`
-
 	// 可用性高级配置 - 可选，在可用性页面的"高级配置"中设置
 	AvailabilityConfig *AvailabilityConfig `json:"availabilityConfig,omitempty"`
 
@@ -215,9 +210,9 @@ func (ps *ProviderService) saveProvidersLocked(kind string, providers []Provider
 	for i := range providers {
 		p := &providers[i]
 
-		// 规则：name 不可修改（黑名单/统计以 name 为 key，改名会导致数据丢失）
+		// 规则：name 不可修改（统计以 name 为 key，改名会导致数据丢失）
 		if oldName, ok := nameByID[p.ID]; ok && oldName != p.Name {
-			return fmt.Errorf("provider id %d 的 name 不可修改（会导致黑名单和统计数据丢失）", p.ID)
+			return fmt.Errorf("provider id %d 的 name 不可修改（会导致统计数据丢失）", p.ID)
 		}
 
 		// 验证模型配置
@@ -490,7 +485,6 @@ func (ps *ProviderService) DuplicateProvider(kind string, sourceID int64) (*Prov
 		ConnectivityAuthType: source.ConnectivityAuthType, // 复制认证方式
 		// 可用性监控配置
 		AvailabilityMonitorEnabled: source.AvailabilityMonitorEnabled,
-		ConnectivityAutoBlacklist:  false, // 副本默认关闭自动拉黑
 	}
 
 	// 6. 深拷贝 map（避免共享引用）

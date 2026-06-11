@@ -26,7 +26,6 @@
   },
   "sidebar": {
     "home": "Home",
-    "gemini": "Gemini",
     "logs": "Logs",
     "console": "Console",
     "settings": "Settings",
@@ -163,7 +162,6 @@
         "label": "Claude proxy",
         "hostClaude": "Host Claude Code",
         "hostCodex": "Host OpenAI Responses",
-        "hostGemini": "Host Gemini CLI",
         "hostOthers": "Host Custom CLI",
         "tooltip": "Route traffic through the local relay to manage API keys centrally.",
         "statusOn": "Managed",
@@ -209,7 +207,6 @@
         "github": "Open project GitHub",
         "theme": "Toggle theme",
         "settings": "Open settings",
-        "gemini": "Open Gemini CLI manager",
         "duplicate": "Duplicate provider"
       },
       "providers": {
@@ -243,7 +240,6 @@
           "enabled": "Enabled",
           "level": "Priority Level",
           "availabilityMonitor": "Availability Monitoring",
-          "connectivityAutoBlacklist": "Auto-Blacklist on Availability Failure",
           "availabilityTestModel": "Test Model (optional)",
           "availabilityTestEndpoint": "Test Endpoint (optional)",
           "availabilityTimeout": "Timeout (ms)",
@@ -279,7 +275,6 @@
           "chatEndpoint": "Used when the client requests /chat/completions. Leave blank to fall back to the legacy API endpoint or platform default.",
           "upstreamProtocol": "Specify the upstream API protocol. Auto detects from the endpoint; OpenAI Compatible converts Claude Messages requests to OpenAI Responses or Chat Completions",
           "availabilityMonitor": "Enable background health checks for this provider. Checks are performed periodically to monitor availability.",
-          "connectivityAutoBlacklist": "Automatically blacklist this provider when availability checks fail repeatedly",
           "availabilityAdvancedConfig": "Advanced configuration (test model, endpoint, timeout) can be edited on the Availability page",
           "availabilityTestModel": "Model to use for health checks. Leave empty to use platform default.",
           "availabilityTestEndpoint": "API endpoint for health checks. Leave empty to use platform default.",
@@ -355,32 +350,61 @@
           "contentMismatch": "Content mismatch"
         }
       },
-      "blacklist": {
-        "blocked": "Blocked",
-        "remaining": "Remaining",
-        "minutes": "m",
-        "seconds": "s",
-        "unblock": "Unblock",
-        "unblockSuccess": "{name} has been unblocked",
-        "unblockFailed": "Failed to unblock",
-        "unblockAndReset": "Unblock",
-        "resetLevel": "Reset Level",
-        "unblockAndResetHint": "Unblock while keeping current level; degradation timer restarts",
-        "resetLevelHint": "Reset level only, keep blacklist status",
-        "resetLevelSuccess": "{name} level has been reset",
-        "resetLevelFailed": "Failed to reset level",
-        "levelHint": "Has failure record",
-        "levelTitle": "Blacklist Level L{level}"
-      },
       "errors": {
         "loadAppSettingsFailed": "Failed to load application settings",
         "loadProvidersFailed": "Failed to load providers for {tab} tab"
+      },
+      "pool": {
+        "subTabs": {
+          "providers": "Providers",
+          "pools": "Provider Pools"
+        },
+        "createPool": "Create Pool",
+        "deletePool": "Delete Pool",
+        "editPool": "Edit Pool",
+        "modeManaged": "Managed",
+        "modeManual": "Manual",
+        "modeManagedDesc": "Enabled providers in this pool participate in auto-selection, retry and fallback",
+        "modeManualDesc": "Only use the specified direct-apply provider",
+        "poolName": "Pool Name",
+        "poolNamePlaceholder": "Enter pool name",
+        "poolMode": "Pool Mode",
+        "manualProvider": "Direct-apply Provider",
+        "selectProvider": "Select provider",
+        "selectMembers": "Select pool members",
+        "noProviders": "No providers yet. Add some in the Providers tab first",
+        "emptyPool": "No members in this pool",
+        "noPools": "No pools",
+        "createPoolTitle": "Create Provider Pool",
+        "editPoolTitle": "Edit Provider Pool",
+        "deletePoolTitle": "Delete Provider Pool",
+        "deletePoolMessage": "Are you sure you want to delete pool \"{name}\"?",
+        "poolCreated": "Pool created",
+        "poolUpdated": "Pool updated",
+        "poolDeleted": "Pool deleted",
+        "memberUpdated": "Member status updated",
+        "loadFailed": "Failed to load pools",
+        "updateFailed": "Update failed",
+        "saveFailed": "Failed to save pool",
+        "deleteFailed": "Failed to delete pool",
+        "memberEnabledHint": "Enable/disable this provider in this pool",
+        "globalDisabled": "Global disabled",
+        "addProvider": "Add Provider",
+        "manualApplied": "In Use",
+        "manualApply": "Direct Apply",
+        "boundKeys": "Bound Keys",
+        "unbindKey": "Unbind",
+        "noBoundKeys": "No bound keys",
+        "unboundKeys": "Unbound Keys",
+        "selectPool": "Select pool",
+        "keyBound": "Key bound",
+        "keyUnbound": "Key unbound"
       }
     },
     "logs": {
       "eyebrow": "Request diagnostics",
       "title": "Request logs",
-      "subtitle": "Inspect recent relay activity for Claude Code, OpenAI, and Gemini providers.",
+      "subtitle": "Inspect recent relay activity for Claude Code and OpenAI providers.",
       "loading": "Loading...",
       "refresh": "Refresh",
       "applyFilters": "Apply filters",
@@ -441,7 +465,6 @@
         "exterior": "Appearance settings",
         "power": "Permission settings",
         "security": "Security",
-        "blacklist": "Blacklist Settings",
         "connectivity": "Availability Monitoring"
       },
       "label": {
@@ -462,20 +485,13 @@
         "trayPanelCodex": "OpenAI Responses",
         "autoStart": "Launch at login",
         "switchNotify": "Switch Notification",
-        "switchNotifyHint": "Send system notification when provider switches or gets blacklisted",
+        "switchNotifyHint": "Send system notification when provider switches",
         "roundRobin": "Same-Level Round Robin",
         "roundRobinHint": "When enabled, providers at the same Level take turns handling requests; when disabled, always starts from the first",
         "codexStreamGuard": "Codex Empty Stream Guard",
         "codexStreamGuardHint": "Intercept Codex 200 streams with no initial useful content and retry before the client sees them",
         "autoConnectivityTest": "Auto Availability Monitoring",
         "autoConnectivityTestHint": "Automatically check availability of monitored providers every minute",
-        "blacklistThreshold": "Failure threshold",
-        "blacklistDuration": "Blacklist duration",
-        "saveBlacklist": "Save settings",
-        "enableBlacklist": "Enable blacklist",
-        "enableBlacklistHint": "When disabled, providers will not be automatically blacklisted",
-        "enableLevelBlacklist": "Enable level-based blacklist",
-        "enableLevelBlacklistHint": "When enabled, use graduated blacklist mechanism (L1-L5); when disabled, use fixed duration",
         "times": "times",
         "minutes": "minutes",
         "save": "Save",
@@ -489,61 +505,6 @@
         "authorized": "Auth",
         "go_authorized": "Auth now",
         "back": "Back to home"
-      }
-    },
-    "gemini": {
-      "hero": {
-        "eyebrow": "Gemini CLI Manager",
-        "title": "Manage Gemini Providers",
-        "lead": "Configure API providers for Gemini CLI, supporting Google Official and third-party relay services."
-      },
-      "controls": {
-        "back": "Back to home",
-        "settings": "Open settings",
-        "refresh": "Refresh",
-        "create": "Add provider"
-      },
-      "status": {
-        "enabled": "Enabled",
-        "disabled": "Not configured",
-        "active": "Active"
-      },
-      "auth": {
-        "oauth": "OAuth Authentication",
-        "apiKey": "API Key Authentication"
-      },
-      "category": {
-        "official": "Official",
-        "thirdParty": "Third Party",
-        "custom": "Custom"
-      },
-      "presets": {
-        "title": "Preset Providers"
-      },
-      "providers": {
-        "title": "Configured Providers"
-      },
-      "list": {
-        "loading": "Loading...",
-        "empty": "No providers configured. Click a preset card to add one.",
-        "edit": "Edit",
-        "delete": "Delete"
-      },
-      "actions": {
-        "switch": "Switch"
-      },
-      "form": {
-        "createTitle": "Add Gemini Provider",
-        "editTitle": "Edit Gemini Provider",
-        "deleteTitle": "Delete Provider",
-        "deleteMessage": "Are you sure you want to delete {name}? This action cannot be undone.",
-        "name": "Provider name",
-        "baseUrl": "API URL",
-        "apiKey": "API Key",
-        "model": "Default model",
-        "cancel": "Cancel",
-        "save": "Save",
-        "delete": "Delete"
       }
     },
     "themesetting": {

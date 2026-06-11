@@ -1,7 +1,7 @@
 import { Call } from '@wailsio/runtime'
 
 // CLI 平台类型
-export type CLIPlatform = 'claude' | 'openai-responses' | 'openai-chat' | 'gemini'
+export type CLIPlatform = 'claude' | 'openai-responses' | 'openai-chat'
 
 // 配置字段信息
 export interface CLIConfigField {

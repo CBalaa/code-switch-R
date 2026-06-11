@@ -26,7 +26,6 @@
   },
   "sidebar": {
     "home": "首页",
-    "gemini": "Gemini",
     "logs": "日志",
     "console": "控制台",
     "settings": "设置",
@@ -164,7 +163,6 @@
         "label": "Claude proxy",
         "hostClaude": "托管 Claude Code",
         "hostCodex": "托管 OpenAI Responses",
-        "hostGemini": "托管 Gemini CLI",
         "hostOthers": "托管自定义 CLI",
         "tooltip": "通过本地转发托管 API 访问，统一管理密钥与配额。",
         "statusOn": "已托管",
@@ -210,7 +208,6 @@
         "github": "打开 GitHub",
         "theme": "切换主题",
         "settings": "打开设置",
-        "gemini": "打开 Gemini CLI 管理",
         "duplicate": "复制供应商"
       },
       "providers": {
@@ -244,7 +241,6 @@
           "enabled": "启用状态",
           "level": "优先级分组",
           "availabilityMonitor": "可用性监控",
-          "connectivityAutoBlacklist": "可用性失败自动拉黑",
           "availabilityTestModel": "测试模型（可选）",
           "availabilityTestEndpoint": "测试端点（可选）",
           "availabilityTimeout": "超时时间（毫秒）",
@@ -280,7 +276,6 @@
           "chatEndpoint": "客户端请求 /chat/completions 时使用此端点；留空则使用旧 API 端点或平台默认端点",
           "upstreamProtocol": "指定上游 API 的协议类型。选择 auto 时根据端点自动检测；选择 OpenAI Compatible 时会把 Claude Messages 请求转换到 OpenAI Responses 或 Chat Completions",
           "availabilityMonitor": "启用后会定期进行健康检查，监控此供应商的可用性状态",
-          "connectivityAutoBlacklist": "可用性检查失败时自动拉黑该供应商",
           "availabilityAdvancedConfig": "高级配置（测试模型、端点、超时）可在可用性页面中编辑",
           "availabilityTestModel": "用于健康检查的模型，留空则使用平台默认模型",
           "availabilityTestEndpoint": "用于健康检查的 API 端点，留空则使用平台默认端点",
@@ -356,32 +351,61 @@
           "contentMismatch": "响应内容异常"
         }
       },
-      "blacklist": {
-        "blocked": "已拉黑",
-        "remaining": "剩余",
-        "minutes": "分",
-        "seconds": "秒",
-        "unblock": "立即解禁",
-        "unblockSuccess": "已解除 {name} 的拉黑",
-        "unblockFailed": "解除拉黑失败，请稍后重试",
-        "unblockAndReset": "解除拉黑",
-        "resetLevel": "清零等级",
-        "unblockAndResetHint": "解除拉黑并保留当前等级，重新开始降级计时",
-        "resetLevelHint": "仅清零等级，保留拉黑状态",
-        "resetLevelSuccess": "已清零 {name} 的等级",
-        "resetLevelFailed": "清零等级失败，请稍后重试",
-        "levelHint": "有失败记录",
-        "levelTitle": "黑名单等级 L{level}"
-      },
       "errors": {
         "loadAppSettingsFailed": "加载应用设置失败",
         "loadProvidersFailed": "加载 {tab} 标签页的供应商失败"
+      },
+      "pool": {
+        "subTabs": {
+          "providers": "供应商",
+          "pools": "供应商池"
+        },
+        "createPool": "创建池子",
+        "deletePool": "删除池子",
+        "editPool": "编辑池子",
+        "modeManaged": "托管",
+        "modeManual": "手动",
+        "modeManagedDesc": "池子内启用的供应商参与自动选择、重试和降级",
+        "modeManualDesc": "仅使用指定的直接应用供应商",
+        "poolName": "池子名称",
+        "poolNamePlaceholder": "输入池子名称",
+        "poolMode": "池子模式",
+        "manualProvider": "直接应用供应商",
+        "selectProvider": "选择供应商",
+        "selectMembers": "选择池子成员",
+        "noProviders": "暂无供应商，请先在供应商标签页中添加",
+        "emptyPool": "池子暂无成员",
+        "noPools": "暂无池子",
+        "createPoolTitle": "创建供应商池",
+        "editPoolTitle": "编辑供应商池",
+        "deletePoolTitle": "删除供应商池",
+        "deletePoolMessage": "确定要删除池子「{name}」吗？",
+        "poolCreated": "池子创建成功",
+        "poolUpdated": "池子更新成功",
+        "poolDeleted": "池子删除成功",
+        "memberUpdated": "成员状态已更新",
+        "loadFailed": "加载池子失败",
+        "updateFailed": "更新失败",
+        "saveFailed": "保存池子失败",
+        "deleteFailed": "删除池子失败",
+        "memberEnabledHint": "启用/禁用该供应商在此池子中的参与",
+        "globalDisabled": "全局禁用",
+        "addProvider": "新增供应商",
+        "manualApplied": "使用中",
+        "manualApply": "直接应用",
+        "boundKeys": "绑定密钥",
+        "unbindKey": "解绑",
+        "noBoundKeys": "暂无绑定密钥",
+        "unboundKeys": "未绑定池子的密钥",
+        "selectPool": "选择池子",
+        "keyBound": "密钥已绑定",
+        "keyUnbound": "密钥已解绑"
       }
     },
     "logs": {
       "eyebrow": "请求追踪",
       "title": "代理请求日志",
-      "subtitle": "查看 Claude Code、OpenAI 与 Gemini 代理的最新访问记录。",
+      "subtitle": "查看 Claude Code 与 OpenAI 代理的最新访问记录。",
       "loading": "加载中...",
       "refresh": "刷新",
       "applyFilters": "应用筛选",
@@ -442,7 +466,6 @@
         "trayPanel": "托盘弹窗",
         "exterior": "外观设置",
         "security": "安全设置",
-        "blacklist": "拉黑配置",
         "connectivity": "可用性监控"
       },
       "label": {
@@ -463,20 +486,13 @@
         "trayPanelCodex": "OpenAI Responses",
         "autoStart": "开机自启动",
         "switchNotify": "切换通知",
-        "switchNotifyHint": "供应商切换或拉黑时发送系统通知",
+        "switchNotifyHint": "供应商切换时发送系统通知",
         "roundRobin": "同 Level 轮询",
         "roundRobinHint": "启用后同 Level 的供应商轮流处理请求，关闭则始终从第一个开始",
         "codexStreamGuard": "Codex 流式空响应保护",
         "codexStreamGuardHint": "拦截 200 但开头无有效内容的 Codex 流式响应，并在客户端感知前自动重试",
         "autoConnectivityTest": "自动可用性监控",
         "autoConnectivityTestHint": "启用后会每分钟自动检测已启用监控的供应商可用性",
-        "blacklistThreshold": "失败次数阈值",
-        "blacklistDuration": "拉黑时长",
-        "saveBlacklist": "保存配置",
-        "enableBlacklist": "启用拉黑功能",
-        "enableBlacklistHint": "关闭后将不再自动拉黑失败的供应商",
-        "enableLevelBlacklist": "启用等级拉黑",
-        "enableLevelBlacklistHint": "开启后使用分级拉黑机制（L1-L5），关闭则使用固定时长",
         "times": "次",
         "minutes": "分钟",
         "save": "保存",
@@ -490,61 +506,6 @@
         "authorized": "已授权",
         "go_authorized": "去授权",
         "back": "返回首页"
-      }
-    },
-    "gemini": {
-      "hero": {
-        "eyebrow": "Gemini CLI 管理",
-        "title": "管理 Gemini 供应商",
-        "lead": "配置 Gemini CLI 的 API 供应商，支持 Google 官方和第三方中转服务。"
-      },
-      "controls": {
-        "back": "返回主页",
-        "settings": "打开设置",
-        "refresh": "刷新",
-        "create": "新增供应商"
-      },
-      "status": {
-        "enabled": "已启用",
-        "disabled": "未配置",
-        "active": "当前使用"
-      },
-      "auth": {
-        "oauth": "OAuth 认证",
-        "apiKey": "API Key 认证"
-      },
-      "category": {
-        "official": "官方",
-        "thirdParty": "第三方",
-        "custom": "自定义"
-      },
-      "presets": {
-        "title": "预设供应商"
-      },
-      "providers": {
-        "title": "已配置的供应商"
-      },
-      "list": {
-        "loading": "加载中...",
-        "empty": "暂无配置的供应商，点击预设卡片快速添加",
-        "edit": "编辑",
-        "delete": "删除"
-      },
-      "actions": {
-        "switch": "切换"
-      },
-      "form": {
-        "createTitle": "新增 Gemini 供应商",
-        "editTitle": "编辑 Gemini 供应商",
-        "deleteTitle": "删除供应商",
-        "deleteMessage": "确认删除 {name} 吗？操作不可撤销",
-        "name": "供应商名称",
-        "baseUrl": "API 地址",
-        "apiKey": "API 密钥",
-        "model": "默认模型",
-        "cancel": "取消",
-        "save": "保存",
-        "delete": "删除"
       }
     },
     "themesetting": {

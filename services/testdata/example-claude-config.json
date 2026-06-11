@@ -32,7 +32,7 @@
         "anthropic/claude-sonnet-4-5-20250929": true,
         "openai/gpt-4": true,
         "openai/gpt-4-turbo": true,
-        "google/gemini-pro": true,
+        "mistral/mistral-large": true,
         "meta-llama/llama-3.1-405b": true
       },
       "modelMapping": {
@@ -40,7 +40,7 @@
         "claude-sonnet-4-5-20250929": "anthropic/claude-sonnet-4-5-20250929",
         "gpt-4": "openai/gpt-4",
         "gpt-4-turbo": "openai/gpt-4-turbo",
-        "gemini-pro": "google/gemini-pro"
+        "mistral-large": "mistral/mistral-large"
       }
     },
     {
@@ -56,13 +56,13 @@
       "supportedModels": {
         "anthropic/claude-*": true,
         "openai/gpt-*": true,
-        "google/gemini-*": true,
+        "mistral/mistral-*": true,
         "meta-llama/llama-*": true
       },
       "modelMapping": {
         "claude-*": "anthropic/claude-*",
         "gpt-*": "openai/gpt-*",
-        "gemini-*": "google/gemini-*",
+        "mistral-*": "mistral/mistral-*",
         "llama-*": "meta-llama/llama-*"
       }
     },

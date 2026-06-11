@@ -34,6 +34,7 @@ export type CodexRelayKeyListItem = {
   maskedKey: string
   enabled: boolean
   createdAt: string
+  poolBindings?: Record<string, string>  // platform -> poolID
 }
 
 export type CodexRelayKeyCreateResult = {

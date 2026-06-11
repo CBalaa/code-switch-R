@@ -13,21 +13,21 @@ import (
 
 // DeepLinkImportRequest 深度链接导入请求模型
 type DeepLinkImportRequest struct {
-	Version      string  `json:"version"`              // 协议版本 (e.g., "v1")
-	Resource     string  `json:"resource"`             // 资源类型 (e.g., "provider")
-	App          string  `json:"app"`                  // 目标应用 (claude/codex/gemini)
-	Name         string  `json:"name"`                 // 供应商名称
-	Homepage     string  `json:"homepage"`             // 供应商主页
-	Endpoint     string  `json:"endpoint"`             // API 端点
-	APIKey       string  `json:"apiKey"`               // API 密钥
-	Model        *string `json:"model,omitempty"`      // 可选模型名称
-	Notes        *string `json:"notes,omitempty"`      // 可选备注
-	HaikuModel   *string `json:"haikuModel,omitempty"` // Claude Haiku 模型
+	Version      string  `json:"version"`                // 协议版本 (e.g., "v1")
+	Resource     string  `json:"resource"`               // 资源类型 (e.g., "provider")
+	App          string  `json:"app"`                    // 目标应用 (claude/codex/openai-chat)
+	Name         string  `json:"name"`                   // 供应商名称
+	Homepage     string  `json:"homepage"`               // 供应商主页
+	Endpoint     string  `json:"endpoint"`               // API 端点
+	APIKey       string  `json:"apiKey"`                 // API 密钥
+	Model        *string `json:"model,omitempty"`        // 可选模型名称
+	Notes        *string `json:"notes,omitempty"`        // 可选备注
+	HaikuModel   *string `json:"haikuModel,omitempty"`   // Claude Haiku 模型
 	SonnetModel  *string `json:"sonnetModel,omitempty"`  // Claude Sonnet 模型
-	OpusModel    *string `json:"opusModel,omitempty"`  // Claude Opus 模型
-	Config       *string `json:"config,omitempty"`     // Base64 编码的配置
+	OpusModel    *string `json:"opusModel,omitempty"`    // Claude Opus 模型
+	Config       *string `json:"config,omitempty"`       // Base64 编码的配置
 	ConfigFormat *string `json:"configFormat,omitempty"` // 配置格式 (json/toml)
-	ConfigURL    *string `json:"configUrl,omitempty"`  // 远程配置 URL
+	ConfigURL    *string `json:"configUrl,omitempty"`    // 远程配置 URL
 }
 
 // DeepLinkService 深度链接服务
@@ -94,8 +94,8 @@ func (s *DeepLinkService) ParseDeepLinkURL(urlStr string) (*DeepLinkImportReques
 	if app == "" {
 		return nil, fmt.Errorf("缺少 'app' 参数")
 	}
-	if app != "claude" && app != "codex" && app != "openai-responses" && app != "openai-chat" && app != "gemini" {
-		return nil, fmt.Errorf("无效的 app 类型: 必须是 'claude', 'openai-responses', 'openai-chat', 或 'gemini', 得到 '%s'", app)
+	if app != "claude" && app != "codex" && app != "openai-responses" && app != "openai-chat" {
+		return nil, fmt.Errorf("无效的 app 类型: 必须是 'claude', 'openai-responses', 或 'openai-chat', 得到 '%s'", app)
 	}
 
 	name := params.Get("name")
@@ -200,9 +200,6 @@ func (s *DeepLinkService) ImportProviderFromDeepLink(request *DeepLinkImportRequ
 		kind = "openai-responses"
 	case "openai-chat":
 		kind = "openai-chat"
-	case "gemini":
-		// Gemini 暂不支持通过 ProviderService 添加，返回友好提示
-		return "", fmt.Errorf("Gemini 供应商导入暂不支持，请使用 Gemini 页面手动添加")
 	default:
 		return "", fmt.Errorf("不支持的 app 类型: %s", merged.App)
 	}
@@ -301,8 +298,6 @@ func (s *DeepLinkService) parseAndMergeConfig(request *DeepLinkImportRequest) (*
 		s.mergeCodexConfig(&merged, configData)
 	case "openai-chat":
 		s.mergeCodexConfig(&merged, configData)
-	case "gemini":
-		s.mergeGeminiConfig(&merged, configData)
 	}
 
 	return &merged, nil
@@ -392,33 +387,6 @@ func (s *DeepLinkService) mergeCodexConfig(request *DeepLinkImportRequest, confi
 	// 自动填充 homepage
 	if request.Homepage == "" && request.Endpoint != "" {
 		request.Homepage = inferHomepage(request.Endpoint, "https://openai.com")
-	}
-}
-
-// mergeGeminiConfig 合并 Gemini 配置
-func (s *DeepLinkService) mergeGeminiConfig(request *DeepLinkImportRequest, config map[string]interface{}) {
-	// Gemini 使用扁平化的 env 结构
-	if request.APIKey == "" {
-		if apiKey, ok := config["GEMINI_API_KEY"].(string); ok {
-			request.APIKey = apiKey
-		}
-	}
-
-	if request.Endpoint == "" {
-		if baseURL, ok := config["GEMINI_BASE_URL"].(string); ok {
-			request.Endpoint = baseURL
-		}
-	}
-
-	if request.Model == nil {
-		if model, ok := config["GEMINI_MODEL"].(string); ok {
-			request.Model = &model
-		}
-	}
-
-	// 自动填充 homepage
-	if request.Homepage == "" && request.Endpoint != "" {
-		request.Homepage = inferHomepage(request.Endpoint, "https://ai.google.dev")
 	}
 }
 

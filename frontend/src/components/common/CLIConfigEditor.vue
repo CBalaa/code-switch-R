@@ -381,7 +381,6 @@ import { extractErrorMessage } from '../../utils/error'
 const props = defineProps<{
   platform: CLIPlatform
   modelValue?: Record<string, any>
-  // Gemini 供应商配置（用于预览"激活后"的 .env 内容）
   providerConfig?: {
     apiKey?: string
     baseUrl?: string
@@ -443,23 +442,13 @@ const platformLabels: Record<CLIPlatform, string> = {
   claude: 'Claude Code',
   'openai-responses': 'OpenAI Responses',
   'openai-chat': 'OpenAI Chat',
-  gemini: 'Gemini',
 }
 
 const platformLabel = computed(() => platformLabels[props.platform] || props.platform)
 
-// 检查是否有有效的供应商输入（用于决定 previewMode）
-// - Claude/Codex: 需要同时有 apiKey 和 baseUrl 才视为有效（与真实 ApplySingleProvider 一致）
-// - Gemini: 任一非空即可（Gemini 允许只配置其中一个）
 const hasProviderInput = computed(() => {
   const apiKey = props.providerConfig?.apiKey?.trim() || ''
   const baseUrl = props.providerConfig?.baseUrl?.trim() || ''
-
-  if (props.platform === 'gemini') {
-    // Gemini 允许只配置 apiKey 或只配置 baseUrl
-    return !!(apiKey || baseUrl)
-  }
-  // Claude/Codex 需要同时有 apiKey 和 baseUrl
   return !!(apiKey && baseUrl)
 })
 
@@ -474,15 +463,6 @@ const lockedFields = computed(() => {
 
     return fields.map(field => {
       const newField = { ...field }
-
-      if (props.platform === 'gemini') {
-        if (field.key === 'GEMINI_API_KEY' && apiKey) {
-          newField.value = apiKey
-        }
-        if (field.key === 'GOOGLE_GEMINI_BASE_URL' && baseUrl) {
-          newField.value = baseUrl
-        }
-      }
 
       if (props.platform === 'claude') {
         if (field.key === 'env.ANTHROPIC_BASE_URL' && baseUrl) {
@@ -1025,18 +1005,6 @@ const applyParsedConfig = (data: Record<string, any>) => {
           next.disable_response_storage = boolVal
         }
       }
-      break
-    }
-    case 'gemini': {
-      Object.entries(data).forEach(([k, v]) => {
-        if (k === 'GEMINI_API_KEY' && typeof v === 'string') {
-          next.GEMINI_API_KEY = v
-        } else if (k === 'GEMINI_MODEL' && typeof v === 'string') {
-          next.GEMINI_MODEL = v
-        } else if (/^[A-Z0-9_]+$/.test(k) && k !== 'GOOGLE_GEMINI_BASE_URL') {
-          mergeCustom(k, v)
-        }
-      })
       break
     }
     default:

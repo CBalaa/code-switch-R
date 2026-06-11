@@ -8,9 +8,7 @@ import ThemeSetting from '../Setting/ThemeSetting.vue'
 import NetworkSettings from '../Setting/NetworkSettings.vue'
 import SecuritySettings from '../Setting/SecuritySettings.vue'
 import { fetchAppSettings, saveAppSettings, type AppSettings } from '../../services/appSettings'
-import { getBlacklistSettings, updateBlacklistSettings, getLevelBlacklistEnabled, setLevelBlacklistEnabled, getBlacklistEnabled, setBlacklistEnabled, type BlacklistSettings } from '../../services/settings'
 import { useI18n } from 'vue-i18n'
-import { extractErrorMessage } from '../../utils/error'
 
 const { t } = useI18n()
 const isWebRuntime = true
@@ -29,14 +27,6 @@ const roundRobinEnabled = ref(getCachedValue('roundRobin', false))    // 同 Lev
 const codexStreamGuardEnabled = ref(getCachedValue('codexStreamGuard', true))
 const settingsLoading = ref(true)
 const saveBusy = ref(false)
-
-// 拉黑配置相关状态
-const blacklistEnabled = ref(false)  // 拉黑功能总开关
-const blacklistThreshold = ref(3)
-const blacklistDuration = ref(30)
-const levelBlacklistEnabled = ref(false)
-const blacklistLoading = ref(false)
-const blacklistSaving = ref(false)
 
 const goBack = () => {
   router.push('/')
@@ -109,85 +99,8 @@ const persistAppSettings = async () => {
   }
 }
 
-// 加载拉黑配置
-const loadBlacklistSettings = async () => {
-  blacklistLoading.value = true
-  try {
-    const settings = await getBlacklistSettings()
-    blacklistThreshold.value = settings.failureThreshold
-    blacklistDuration.value = settings.durationMinutes
-
-    // 加载拉黑功能总开关
-    const enabled = await getBlacklistEnabled()
-    blacklistEnabled.value = enabled
-
-    // 加载等级拉黑开关状态
-    const levelEnabled = await getLevelBlacklistEnabled()
-    levelBlacklistEnabled.value = levelEnabled
-  } catch (error) {
-    console.error('failed to load blacklist settings', error)
-    // 使用默认值
-    blacklistEnabled.value = false
-    blacklistThreshold.value = 3
-    blacklistDuration.value = 30
-    levelBlacklistEnabled.value = false
-  } finally {
-    blacklistLoading.value = false
-  }
-}
-
-// 保存拉黑配置
-const saveBlacklistSettings = async () => {
-  if (blacklistLoading.value || blacklistSaving.value) return
-  blacklistSaving.value = true
-  try {
-    await updateBlacklistSettings(blacklistThreshold.value, blacklistDuration.value)
-    alert('拉黑配置已保存')
-  } catch (error) {
-    console.error('failed to save blacklist settings', error)
-    alert('保存失败：' + (error as Error).message)
-  } finally {
-    blacklistSaving.value = false
-  }
-}
-
-// 切换拉黑功能总开关
-const toggleBlacklist = async () => {
-  if (blacklistLoading.value || blacklistSaving.value) return
-  blacklistSaving.value = true
-  try {
-    await setBlacklistEnabled(blacklistEnabled.value)
-  } catch (error) {
-    console.error('failed to toggle blacklist', error)
-    // 回滚状态
-    blacklistEnabled.value = !blacklistEnabled.value
-    alert('切换失败：' + (error as Error).message)
-  } finally {
-    blacklistSaving.value = false
-  }
-}
-
-// 切换等级拉黑开关
-const toggleLevelBlacklist = async () => {
-  if (blacklistLoading.value || blacklistSaving.value) return
-  blacklistSaving.value = true
-  try {
-    await setLevelBlacklistEnabled(levelBlacklistEnabled.value)
-  } catch (error) {
-    console.error('failed to toggle level blacklist', error)
-    // 回滚状态
-    levelBlacklistEnabled.value = !levelBlacklistEnabled.value
-    alert('切换失败：' + (error as Error).message)
-  } finally {
-    blacklistSaving.value = false
-  }
-}
-
 onMounted(async () => {
   await loadAppSettings()
-
-  // 加载拉黑配置
-  await loadBlacklistSettings()
 })
 </script>
 
@@ -303,75 +216,6 @@ onMounted(async () => {
       <NetworkSettings />
 
       <SecuritySettings />
-
-      <section>
-        <h2 class="mac-section-title">{{ $t('components.general.title.blacklist') }}</h2>
-        <div class="mac-panel">
-          <ListItem :label="$t('components.general.label.enableBlacklist')">
-            <div class="toggle-with-hint">
-              <label class="mac-switch">
-                <input
-                  type="checkbox"
-                  :disabled="blacklistLoading || blacklistSaving"
-                  v-model="blacklistEnabled"
-                  @change="toggleBlacklist"
-                />
-                <span></span>
-              </label>
-              <span class="hint-text">{{ $t('components.general.label.enableBlacklistHint') }}</span>
-            </div>
-          </ListItem>
-          <ListItem :label="$t('components.general.label.enableLevelBlacklist')">
-            <div class="toggle-with-hint">
-              <label class="mac-switch">
-                <input
-                  type="checkbox"
-                  :disabled="blacklistLoading || blacklistSaving"
-                  v-model="levelBlacklistEnabled"
-                  @change="toggleLevelBlacklist"
-                />
-                <span></span>
-              </label>
-              <span class="hint-text">{{ $t('components.general.label.enableLevelBlacklistHint') }}</span>
-            </div>
-          </ListItem>
-          <ListItem :label="$t('components.general.label.blacklistThreshold')">
-            <select
-              v-model.number="blacklistThreshold"
-              :disabled="blacklistLoading || blacklistSaving"
-              class="mac-select">
-              <option :value="1">1 {{ $t('components.general.label.times') }}</option>
-              <option :value="2">2 {{ $t('components.general.label.times') }}</option>
-              <option :value="3">3 {{ $t('components.general.label.times') }}</option>
-              <option :value="4">4 {{ $t('components.general.label.times') }}</option>
-              <option :value="5">5 {{ $t('components.general.label.times') }}</option>
-              <option :value="6">6 {{ $t('components.general.label.times') }}</option>
-              <option :value="7">7 {{ $t('components.general.label.times') }}</option>
-              <option :value="8">8 {{ $t('components.general.label.times') }}</option>
-              <option :value="9">9 {{ $t('components.general.label.times') }}</option>
-            </select>
-          </ListItem>
-          <ListItem :label="$t('components.general.label.blacklistDuration')">
-            <select
-              v-model.number="blacklistDuration"
-              :disabled="blacklistLoading || blacklistSaving"
-              class="mac-select">
-              <option :value="5">5 {{ $t('components.general.label.minutes') }}</option>
-              <option :value="15">15 {{ $t('components.general.label.minutes') }}</option>
-              <option :value="30">30 {{ $t('components.general.label.minutes') }}</option>
-              <option :value="60">60 {{ $t('components.general.label.minutes') }}</option>
-            </select>
-          </ListItem>
-          <ListItem :label="$t('components.general.label.saveBlacklist')">
-            <button
-              @click="saveBlacklistSettings"
-              :disabled="blacklistLoading || blacklistSaving"
-              class="primary-btn">
-              {{ blacklistSaving ? $t('components.general.label.saving') : $t('components.general.label.save') }}
-            </button>
-          </ListItem>
-        </div>
-      </section>
 
       <section>
         <h2 class="mac-section-title">{{ $t('components.general.title.exterior') }}</h2>
