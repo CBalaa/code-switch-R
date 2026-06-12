@@ -206,7 +206,7 @@ func (rt *appRuntime) registerServices(registry *rpcRegistry) {
 	registry.Register("codeswitch/services.SpeedTestService", rt.speedTestService)
 	registry.Register("codeswitch/services.ConnectivityTestService", rt.connectivityTest)
 	registry.Register("codeswitch/services.HealthCheckService", &userScopedHealthCheckService{base: rt.healthCheckService})
-	registry.Register("codeswitch/services.ConsoleService", &userScopedConsoleService{})
+	registry.Register("codeswitch/services.ConsoleService", &userScopedConsoleService{logService: rt.logService})
 	registry.Register("codeswitch/services.CustomCliService", rt.customCliService)
 	registry.Register("codeswitch/services.NetworkService", rt.networkService)
 	registry.Register("codeswitch/services.ProviderRelayService", &userScopedProviderRelayService{base: rt.providerRelay, poolService: rt.poolService})

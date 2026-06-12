@@ -1153,8 +1153,8 @@ func (prs *ProviderRelayService) forwardRequest(
 				user_id, platform, model, provider, relay_key_id, http_code,
 				input_tokens, output_tokens, cache_create_tokens, cache_read_tokens,
 				reasoning_tokens, is_stream, duration_sec,
-				upstream_header_sec, first_event_sec, first_text_sec, created_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				upstream_header_sec, first_event_sec, first_text_sec, error_message, created_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`,
 			requestLog.UserID,
 			requestLog.Platform,
@@ -1172,6 +1172,7 @@ func (prs *ProviderRelayService) forwardRequest(
 			requestLog.UpstreamHeaderSec,
 			requestLog.FirstEventSec,
 			requestLog.FirstTextSec,
+			requestLog.ErrorMessage,
 			time.Now().UTC().Format(timeLayout),
 		)
 
@@ -1207,9 +1208,11 @@ func (prs *ProviderRelayService) forwardRequest(
 		// 尝试从响应体提取供应商原始错误信息
 		if resp != nil {
 			if upstreamBody := extractUpstreamError(resp); upstreamBody != "" {
+				requestLog.ErrorMessage = summarizeBodyForError(upstreamBody, 1000)
 				return false, fmt.Errorf("upstream status %d: %s", resp.StatusCode(), upstreamBody)
 			}
 		}
+		requestLog.ErrorMessage = summarizeBodyForError(err.Error(), 1000)
 		return false, err
 	}
 
@@ -1233,8 +1236,10 @@ func (prs *ProviderRelayService) forwardRequest(
 			}
 		}
 		if errMsg != "" {
+			requestLog.ErrorMessage = summarizeBodyForError(errMsg, 1000)
 			return false, fmt.Errorf("upstream status %d: %s", status, errMsg)
 		}
+		requestLog.ErrorMessage = fmt.Sprintf("upstream status %d", status)
 		return false, fmt.Errorf("upstream status %d", status)
 	}
 
@@ -1361,8 +1366,10 @@ func (prs *ProviderRelayService) forwardRequest(
 
 	// 尝试从响应体提取供应商原始错误信息
 	if upstreamBody := extractUpstreamError(resp); upstreamBody != "" {
+		requestLog.ErrorMessage = summarizeBodyForError(upstreamBody, 1000)
 		return false, fmt.Errorf("upstream status %d: %s", status, upstreamBody)
 	}
+	requestLog.ErrorMessage = fmt.Sprintf("upstream status %d", status)
 	return false, fmt.Errorf("upstream status %d", status)
 }
 
@@ -2214,6 +2221,7 @@ func ensureRequestLogTableWithDB(db *sql.DB) error {
 		upstream_header_sec REAL DEFAULT 0,
 		first_event_sec REAL DEFAULT 0,
 		first_text_sec REAL DEFAULT 0,
+		error_message TEXT,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	)`
 
@@ -2243,6 +2251,9 @@ func ensureRequestLogTableWithDB(db *sql.DB) error {
 		return err
 	}
 	if err := ensureRequestLogColumn(db, "first_text_sec", "REAL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := ensureRequestLogColumn(db, "error_message", "TEXT"); err != nil {
 		return err
 	}
 
@@ -2364,6 +2375,7 @@ type ReqeustLog struct {
 	UpstreamHeaderSec           float64 `json:"upstream_header_sec"`
 	FirstEventSec               float64 `json:"first_event_sec"`
 	FirstTextSec                float64 `json:"first_text_sec"`
+	ErrorMessage                string  `json:"error_message"`
 	CreatedAt                   string  `json:"created_at"`
 	startedAt                   time.Time
 	inputTokensIncludeCacheRead bool

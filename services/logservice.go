@@ -66,6 +66,7 @@ func (ls *LogService) ListRequestLogsForUser(userID string, platform string, pro
 			RelayKeyID:        relayKeyID,
 			RelayKeyName:      relayKeyDisplayName(relayKeyID, keyNames),
 			HttpCode:          record.GetInt("http_code"),
+			ErrorMessage:      record.GetString("error_message"),
 			InputTokens:       record.GetInt("input_tokens"),
 			OutputTokens:      record.GetInt("output_tokens"),
 			CacheCreateTokens: record.GetInt("cache_create_tokens"),
@@ -364,6 +365,90 @@ func (ls *LogService) ProviderDailyStatsForUser(userID string, platform string) 
 		return stats[i].TotalRequests > stats[j].TotalRequests
 	})
 	return stats, nil
+}
+
+func (ls *LogService) ListHTTPErrorConsoleLogsForUser(userID string, limit int, since time.Time) ([]ConsoleLog, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return nil, errors.New("用户 ID 不能为空")
+	}
+	if limit <= 0 {
+		limit = 200
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+
+	options := []xdb.Option{
+		xdb.WhereEq("user_id", userID),
+		xdb.WhereGte("http_code", 400),
+		xdb.OrderByDesc("id"),
+		xdb.Limit(limit),
+		xdb.Field(
+			"id",
+			"platform",
+			"model",
+			"provider",
+			"relay_key_id",
+			"http_code",
+			"error_message",
+			"duration_sec",
+			"created_at",
+		),
+	}
+	if !since.IsZero() {
+		options = append(options, xdb.WhereGte("created_at", since.UTC().Format(timeLayout)))
+	}
+
+	records, err := xdb.New("request_log").Selects(options...)
+	if err != nil {
+		if errors.Is(err, xdb.ErrNotFound) || isNoSuchTableErr(err) {
+			return []ConsoleLog{}, nil
+		}
+		return nil, err
+	}
+
+	keyNames := ls.relayKeyNameMapForUser(userID)
+	logs := make([]ConsoleLog, 0, len(records))
+	for i := len(records) - 1; i >= 0; i-- {
+		record := records[i]
+		createdAt, ok := parseCreatedAt(record)
+		if !ok || createdAt.IsZero() {
+			createdAt = time.Now().In(beijingLocation)
+		}
+		httpCode := record.GetInt("http_code")
+		level := "WARN"
+		if httpCode >= 500 {
+			level = "ERROR"
+		}
+		relayKeyID := strings.TrimSpace(record.GetString("relay_key_id"))
+		relayKeyName := relayKeyDisplayName(relayKeyID, keyNames)
+		message := fmt.Sprintf(
+			"HTTP %d | platform=%s provider=%s model=%s key=%s duration=%.2fs request_id=%d | %s",
+			httpCode,
+			emptyAsUnknown(record.GetString("platform")),
+			emptyAsUnknown(record.GetString("provider")),
+			emptyAsUnknown(record.GetString("model")),
+			emptyAsUnknown(relayKeyName),
+			record.GetFloat64("duration_sec"),
+			record.GetInt64("id"),
+			emptyAsUnknown(record.GetString("error_message")),
+		)
+		logs = append(logs, ConsoleLog{
+			Timestamp: createdAt,
+			Level:     level,
+			Message:   message,
+		})
+	}
+	return logs, nil
+}
+
+func emptyAsUnknown(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "(unknown)"
+	}
+	return value
 }
 
 func parseCreatedAt(record xdb.Record) (time.Time, bool) {

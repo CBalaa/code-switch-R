@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
+	"time"
 )
 
 type authenticatedUserContextKey struct{}
@@ -375,25 +377,55 @@ func (s *userScopedCodexSettingsService) GetDirectAppliedProviderID(ctx context.
 	return nil, nil
 }
 
-type userScopedConsoleService struct{}
+type userScopedConsoleService struct {
+	logService   *services.LogService
+	mu           sync.RWMutex
+	clearedAfter map[string]time.Time
+}
 
 func (s *userScopedConsoleService) GetLogs(ctx context.Context) ([]services.ConsoleLog, error) {
-	if _, err := authenticatedUserFromContext(ctx); err != nil {
+	user, err := authenticatedUserFromContext(ctx)
+	if err != nil {
 		return nil, err
 	}
-	return []services.ConsoleLog{}, nil
+	if s.logService == nil {
+		return []services.ConsoleLog{}, nil
+	}
+	return s.logService.ListHTTPErrorConsoleLogsForUser(user.ID, 200, s.clearTimeForUser(user.ID))
 }
 
 func (s *userScopedConsoleService) GetRecentLogs(ctx context.Context, count int) ([]services.ConsoleLog, error) {
-	if _, err := authenticatedUserFromContext(ctx); err != nil {
+	user, err := authenticatedUserFromContext(ctx)
+	if err != nil {
 		return nil, err
 	}
-	return []services.ConsoleLog{}, nil
+	if s.logService == nil {
+		return []services.ConsoleLog{}, nil
+	}
+	return s.logService.ListHTTPErrorConsoleLogsForUser(user.ID, count, s.clearTimeForUser(user.ID))
 }
 
 func (s *userScopedConsoleService) ClearLogs(ctx context.Context) error {
-	_, err := authenticatedUserFromContext(ctx)
-	return err
+	user, err := authenticatedUserFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.clearedAfter == nil {
+		s.clearedAfter = make(map[string]time.Time)
+	}
+	s.clearedAfter[user.ID] = time.Now()
+	return nil
+}
+
+func (s *userScopedConsoleService) clearTimeForUser(userID string) time.Time {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.clearedAfter == nil {
+		return time.Time{}
+	}
+	return s.clearedAfter[userID]
 }
 
 type userScopedCliConfigService struct{}
