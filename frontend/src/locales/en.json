@@ -398,7 +398,15 @@
         "unboundKeys": "Unbound Keys",
         "selectPool": "Select pool",
         "keyBound": "Key bound",
-        "keyUnbound": "Key unbound"
+        "keyUnbound": "Key unbound",
+        "autoBlacklist": "Auto Blacklist",
+        "autoBlacklistEnable": "Enable auto blacklist",
+        "blacklistThreshold": "Consecutive failure threshold",
+        "blacklistDuration": "Blacklist duration (minutes)",
+        "blacklistedProviders": "Blacklisted",
+        "blacklistRemaining": "{minutes} min remaining",
+        "unblacklist": "Remove blacklist",
+        "unblacklisted": "Blacklist removed"
       }
     },
     "logs": {
@@ -486,8 +494,6 @@
         "autoStart": "Launch at login",
         "switchNotify": "Switch Notification",
         "switchNotifyHint": "Send system notification when provider switches",
-        "roundRobin": "Same-Level Round Robin",
-        "roundRobinHint": "When enabled, providers at the same Level take turns handling requests; when disabled, always starts from the first",
         "codexStreamGuard": "Codex Empty Stream Guard",
         "codexStreamGuardHint": "Intercept Codex 200 streams with no initial useful content and retry before the client sees them",
         "autoConnectivityTest": "Auto Availability Monitoring",

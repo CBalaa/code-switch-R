@@ -8,6 +8,7 @@ export type ProviderPoolMode = 'managed' | 'manual'
 export interface ProviderPoolMember {
   providerId: number
   enabled: boolean
+  level?: number
   priority?: number
   weight?: number
 }
@@ -21,6 +22,10 @@ export interface ProviderPool {
   members: ProviderPoolMember[]
   createdAt: string
   updatedAt: string
+  /** 自动拉黑配置（仅 managed 模式生效） */
+  autoBlacklistEnabled: boolean
+  autoBlacklistThreshold: number
+  autoBlacklistDurationMinutes: number
 }
 
 export interface ProviderPoolWithProviders extends ProviderPool {
@@ -94,6 +99,33 @@ export interface RelayKeyItem {
   maskedKey: string
   enabled: boolean
   poolBindings?: Record<string, string>
+}
+
+/**
+ * 池子内 provider 的拉黑状态
+ */
+export interface ProviderPoolProviderPenalty {
+  platform: string
+  poolID: string
+  providerID: number
+  failureCount: number
+  lastFailureAt: string
+  blacklistedUntil: string
+  lastReason: string
+}
+
+/**
+ * 列出指定池子内所有 provider 的拉黑状态
+ */
+export async function ListProviderBlacklistStatus(platform: string, poolID: string): Promise<ProviderPoolProviderPenalty[]> {
+  return Call.ByName('codeswitch/services.ProviderRelayService.ListProviderBlacklistStatus', platform, poolID)
+}
+
+/**
+ * 手动清除指定池子内某个 provider 的拉黑状态
+ */
+export async function ClearProviderBlacklist(platform: string, poolID: string, providerID: number): Promise<void> {
+  return Call.ByName('codeswitch/services.ProviderRelayService.ClearProviderBlacklist', platform, poolID, providerID)
 }
 
 /**

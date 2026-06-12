@@ -23,7 +23,6 @@ const homeTitleVisible = ref(getCachedValue('homeTitle', true))
 const autoStartEnabled = ref(getCachedValue('autoStart', false))
 const autoConnectivityTestEnabled = ref(getCachedValue('autoConnectivityTest', false))
 const switchNotifyEnabled = ref(getCachedValue('switchNotify', true)) // 切换通知开关
-const roundRobinEnabled = ref(getCachedValue('roundRobin', false))    // 同 Level 轮询开关
 const codexStreamGuardEnabled = ref(getCachedValue('codexStreamGuard', true))
 const settingsLoading = ref(true)
 const saveBusy = ref(false)
@@ -40,7 +39,6 @@ const loadAppSettings = async () => {
     autoStartEnabled.value = data?.auto_start ?? false
     autoConnectivityTestEnabled.value = data?.auto_connectivity_test ?? false
     switchNotifyEnabled.value = data?.enable_switch_notify ?? true
-    roundRobinEnabled.value = data?.enable_round_robin ?? false
     codexStreamGuardEnabled.value = data?.enable_codex_stream_guard ?? true
 
     // 缓存到 localStorage，下次打开时直接显示正确状态
@@ -48,7 +46,6 @@ const loadAppSettings = async () => {
     localStorage.setItem('app-settings-autoStart', String(autoStartEnabled.value))
     localStorage.setItem('app-settings-autoConnectivityTest', String(autoConnectivityTestEnabled.value))
     localStorage.setItem('app-settings-switchNotify', String(switchNotifyEnabled.value))
-    localStorage.setItem('app-settings-roundRobin', String(roundRobinEnabled.value))
     localStorage.setItem('app-settings-codexStreamGuard', String(codexStreamGuardEnabled.value))
   } catch (error) {
     console.error('failed to load app settings', error)
@@ -56,7 +53,6 @@ const loadAppSettings = async () => {
     autoStartEnabled.value = false
     autoConnectivityTestEnabled.value = false
     switchNotifyEnabled.value = true
-    roundRobinEnabled.value = false
     codexStreamGuardEnabled.value = true
   } finally {
     settingsLoading.value = false
@@ -72,7 +68,6 @@ const persistAppSettings = async () => {
       auto_start: autoStartEnabled.value,
       auto_connectivity_test: autoConnectivityTestEnabled.value,
       enable_switch_notify: switchNotifyEnabled.value,
-      enable_round_robin: roundRobinEnabled.value,
       enable_codex_stream_guard: codexStreamGuardEnabled.value,
     }
     await saveAppSettings(payload)
@@ -88,7 +83,6 @@ const persistAppSettings = async () => {
     localStorage.setItem('app-settings-autoStart', String(autoStartEnabled.value))
     localStorage.setItem('app-settings-autoConnectivityTest', String(autoConnectivityTestEnabled.value))
     localStorage.setItem('app-settings-switchNotify', String(switchNotifyEnabled.value))
-    localStorage.setItem('app-settings-roundRobin', String(roundRobinEnabled.value))
     localStorage.setItem('app-settings-codexStreamGuard', String(codexStreamGuardEnabled.value))
 
     window.dispatchEvent(new CustomEvent('app-settings-updated'))
@@ -160,20 +154,6 @@ onMounted(async () => {
                 <span></span>
               </label>
               <span class="hint-text">{{ $t('components.general.label.switchNotifyHint') }}</span>
-            </div>
-          </ListItem>
-          <ListItem :label="$t('components.general.label.roundRobin')">
-            <div class="toggle-with-hint">
-              <label class="mac-switch">
-                <input
-                  type="checkbox"
-                  :disabled="settingsLoading || saveBusy"
-                  v-model="roundRobinEnabled"
-                  @change="persistAppSettings"
-                />
-                <span></span>
-              </label>
-              <span class="hint-text">{{ $t('components.general.label.roundRobinHint') }}</span>
             </div>
           </ListItem>
           <ListItem :label="$t('components.general.label.codexStreamGuard')">

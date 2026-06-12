@@ -399,7 +399,15 @@
         "unboundKeys": "未绑定池子的密钥",
         "selectPool": "选择池子",
         "keyBound": "密钥已绑定",
-        "keyUnbound": "密钥已解绑"
+        "keyUnbound": "密钥已解绑",
+        "autoBlacklist": "自动拉黑",
+        "autoBlacklistEnable": "启用自动拉黑",
+        "blacklistThreshold": "连续失败次数阈值",
+        "blacklistDuration": "拉黑时长（分钟）",
+        "blacklistedProviders": "已拉黑",
+        "blacklistRemaining": "剩余 {minutes} 分钟",
+        "unblacklist": "解除拉黑",
+        "unblacklisted": "已解除拉黑"
       }
     },
     "logs": {
@@ -487,8 +495,6 @@
         "autoStart": "开机自启动",
         "switchNotify": "切换通知",
         "switchNotifyHint": "供应商切换时发送系统通知",
-        "roundRobin": "同 Level 轮询",
-        "roundRobinHint": "启用后同 Level 的供应商轮流处理请求，关闭则始终从第一个开始",
         "codexStreamGuard": "Codex 流式空响应保护",
         "codexStreamGuardHint": "拦截 200 但开头无有效内容的 Codex 流式响应，并在客户端感知前自动重试",
         "autoConnectivityTest": "自动可用性监控",

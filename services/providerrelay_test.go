@@ -970,3 +970,270 @@ func BenchmarkReplaceModelInRequestBody(b *testing.B) {
 		_, _ = ReplaceModelInRequestBody(bodyBytes, "anthropic/claude-sonnet-4")
 	}
 }
+
+// ==================== readResponseBody 测试 ====================
+
+func TestReadResponseBodyClosesBody(t *testing.T) {
+	// 使用自定义 ReadCloser 来验证 Close() 确实被调用
+	tracker := &testReadCloser{Reader: strings.NewReader(`{"ok":true}`)}
+	resp := &xrequest.Response{}
+	resp.RawResponse = &http.Response{
+		Body:       tracker,
+		StatusCode: 200,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+	}
+
+	data, err := readResponseBody(resp)
+	if err != nil {
+		t.Fatalf("readResponseBody failed: %v", err)
+	}
+	if string(data) != `{"ok":true}` {
+		t.Fatalf("unexpected body: %s", data)
+	}
+	if !tracker.closed {
+		t.Fatal("expected body to be closed after readResponseBody")
+	}
+}
+
+// testReadCloser 是一个追踪 Close 调用的 io.ReadCloser
+type testReadCloser struct {
+	*strings.Reader
+	closed bool
+}
+
+func (c *testReadCloser) Close() error {
+	c.closed = true
+	return nil
+}
+
+// ==================== parseNonStreamingTokens 测试 ====================
+
+func TestParseNonStreamingTokensOpenAIChat(t *testing.T) {
+	body := []byte(`{
+		"id": "chatcmpl-123",
+		"object": "chat.completion",
+		"choices": [{"index": 0, "message": {"role": "assistant", "content": "Hello!"}}],
+		"usage": {
+			"prompt_tokens": 10,
+			"completion_tokens": 5,
+			"total_tokens": 15
+		}
+	}`)
+
+	log := &ReqeustLog{}
+	OpenAIChatParseTokenUsageFromResponse(string(body), log)
+
+	if log.InputTokens != 10 {
+		t.Fatalf("expected InputTokens=10, got %d", log.InputTokens)
+	}
+	if log.OutputTokens != 5 {
+		t.Fatalf("expected OutputTokens=5, got %d", log.OutputTokens)
+	}
+}
+
+func TestParseNonStreamingTokensOpenAIChatNoUsage(t *testing.T) {
+	body := []byte(`{
+		"id": "chatcmpl-123",
+		"object": "chat.completion",
+		"choices": [{"index": 0, "message": {"role": "assistant", "content": "Hello!"}}]
+	}`)
+
+	log := &ReqeustLog{}
+	OpenAIChatParseTokenUsageFromResponse(string(body), log)
+
+	// No usage field → tokens stay 0
+	if log.InputTokens != 0 || log.OutputTokens != 0 {
+		t.Fatalf("expected all tokens=0 without usage, got Input=%d Output=%d", log.InputTokens, log.OutputTokens)
+	}
+}
+
+func TestParseNonStreamingTokensAnthropic(t *testing.T) {
+	body := []byte(`{
+		"id": "msg_123",
+		"type": "message",
+		"role": "assistant",
+		"content": [{"type": "text", "text": "Hello!"}],
+		"usage": {
+			"input_tokens": 15,
+			"output_tokens": 8
+		}
+	}`)
+
+	log := &ReqeustLog{}
+	parseNonStreamingTokens(body, "claude", false, nil, log)
+
+	if log.InputTokens != 15 {
+		t.Fatalf("expected InputTokens=15, got %d", log.InputTokens)
+	}
+	if log.OutputTokens != 8 {
+		t.Fatalf("expected OutputTokens=8, got %d", log.OutputTokens)
+	}
+}
+
+// ==================== hasContentInResponse 测试 ====================
+
+func TestHasContentInResponseOpenAIChatWithContent(t *testing.T) {
+	body := []byte(`{
+		"id": "chatcmpl-123",
+		"choices": [{"index": 0, "message": {"role": "assistant", "content": "Hello!"}}]
+	}`)
+
+	if !hasContentInResponse(body, "openai-chat", false) {
+		t.Fatal("expected hasContent=true for OpenAI Chat with content")
+	}
+}
+
+func TestHasContentInResponseOpenAIChatEmpty(t *testing.T) {
+	body := []byte(`{
+		"id": "chatcmpl-123",
+		"choices": [{"index": 0, "message": {"role": "assistant", "content": ""}}]
+	}`)
+
+	if hasContentInResponse(body, "openai-chat", false) {
+		t.Fatal("expected hasContent=false for OpenAI Chat with empty content")
+	}
+}
+
+func TestHasContentInResponseOpenAIChatWithToolCalls(t *testing.T) {
+	body := []byte(`{
+		"id": "chatcmpl-123",
+		"choices": [{"index": 0, "message": {"role": "assistant", "content": null, "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "get_weather"}}]}}]
+	}`)
+
+	if !hasContentInResponse(body, "openai-chat", false) {
+		t.Fatal("expected hasContent=true for OpenAI Chat with tool_calls")
+	}
+}
+
+func TestHasContentInResponseAnthropicWithText(t *testing.T) {
+	body := []byte(`{
+		"id": "msg_123",
+		"type": "message",
+		"role": "assistant",
+		"content": [{"type": "text", "text": "Hello!"}]
+	}`)
+
+	if !hasContentInResponse(body, "claude", false) {
+		t.Fatal("expected hasContent=true for Anthropic with text")
+	}
+}
+
+func TestHasContentInResponseAnthropicEmpty(t *testing.T) {
+	body := []byte(`{
+		"id": "msg_123",
+		"type": "message",
+		"role": "assistant",
+		"content": []
+	}`)
+
+	if hasContentInResponse(body, "claude", false) {
+		t.Fatal("expected hasContent=false for Anthropic with empty content")
+	}
+}
+
+func TestHasContentInResponseAnthropicToolUse(t *testing.T) {
+	body := []byte(`{
+		"id": "msg_123",
+		"type": "message",
+		"role": "assistant",
+		"content": [{"type": "tool_use", "id": "toolu_1", "name": "get_weather"}]
+	}`)
+
+	if !hasContentInResponse(body, "claude", false) {
+		t.Fatal("expected hasContent=true for Anthropic with tool_use")
+	}
+}
+
+// ==================== isEmptyShell 测试 ====================
+
+func TestIsEmptyShellAllZero(t *testing.T) {
+	log := &ReqeustLog{}
+	if !log.isEmptyShell() {
+		t.Fatal("expected isEmptyShell=true when all tokens are 0")
+	}
+}
+
+func TestIsEmptyShellHasInput(t *testing.T) {
+	log := &ReqeustLog{InputTokens: 10}
+	if log.isEmptyShell() {
+		t.Fatal("expected isEmptyShell=false when InputTokens > 0")
+	}
+}
+
+func TestIsEmptyShellHasOutput(t *testing.T) {
+	log := &ReqeustLog{OutputTokens: 5}
+	if log.isEmptyShell() {
+		t.Fatal("expected isEmptyShell=false when OutputTokens > 0")
+	}
+}
+
+func TestIsEmptyShellHasCacheRead(t *testing.T) {
+	log := &ReqeustLog{CacheReadTokens: 100}
+	if log.isEmptyShell() {
+		t.Fatal("expected isEmptyShell=false when CacheReadTokens > 0")
+	}
+}
+
+func TestIsEmptyShellNil(t *testing.T) {
+	var log *ReqeustLog
+	if log.isEmptyShell() {
+		t.Fatal("expected isEmptyShell=false for nil")
+	}
+}
+
+// ==================== 空壳综合判定测试 ====================
+
+func TestEmptyShellDetectionOpenAIChat(t *testing.T) {
+	// 有内容但无 usage：不判空壳（模拟 forwardRequest 的判断条件）
+	body := []byte(`{"choices":[{"message":{"content":"Hello!"}}]}`)
+	log := &ReqeustLog{}
+	OpenAIChatParseTokenUsageFromResponse(string(body), log)
+
+	isShell := log.isEmptyShell() && !hasContentInResponse(body, "openai-chat", false)
+	if isShell {
+		t.Fatal("has content → should NOT be empty shell")
+	}
+
+	// 无内容且无 usage：判空壳
+	body2 := []byte(`{"choices":[{"message":{"content":""}}]}`)
+	log2 := &ReqeustLog{}
+	OpenAIChatParseTokenUsageFromResponse(string(body2), log2)
+
+	isShell2 := log2.isEmptyShell() && !hasContentInResponse(body2, "openai-chat", false)
+	if !isShell2 {
+		t.Fatal("no content and no usage → should be empty shell")
+	}
+}
+
+func TestEmptyShellDetectionAnthropic(t *testing.T) {
+	// 有内容：不判空壳
+	body := []byte(`{"type":"message","content":[{"type":"text","text":"Hello!"}],"usage":{"input_tokens":0,"output_tokens":0}}`)
+	log := &ReqeustLog{}
+	parseNonStreamingTokens(body, "claude", false, nil, log)
+
+	isShell := log.isEmptyShell() && !hasContentInResponse(body, "claude", false)
+	if isShell {
+		t.Fatal("has text content → should NOT be empty shell")
+	}
+
+	// 无内容且 usage 全 0：判空壳
+	body2 := []byte(`{"type":"message","content":[],"usage":{"input_tokens":0,"output_tokens":0}}`)
+	log2 := &ReqeustLog{}
+	parseNonStreamingTokens(body2, "claude", false, nil, log2)
+
+	isShell2 := log2.isEmptyShell() && !hasContentInResponse(body2, "claude", false)
+	if !isShell2 {
+		t.Fatal("no content and zero usage → should be empty shell")
+	}
+}
+
+// ==================== errProviderEmptyShell 测试 ====================
+
+func TestErrProviderEmptyShellIsDistinct(t *testing.T) {
+	if errors.Is(errProviderEmptyShell, errClientAbort) {
+		t.Fatal("errProviderEmptyShell should not be errClientAbort")
+	}
+	if errors.Is(errProviderEmptyShell, errCodexEmptyStream) {
+		t.Fatal("errProviderEmptyShell should not be errCodexEmptyStream")
+	}
+}

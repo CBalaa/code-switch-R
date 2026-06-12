@@ -24,8 +24,16 @@ import (
 	"github.com/tidwall/sjson"
 )
 
-// LastUsedProvider 最后使用的供应商信息
-// @author sm
+// ProviderPoolProviderPenalty 池子内单个 provider 的运行时惩罚状态
+type ProviderPoolProviderPenalty struct {
+	Platform         string    `json:"platform"`
+	PoolID           string    `json:"poolID"`
+	ProviderID       int64     `json:"providerID"`
+	FailureCount     int       `json:"failureCount"`
+	LastFailureAt    time.Time `json:"lastFailureAt"`
+	BlacklistedUntil time.Time `json:"blacklistedUntil"`
+	LastReason       string    `json:"lastReason"`
+}
 type LastUsedProvider struct {
 	Platform     string `json:"platform"`      // 平台
 	PoolID       string `json:"pool_id"`       // 池子 ID（pool 维度隔离）
@@ -38,19 +46,22 @@ type ProviderRelayService struct {
 	poolService         *ProviderPoolService
 	codexRelayKeys      *CodexRelayKeyService
 	notificationService *NotificationService
-	appSettings         *AppSettingsService // 应用设置服务（用于获取轮询开关状态）
+	appSettings         *AppSettingsService
 	httpClient          *http.Client
 	server              *http.Server
 	addr                string
 	lastUsed            map[string]*LastUsedProvider // 各平台最后使用的供应商
 	lastUsedMu          sync.RWMutex                 // 保护 lastUsed 的锁
-	rrMu                sync.Mutex                   // 轮询状态锁
-	rrLastStart         map[string]string            // 轮询状态：key="platform:level" → value=上次起始 Provider Name
+
+	// 池子维度 provider 惩罚状态（自动拉黑）
+	poolPenaltyMu sync.Mutex
+	poolPenalties map[string]*ProviderPoolProviderPenalty
 }
 
 // errClientAbort 表示客户端中断连接，不应计入 provider 失败次数
 var errClientAbort = errors.New("client aborted, skip failure count")
 var errCodexEmptyStream = errors.New("codex upstream stream closed before useful content")
+var errProviderEmptyShell = errors.New("provider returned 200 but all token counts are zero")
 
 const codexEmptyStreamRetryDelay = time.Second
 
@@ -81,7 +92,7 @@ func NewProviderRelayService(providerService *ProviderService, poolService *Prov
 			"openai-responses": nil,
 			"openai-chat":      nil,
 		},
-		rrLastStart: make(map[string]string),
+		poolPenalties: make(map[string]*ProviderPoolProviderPenalty),
 	}
 }
 
@@ -151,24 +162,7 @@ func (prs *ProviderRelayService) GetAllLastUsedProviders() []*LastUsedProvider {
 	return result
 }
 
-// isRoundRobinSettingEnabled 检查轮询设置是否启用（纯读取 AppSettings，不受 Fixed Mode 影响）
-// 用于在 Fixed Mode 分支内也支持轮询排序
-func (prs *ProviderRelayService) isRoundRobinSettingEnabled() bool {
-	if prs.appSettings == nil {
-		return false
-	}
-	settings, err := prs.appSettings.GetAppSettings()
-	if err != nil {
-		return false
-	}
-	return settings.EnableRoundRobin
-}
-
-// isRoundRobinEnabled 检查轮询功能是否启用（仅在降级模式下使用）
-func (prs *ProviderRelayService) isRoundRobinEnabled() bool {
-	return prs.isRoundRobinSettingEnabled()
-}
-
+// isCodexStreamGuardEnabled 检查 Codex 流式空响应保护是否启用
 func (prs *ProviderRelayService) isCodexStreamGuardEnabled() bool {
 	if prs.appSettings == nil {
 		return true
@@ -239,64 +233,145 @@ func (prs *ProviderRelayService) codexDirectAppliedProviderFilter(kind string, r
 	return id, true
 }
 
-// roundRobinOrder 对同 Level 的 providers 进行轮询排序（platform + poolID 维度）
-// 算法：基于 name 追踪，将上次起始 provider 移到末尾，实现轮询效果
-// 参数：
-//   - platform: 平台标识
-//   - poolID: 池子 ID
-//   - level: 当前 Level
-//   - providers: 同 Level 的 providers 列表（已过滤、按用户排序）
-//
-// 返回：轮询排序后的 providers 列表（新切片，不修改原切片）
-func (prs *ProviderRelayService) roundRobinOrder(platform string, poolID string, level int, providers []Provider) []Provider {
-	if len(providers) <= 1 {
-		return providers
-	}
+// penaltyKey builds a stable key for pool-level provider penalty state.
+func penaltyKey(platform, poolID string, providerID int64) string {
+	return fmt.Sprintf("%s:%s:%d", platform, poolID, providerID)
+}
 
-	// 构建 key: "platform:poolID:level"
-	key := fmt.Sprintf("%s:%s:%d", platform, poolID, level)
-
-	prs.rrMu.Lock()
-	defer prs.rrMu.Unlock()
-
-	lastStart := prs.rrLastStart[key]
-
-	// 记录本次起始 provider 名称（更新状态）
-	prs.rrLastStart[key] = providers[0].Name
-
-	// 如果没有历史记录，返回原顺序
-	if lastStart == "" {
-		return providers
-	}
-
-	// 查找上次起始 provider 在当前列表中的位置
-	lastIdx := -1
-	for i, p := range providers {
-		if p.Name == lastStart {
-			lastIdx = i
-			break
+// getProviderLevelInPool resolves the Level for a provider within a pool.
+// Only uses pool member Level; defaults to 1 if not set.
+func getProviderLevelInPool(pool *ProviderPool, provider Provider) int {
+	if pool != nil {
+		for _, m := range pool.Members {
+			if m.ProviderID == provider.ID {
+				if m.Level > 0 {
+					return m.Level
+				}
+				break
+			}
 		}
 	}
+	return 1
+}
 
-	// 上次起始 provider 不在当前列表（可能被禁用），返回原顺序
-	if lastIdx == -1 {
+// isProviderBlacklisted checks whether a provider is currently blacklisted in the given pool.
+func (prs *ProviderRelayService) isProviderBlacklisted(platform, poolID string, providerID int64) bool {
+	prs.poolPenaltyMu.Lock()
+	defer prs.poolPenaltyMu.Unlock()
+
+	p, ok := prs.poolPenalties[penaltyKey(platform, poolID, providerID)]
+	if !ok {
+		return false
+	}
+	if p.BlacklistedUntil.IsZero() {
+		return false
+	}
+	if time.Now().After(p.BlacklistedUntil) {
+		// 懒清理：过期自动恢复
+		delete(prs.poolPenalties, penaltyKey(platform, poolID, providerID))
+		return false
+	}
+	return true
+}
+
+// filterBlacklistedProviders removes blacklisted providers from a candidate list.
+func (prs *ProviderRelayService) filterBlacklistedProviders(platform, poolID string, providers []Provider) []Provider {
+	if len(providers) == 0 {
 		return providers
 	}
+	filtered := make([]Provider, 0, len(providers))
+	for _, p := range providers {
+		if prs.isProviderBlacklisted(platform, poolID, p.ID) {
+			continue
+		}
+		filtered = append(filtered, p)
+	}
+	return filtered
+}
 
-	// 构建轮询顺序：从 lastIdx+1 开始，环形遍历
-	result := make([]Provider, len(providers))
-	for i := 0; i < len(providers); i++ {
-		idx := (lastIdx + 1 + i) % len(providers)
-		result[i] = providers[idx]
+// recordProviderSuccess clears the failure count for a provider in a pool.
+func (prs *ProviderRelayService) recordProviderSuccess(platform, poolID string, provider Provider) {
+	prs.poolPenaltyMu.Lock()
+	defer prs.poolPenaltyMu.Unlock()
+	delete(prs.poolPenalties, penaltyKey(platform, poolID, provider.ID))
+}
+
+// recordProviderFailure increments the consecutive failure count and, if the threshold
+// is reached, blacklists the provider. Returns true when this failure resulted in a new
+// blacklist.
+func (prs *ProviderRelayService) recordProviderFailure(platform, poolID string, pool *ProviderPool, provider Provider, reason string) bool {
+	if pool == nil {
+		return false
+	}
+	// 自动拉黑仅在托管模式下生效（手动模式只有一个直接应用的 provider，无需拉黑）
+	if pool.Mode != ProviderPoolModeManaged {
+		return false
+	}
+	if !pool.AutoBlacklistEnabled {
+		return false
+	}
+	threshold := pool.AutoBlacklistThreshold
+	if threshold <= 0 {
+		threshold = 3
+	}
+	durationMinutes := pool.AutoBlacklistDurationMinutes
+	if durationMinutes <= 0 {
+		durationMinutes = 10
 	}
 
-	// 更新本次起始 provider 名称
-	prs.rrLastStart[key] = result[0].Name
+	key := penaltyKey(platform, poolID, provider.ID)
+	prs.poolPenaltyMu.Lock()
+	defer prs.poolPenaltyMu.Unlock()
 
+	p, ok := prs.poolPenalties[key]
+	if !ok {
+		p = &ProviderPoolProviderPenalty{
+			Platform:   platform,
+			PoolID:     poolID,
+			ProviderID: provider.ID,
+		}
+		prs.poolPenalties[key] = p
+	}
+	p.FailureCount++
+	p.LastFailureAt = time.Now()
+	p.LastReason = reason
+
+	if p.FailureCount >= threshold {
+		p.BlacklistedUntil = time.Now().Add(time.Duration(durationMinutes) * time.Minute)
+		return true
+	}
+	return false
+}
+
+// clearProviderBlacklist manually removes the blacklist for a provider in a pool.
+func (prs *ProviderRelayService) clearProviderBlacklist(platform, poolID string, providerID int64) {
+	prs.poolPenaltyMu.Lock()
+	defer prs.poolPenaltyMu.Unlock()
+	delete(prs.poolPenalties, penaltyKey(platform, poolID, providerID))
+}
+
+// listProviderBlacklistStatus returns penalty entries for providers that are
+// currently blacklisted (BlacklistedUntil non-zero and not expired).
+func (prs *ProviderRelayService) listProviderBlacklistStatus(platform, poolID string) []ProviderPoolProviderPenalty {
+	prs.poolPenaltyMu.Lock()
+	defer prs.poolPenaltyMu.Unlock()
+	now := time.Now()
+	prefix := platform + ":" + poolID + ":"
+
+	result := make([]ProviderPoolProviderPenalty, 0)
+	for key, p := range prs.poolPenalties {
+		if !strings.HasPrefix(key, prefix) {
+			continue
+		}
+		if p.BlacklistedUntil.IsZero() || now.After(p.BlacklistedUntil) {
+			continue
+		}
+		result = append(result, *p)
+	}
 	return result
 }
 
-// resolvePoolFromContext 从请求上下文解析 pool
+// selectProvidersForRequest 从请求上下文解析 pool
 // 严格 fail-closed：只接受 relay key 的显式 pool binding
 // - 有 binding 且 pool 存在且 platform 匹配：返回该 pool
 // - 无 binding / pool 不存在 / platform 不匹配：返回 error
@@ -628,19 +703,29 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 		c.Set(providerPoolIDContextKey, pool.ID)
 		poolID := pool.ID
 
-		fmt.Printf("[INFO] 找到 %d 个可用的 provider：", len(active))
+		// 过滤掉当前 pool 下仍在拉黑期的 provider（仅 managed 模式）
+		if pool.Mode == ProviderPoolModeManaged {
+			active = prs.filterBlacklistedProviders(kind, poolID, active)
+		}
+
+		if len(active) == 0 {
+			fmt.Printf("[WARN] 池子 %s 的所有 provider 均在拉黑期，无可用供应商\n", pool.Name)
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"error": fmt.Sprintf("池子 %s 内所有 provider 均在临时拉黑期，请稍后重试或手动解除拉黑", pool.Name),
+			})
+			return
+		}
+
+		fmt.Printf("[INFO] 池子 %s 找到 %d 个可用的 provider（拉黑过滤后）：", pool.Name, len(active))
 		for _, p := range active {
 			fmt.Printf("%s ", p.Name)
 		}
 		fmt.Println()
 
-		// 按 Level 分组
+		// 按 Level 分组（使用 pool member Level，回退到 provider 全局 Level）
 		levelGroups := make(map[int][]Provider)
 		for _, provider := range active {
-			level := provider.Level
-			if level <= 0 {
-				level = 1 // 未配置或零值时默认为 Level 1
-			}
+			level := getProviderLevelInPool(pool, provider)
 			levelGroups[level] = append(levelGroups[level], provider)
 		}
 
@@ -656,13 +741,8 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 		query := flattenQuery(c.Request.URL.Query())
 		clientHeaders := cloneHeaders(c.Request.Header)
 
-		// 【降级模式】：失败自动尝试下一个 provider
-		roundRobinEnabled := prs.isRoundRobinEnabled()
-		if roundRobinEnabled {
-			fmt.Printf("[INFO] 🔄 降级模式 + 轮询负载均衡\n")
-		} else {
-			fmt.Printf("[INFO] 🔄 降级模式（顺序降级）\n")
-		}
+		// 【降级模式】：按 Level 顺序尝试，Level 小的先用，失败后尝试同 Level 下一个
+		fmt.Printf("[INFO] 🔄 降级模式（顺序降级 + 自动拉黑）\n")
 
 		var lastError error
 		var lastProvider string
@@ -671,11 +751,6 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 
 		for _, level := range levels {
 			providersInLevel := levelGroups[level]
-
-			// 如果启用轮询，对同 Level 的 providers 进行轮询排序
-			if roundRobinEnabled {
-				providersInLevel = prs.roundRobinOrder(kind, poolID, level, providersInLevel)
-			}
 
 			fmt.Printf("[INFO] === 尝试 Level %d（%d 个 provider）===\n", level, len(providersInLevel))
 
@@ -707,10 +782,11 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 				startTime := time.Now()
 				ok, err := prs.forwardRequest(c, kind, provider, effectiveEndpoint, query, clientHeaders, currentBodyBytes, isStream, effectiveModel)
 				duration := time.Since(startTime)
+				failedFromEmptyStreamRetry := false
 				if !ok && errors.Is(err, errCodexEmptyStream) {
 					var retryAttempts int
 					var retryDuration time.Duration
-					ok, provider, err, retryAttempts, retryDuration = prs.retryCodexEmptyStreamSameProvider(c, kind, poolID, provider, endpoint, query, clientHeaders, bodyBytes, isStream, requestedModel)
+					ok, provider, err, retryAttempts, retryDuration, failedFromEmptyStreamRetry = prs.retryCodexEmptyStreamSameProvider(c, kind, poolID, pool, provider, endpoint, query, clientHeaders, bodyBytes, isStream, requestedModel)
 					totalAttempts += retryAttempts
 					duration += retryDuration
 				}
@@ -720,6 +796,8 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 
 					// 记录最后使用的供应商
 					prs.setLastUsedProvider(kind, poolID, provider.Name)
+					// 成功：清空该 provider 连续失败计数
+					prs.recordProviderSuccess(kind, poolID, provider)
 
 					return // 成功，立即返回
 				}
@@ -750,6 +828,11 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 				if errors.Is(err, errClientAbort) {
 					fmt.Printf("[INFO] 客户端中断，停止重试: %s\n", provider.Name)
 					return
+				}
+
+				// 记录 provider 失败（自动拉黑逻辑）。空流重试路径已在内部计数，跳过。
+				if !failedFromEmptyStreamRetry {
+					prs.recordProviderFailure(kind, poolID, pool, provider, errorMsg)
 				}
 
 				// 发送切换通知：检查是否有下一个可用的 provider
@@ -1091,6 +1174,62 @@ func (prs *ProviderRelayService) forwardRequest(
 			}
 		}
 
+		// 非流式：先读取响应体，解析 token 和内容，确认非空壳后再写给客户端
+		if !isStream && !isStreamResponse(resp, isStream) {
+			bodyData, readErr := readResponseBody(resp)
+			if readErr != nil {
+				return false, fmt.Errorf("failed to read response body: %w", readErr)
+			}
+
+			// 按路径解析 token 和内容，并准备最终要写的 body
+			finalBody := bodyData
+			contentType := resp.RawResponse.Header.Get("Content-Type")
+
+			if useResponsesTransform {
+				// Claude → OpenAI Responses：先转换回 Anthropic 格式再解析
+				transformed, transformErr := ConvertOpenAIResponsesToAnthropic(bodyData)
+				if transformErr != nil {
+					return false, fmt.Errorf("responses transform failed: %w", transformErr)
+				}
+				finalBody = transformed
+				ClaudeCodeParseTokenUsageFromResponse(string(transformed), requestLog)
+				contentType = "application/json"
+			} else if kind == "openai-chat" {
+				// OpenAI Chat：使用正确的 prompt_tokens/completion_tokens 解析
+				OpenAIChatParseTokenUsageFromResponse(string(bodyData), requestLog)
+				if contentType == "" {
+					contentType = "application/json"
+				}
+			} else if kind == "openai-responses" {
+				// OpenAI Responses：解析嵌套缓存/推理字段
+				CodexParseTokenUsageFromResponse(string(bodyData), requestLog)
+				if contentType == "" {
+					contentType = "application/json"
+				}
+			} else {
+				// 通用格式（Anthropic 等）
+				parseNonStreamingTokens(bodyData, kind, false, nil, requestLog)
+			}
+
+			// 空壳检测
+			if requestLog.isEmptyShell() && !hasContentInResponse(finalBody, kind, useResponsesTransform) {
+				fmt.Printf("[WARN] Provider %s 返回 200 空壳响应（无 tokens 且无内容），计为失败\n", provider.Name)
+				return false, fmt.Errorf("%w: provider %s returned 200 empty shell", errProviderEmptyShell, provider.Name)
+			}
+
+			// 非空壳：复制响应头并写给客户端
+			copyResponseHeaders(c.Writer, resp.RawResponse.Header)
+			if contentType != "" {
+				c.Writer.Header().Set("Content-Type", contentType)
+			}
+			c.Writer.Header().Del("Content-Length")
+			c.Writer.WriteHeader(status)
+			if _, writeErr := c.Writer.Write(finalBody); writeErr != nil {
+				fmt.Printf("[WARN] 复制响应到客户端失败: %v\n", writeErr)
+			}
+			return true, nil
+		}
+
 		var copyErr error
 		if useResponsesTransform && !isStream {
 			copyErr = writeTransformedJSONResponse(c.Writer, resp, requestLog)
@@ -1236,6 +1375,7 @@ func (prs *ProviderRelayService) retryCodexEmptyStreamSameProvider(
 	c *gin.Context,
 	kind string,
 	poolID string,
+	pool *ProviderPool,
 	initialProvider Provider,
 	endpoint string,
 	query map[string]string,
@@ -1243,19 +1383,26 @@ func (prs *ProviderRelayService) retryCodexEmptyStreamSameProvider(
 	originalBodyBytes []byte,
 	isStream bool,
 	requestedModel string,
-) (bool, Provider, error, int, time.Duration) {
+) (bool, Provider, error, int, time.Duration, bool) {
 	provider := initialProvider
 	attempts := 0
 	totalDuration := time.Duration(0)
 
+	// 第一次空流已由 forwardRequest 检测到，计入失败
+	blacklisted := prs.recordProviderFailure(kind, poolID, pool, provider, "codex empty stream")
+	if blacklisted {
+		fmt.Printf("[INFO] Codex 空流保护: Provider %s 因空流被自动拉黑，停止同 provider 重试\n", provider.Name)
+		return false, provider, fmt.Errorf("provider %s blacklisted after empty stream", provider.Name), attempts, totalDuration, true
+	}
+
 	for {
 		if err := waitBeforeCodexEmptyStreamRetry(c.Request.Context()); err != nil {
-			return false, provider, fmt.Errorf("%w: %v", errClientAbort, err), attempts, totalDuration
+			return false, provider, fmt.Errorf("%w: %v", errClientAbort, err), attempts, totalDuration, false
 		}
 
 		nextProvider, ok, err := prs.selectCodexEmptyStreamRetryProvider(kind, poolID, provider.Name, requestedModel)
 		if err != nil {
-			return false, provider, err, attempts, totalDuration
+			return false, provider, err, attempts, totalDuration, false
 		}
 		if !ok {
 			fmt.Printf("[INFO] Codex 空流保护: Provider %s 当前不可用，继续等待恢复，不切换到其他 provider\n", provider.Name)
@@ -1268,7 +1415,7 @@ func (prs *ProviderRelayService) retryCodexEmptyStreamSameProvider(
 		if effectiveModel != requestedModel && requestedModel != "" {
 			modifiedBody, err := ReplaceModelInRequestBody(originalBodyBytes, effectiveModel)
 			if err != nil {
-				return false, provider, err, attempts, totalDuration
+				return false, provider, err, attempts, totalDuration, false
 			}
 			currentBodyBytes = modifiedBody
 		}
@@ -1286,14 +1433,21 @@ func (prs *ProviderRelayService) retryCodexEmptyStreamSameProvider(
 		if requestOK {
 			fmt.Printf("[INFO] Codex 空流保护: 重试成功 | Provider: %s | 后台重试 %d 次 | 耗时: %.2fs\n",
 				provider.Name, attempts, totalDuration.Seconds())
-			return true, provider, nil, attempts, totalDuration
+			// 成功：清空失败计数
+			prs.recordProviderSuccess(kind, poolID, provider)
+			return true, provider, nil, attempts, totalDuration, false
 		}
 		if errors.Is(requestErr, errCodexEmptyStream) {
 			fmt.Printf("[WARN] Codex 空流保护: Provider %s 仍返回空流，继续后台重试 | 耗时: %.2fs\n",
 				provider.Name, duration.Seconds())
+			// 每次空流都计入失败
+			if prs.recordProviderFailure(kind, poolID, pool, provider, "codex empty stream") {
+				fmt.Printf("[INFO] Codex 空流保护: Provider %s 因连续空流被自动拉黑，停止同 provider 重试\n", provider.Name)
+				return false, provider, fmt.Errorf("provider %s blacklisted after repeated empty streams", provider.Name), attempts, totalDuration, true
+			}
 			continue
 		}
-		return false, provider, requestErr, attempts, totalDuration
+		return false, provider, requestErr, attempts, totalDuration, false
 	}
 }
 
@@ -2106,6 +2260,149 @@ func (r *ReqeustLog) markUpstreamHeaders() {
 	}
 }
 
+// isEmptyShell returns true if the response is an empty shell: all token counts are zero.
+func (r *ReqeustLog) isEmptyShell() bool {
+	if r == nil {
+		return false
+	}
+	return r.InputTokens == 0 && r.OutputTokens == 0 && r.CacheReadTokens == 0 && r.CacheCreateTokens == 0 && r.ReasoningTokens == 0
+}
+
+// readResponseBody reads the full response body from a non-streaming response.
+// Closes the underlying body after reading.
+func readResponseBody(resp *xrequest.Response) ([]byte, error) {
+	if resp == nil || resp.RawResponse == nil || resp.RawResponse.Body == nil {
+		return nil, fmt.Errorf("empty response")
+	}
+	defer resp.RawResponse.Body.Close()
+	data, err := io.ReadAll(resp.RawResponse.Body)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+// copyResponseHeaders copies upstream response headers to the client writer,
+// filtering out hop-by-hop and content-length headers.
+func copyResponseHeaders(w http.ResponseWriter, upstream http.Header) {
+	for key, values := range upstream {
+		lowerKey := strings.ToLower(key)
+		switch lowerKey {
+		case "content-length", "content-encoding", "transfer-encoding", "connection":
+			continue
+		}
+		for _, value := range values {
+			w.Header().Add(key, value)
+		}
+	}
+}
+
+// parseNonStreamingTokens extracts token usage from a non-streaming response body
+// and populates requestLog fields.
+func parseNonStreamingTokens(body []byte, kind string, useResponsesTransform bool, sseConverter SSEProtocolConverter, requestLog *ReqeustLog) {
+	if requestLog == nil || len(body) == 0 {
+		return
+	}
+	result := gjson.ParseBytes(body)
+
+	// Try common usage paths
+	usage := result.Get("usage")
+	if usage.Exists() {
+		requestLog.InputTokens = int(usage.Get("input_tokens").Int())
+		requestLog.OutputTokens = int(usage.Get("output_tokens").Int())
+		if ct := usage.Get("cache_read_input_tokens"); ct.Exists() {
+			requestLog.CacheReadTokens = int(ct.Int())
+		}
+		if ct := usage.Get("cache_creation_input_tokens"); ct.Exists() {
+			requestLog.CacheCreateTokens = int(ct.Int())
+		}
+		if rt := usage.Get("reasoning_tokens"); rt.Exists() {
+			requestLog.ReasoningTokens = int(rt.Int())
+		}
+		return
+	}
+
+	// Anthropic Messages API format
+	if result.Get("type").String() == "message" {
+		requestLog.InputTokens = int(result.Get("usage.input_tokens").Int())
+		requestLog.OutputTokens = int(result.Get("usage.output_tokens").Int())
+		if ct := result.Get("usage.cache_read_input_tokens"); ct.Exists() {
+			requestLog.CacheReadTokens = int(ct.Int())
+		}
+		return
+	}
+}
+
+// hasContentInResponse checks whether a non-streaming response body contains actual
+// text content, tool calls, or reasoning output — beyond just empty JSON structures.
+func hasContentInResponse(body []byte, kind string, useResponsesTransform bool) bool {
+	if len(body) == 0 {
+		return false
+	}
+	result := gjson.ParseBytes(body)
+
+	// Anthropic Messages format
+	if result.Get("type").String() == "message" {
+		content := result.Get("content")
+		if content.IsArray() && len(content.Array()) > 0 {
+			for _, block := range content.Array() {
+				t := block.Get("type").String()
+				switch t {
+				case "text":
+					if strings.TrimSpace(block.Get("text").String()) != "" {
+						return true
+					}
+				case "tool_use":
+					return true
+				}
+			}
+		}
+		return false
+	}
+
+	// OpenAI Chat Completions format
+	choices := result.Get("choices")
+	if choices.IsArray() && len(choices.Array()) > 0 {
+		for _, choice := range choices.Array() {
+			msg := choice.Get("message")
+			if strings.TrimSpace(msg.Get("content").String()) != "" {
+				return true
+			}
+			if strings.TrimSpace(msg.Get("reasoning_content").String()) != "" {
+				return true
+			}
+			if msg.Get("tool_calls").Exists() && len(msg.Get("tool_calls").Array()) > 0 {
+				return true
+			}
+		}
+		return false
+	}
+
+	// OpenAI Responses format
+	output := result.Get("output")
+	if output.IsArray() && len(output.Array()) > 0 {
+		for _, item := range output.Array() {
+			t := item.Get("type").String()
+			switch t {
+			case "message":
+				for _, c := range item.Get("content").Array() {
+					if strings.TrimSpace(c.Get("text").String()) != "" {
+						return true
+					}
+				}
+			case "function_call":
+				return true
+			case "reasoning":
+				return true
+			}
+		}
+		return false
+	}
+
+	// Unknown format: treat as having content (conservative)
+	return true
+}
+
 func (r *ReqeustLog) markFirstEvent() {
 	if r != nil && r.FirstEventSec == 0 {
 		r.FirstEventSec = r.elapsedSinceStart()
@@ -2216,7 +2513,7 @@ func (prs *ProviderRelayService) customCliProxyHandler() gin.HandlerFunc {
 		// 构建 provider kind（格式: "custom:{toolId}"）
 		kind := "custom:" + toolId
 		endpoint := "/v1/messages"
-		// custom CLI 目前未实现 key -> pool 路由，仍使用固定 poolID 隔离轮询状态。
+		// custom CLI 目前未实现 key -> pool 路由，仍使用固定 poolID 隔离。
 		poolID := "pool_" + kind + "_default"
 
 		fmt.Printf("[CustomCLI] 收到请求: toolId=%s, kind=%s\n", toolId, kind)
@@ -2308,13 +2605,8 @@ func (prs *ProviderRelayService) customCliProxyHandler() gin.HandlerFunc {
 		query := flattenQuery(c.Request.URL.Query())
 		clientHeaders := cloneHeaders(c.Request.Header)
 
-		// 【降级模式】：失败自动尝试下一个 provider
-		roundRobinEnabled := prs.isRoundRobinEnabled()
-		if roundRobinEnabled {
-			fmt.Printf("[CustomCLI][INFO] 🔄 降级模式 + 轮询负载均衡\n")
-		} else {
-			fmt.Printf("[CustomCLI][INFO] 🔄 降级模式（顺序降级）\n")
-		}
+		// 【降级模式】：按 Level 顺序尝试
+		fmt.Printf("[CustomCLI][INFO] 🔄 降级模式（顺序降级）\n")
 
 		var lastError error
 		var lastProvider string
@@ -2323,11 +2615,6 @@ func (prs *ProviderRelayService) customCliProxyHandler() gin.HandlerFunc {
 
 		for _, level := range levels {
 			providersInLevel := levelGroups[level]
-
-			// 如果启用轮询，对同 Level 的 providers 进行轮询排序
-			if roundRobinEnabled {
-				providersInLevel = prs.roundRobinOrder(kind, poolID, level, providersInLevel)
-			}
 
 			fmt.Printf("[CustomCLI][INFO] === 尝试 Level %d（%d 个 provider）===\n", level, len(providersInLevel))
 
@@ -2661,4 +2948,16 @@ func estimateInputTokens(bodyBytes []byte) int {
 		estimated = 1
 	}
 	return estimated
+}
+
+// ========== RPC 方法：池子拉黑状态查询和清除 ==========
+
+// ListProviderBlacklistStatus 返回指定池子内所有 provider 的拉黑状态（供前端展示）
+func (prs *ProviderRelayService) ListProviderBlacklistStatus(platform, poolID string) []ProviderPoolProviderPenalty {
+	return prs.listProviderBlacklistStatus(platform, poolID)
+}
+
+// ClearProviderBlacklist 手动清除指定池子内某个 provider 的拉黑状态
+func (prs *ProviderRelayService) ClearProviderBlacklist(platform, poolID string, providerID int64) {
+	prs.clearProviderBlacklist(platform, poolID, providerID)
 }

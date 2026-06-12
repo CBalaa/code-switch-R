@@ -40,13 +40,9 @@
           :key="card.id"
           class="automation-card pool-provider-card"
           :class="{
-            'is-last-used': isLastUsed(card.name),
             'is-highlighted': highlightedProvider === card.name,
           }"
         >
-          <span v-if="isLastUsed(card.name)" class="last-used-badge">
-            ✓ {{ t('components.main.providers.lastUsed') }}
-          </span>
           <div class="card-leading">
             <div
               :class="['card-icon', { empty: !providerFaviconUrl(card.officialSite) }]"
@@ -69,9 +65,6 @@
             <div class="card-text">
               <div class="card-title-row">
                 <p class="card-title">{{ card.name }}</p>
-                <span v-if="card.level" class="level-badge scheduling-level" :class="`level-${card.level}`">
-                  L{{ card.level }}
-                </span>
                 <button
                   v-if="card.officialSite"
                   class="card-site"
@@ -196,6 +189,15 @@
                   />
                 </div>
                 <span class="pool-member-name">{{ member.name }}</span>
+                <!-- 托管模式：池内 Level 选择器 -->
+                <select
+                  v-if="pool.mode === 'managed'"
+                  class="level-select-inline member-level-select"
+                  :value="member.memberLevel"
+                  @change="updateMemberLevel(pool.id, member.providerId, Number(($event.target as HTMLSelectElement).value))"
+                >
+                  <option v-for="lvl in 10" :key="lvl" :value="lvl">L{{ lvl }}</option>
+                </select>
               </div>
               <div class="pool-member-actions">
                 <!-- 托管模式开关 -->
@@ -223,6 +225,32 @@
             </div>
             <div v-if="getPoolMembersWithProviders(pool).length === 0" class="pool-empty">
               {{ t('components.main.pool.emptyPool') }}
+            </div>
+          </div>
+
+          <!-- 拉黑状态 -->
+          <div v-if="(blacklistStatus.get(pool.id) || []).length > 0" class="pool-blacklist-section">
+            <div class="pool-keys-header">{{ t('components.main.pool.blacklistedProviders') }}</div>
+            <div class="pool-keys-list">
+              <div
+                v-for="penalty in blacklistStatus.get(pool.id) || []"
+                :key="penalty.providerID"
+                class="pool-key-card blacklisted"
+              >
+                <div class="pool-key-info">
+                  <svg viewBox="0 0 24 24" class="key-icon" aria-hidden="true" style="color: var(--color-red, #ef4444);">
+                    <path d="M12 2L2 22h20L12 2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M12 10v4m0 4h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                  </svg>
+                  <span class="pool-key-name">{{ getProviderNameById(penalty.providerID) }}</span>
+                  <span class="blacklist-time">{{ t('components.main.pool.blacklistRemaining', { minutes: getBlacklistRemainingMinutes(penalty) }) }}</span>
+                  <button class="ghost-icon key-unbind-btn" :data-tooltip="t('components.main.pool.unblacklist')" @click.stop="unblacklistProvider(pool.id, penalty.providerID)">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M6 18L18 6M6 6l12 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -321,23 +349,61 @@
             </div>
           </div>
 
+          <!-- 自动拉黑配置（仅 managed 模式） -->
+          <div v-if="poolModalState.form.mode === 'managed'" class="form-field">
+            <span>{{ t('components.main.pool.autoBlacklist') }}</span>
+            <div class="blacklist-config">
+              <label class="pool-member-checkbox">
+                <input
+                  type="checkbox"
+                  v-model="poolModalState.form.autoBlacklistEnabled"
+                />
+                <span class="member-checkbox-label">{{ t('components.main.pool.autoBlacklistEnable') }}</span>
+              </label>
+              <div v-if="poolModalState.form.autoBlacklistEnabled" class="blacklist-config-inputs">
+                <label class="form-field" style="margin-top: 8px;">
+                  <span>{{ t('components.main.pool.blacklistThreshold') }}</span>
+                  <input
+                    type="number"
+                    :min="1"
+                    :max="100"
+                    class="mac-input"
+                    v-model.number="poolModalState.form.autoBlacklistThreshold"
+                  />
+                </label>
+                <label class="form-field" style="margin-top: 8px;">
+                  <span>{{ t('components.main.pool.blacklistDuration') }}</span>
+                  <input
+                    type="number"
+                    :min="1"
+                    :max="1440"
+                    class="mac-input"
+                    v-model.number="poolModalState.form.autoBlacklistDurationMinutes"
+                  />
+                </label>
+              </div>
+            </div>
+          </div>
+
           <!-- 选择池子成员供应商 -->
           <div class="form-field">
             <span>{{ t('components.main.pool.selectMembers') }}</span>
             <div class="pool-member-selector">
-              <label
+              <div
                 v-for="p in providers"
                 :key="p.id"
-                class="pool-member-checkbox"
+                class="pool-member-row"
               >
-                <input
-                  type="checkbox"
-                  :value="p.id"
-                  :checked="poolModalState.form.memberProviderIds.includes(p.id)"
+                <label class="pool-member-checkbox">
+                  <input
+                    type="checkbox"
+                    :value="p.id"
+                  :checked="isMemberSelected(p.id)"
                   @change="toggleMemberSelection(p.id, ($event.target as HTMLInputElement).checked)"
                 />
                 <span class="member-checkbox-label">{{ p.name }}</span>
               </label>
+              </div>
               <div v-if="providers.length === 0" class="pool-member-empty">
                 {{ t('components.main.pool.noProviders') }}
               </div>
@@ -384,7 +450,7 @@ import { useI18n } from 'vue-i18n'
 import BaseButton from '../common/BaseButton.vue'
 import BaseModal from '../common/BaseModal.vue'
 import BaseInput from '../common/BaseInput.vue'
-import { ListPools, SavePool, DeletePool, SetPoolBinding, type ProviderPool, type ProviderPoolMode } from '../../services/providerPool'
+import { ListPools, SavePool, DeletePool, SetPoolBinding, ListProviderBlacklistStatus, ClearProviderBlacklist, type ProviderPool, type ProviderPoolMode, type ProviderPoolProviderPenalty } from '../../services/providerPool'
 import type { AutomationCard } from '../../data/cards'
 import { showToast } from '../../utils/toast'
 
@@ -394,7 +460,6 @@ const props = defineProps<{
   platform: string
   providers: AutomationCard[]
   relayKeys: Array<{ id: string; name: string; poolBindings?: Record<string, string> }>
-  isLastUsed: (name: string) => boolean
   highlightedProvider: string | null
   resolvedTheme: string
   providerFaviconUrl: (site: string) => string | undefined
@@ -427,6 +492,10 @@ const poolModalState = reactive({
     mode: 'managed' as ProviderPoolMode,
     manualProviderId: null as number | null,
     memberProviderIds: [] as number[],
+    memberLevels: {} as Record<number, number>,
+    autoBlacklistEnabled: false,
+    autoBlacklistThreshold: 3,
+    autoBlacklistDurationMinutes: 10,
   },
 })
 
@@ -436,20 +505,48 @@ const deleteConfirmState = reactive({
   pool: null as ProviderPool | null,
 })
 
+// 拉黑状态缓存
+const blacklistStatus = ref<Map<string, ProviderPoolProviderPenalty[]>>(new Map())
+
+const loadBlacklistStatus = async () => {
+  const statusMap = new Map<string, ProviderPoolProviderPenalty[]>()
+  for (const pool of pools.value) {
+    try {
+      const statuses = await ListProviderBlacklistStatus(props.platform, pool.id)
+      statusMap.set(pool.id, statuses)
+    } catch (error) {
+      console.error('Failed to load blacklist status:', error)
+    }
+  }
+  blacklistStatus.value = statusMap
+}
 
 const loadPools = async () => {
   try {
     pools.value = await ListPools(props.platform)
+    await loadBlacklistStatus()
   } catch (error) {
     console.error('Failed to load pools:', error)
     showToast(t('components.main.pool.loadFailed'), 'error')
   }
 }
 
+const normalizeProviderId = (value: number | string | null | undefined): number => {
+  const id = Number(value)
+  return Number.isFinite(id) ? id : -1
+}
+
+const sameProviderId = (a: number | string | null | undefined, b: number | string | null | undefined): boolean =>
+  normalizeProviderId(a) === normalizeProviderId(b)
+
+const isProviderIdInList = (list: Array<number | string>, providerId: number | string | null | undefined): boolean =>
+  list.some((id) => sameProviderId(id, providerId))
+
 interface PoolMemberWithProvider {
   providerId: number
   name: string
   memberEnabled: boolean
+  memberLevel: number
   officialSite: string
   faviconUrl: string | undefined
   tint: string
@@ -459,16 +556,18 @@ interface PoolMemberWithProvider {
 const getPoolMembersWithProviders = (pool: ProviderPool): PoolMemberWithProvider[] => {
   return pool.members
     .map((member) => {
-      const provider = props.providers.find((p) => p.id === member.providerId)
+      const providerID = normalizeProviderId(member.providerId)
+      const provider = props.providers.find((p) => sameProviderId(p.id, providerID))
       if (!provider) return null
       const site = provider.officialSite
       if (!faviconCache.has(site)) {
         faviconCache.set(site, props.providerFaviconUrl(site))
       }
       return {
-        providerId: member.providerId,
+        providerId: providerID,
         name: provider.name,
         memberEnabled: member.enabled,
+        memberLevel: member.level ?? 1,
         officialSite: site,
         faviconUrl: faviconCache.get(site),
         tint: provider.tint,
@@ -479,7 +578,7 @@ const getPoolMembersWithProviders = (pool: ProviderPool): PoolMemberWithProvider
 }
 
 const isManualApplied = (pool: ProviderPool, providerId: number) => {
-  return pool.mode === 'manual' && pool.manualProviderId != null && pool.manualProviderId === providerId
+  return pool.mode === 'manual' && pool.manualProviderId != null && sameProviderId(pool.manualProviderId, providerId)
 }
 
 // 获取绑定到指定池子的密钥
@@ -548,7 +647,7 @@ const setManualProvider = async (poolID: string, providerId: number) => {
 const toggleMemberEnabled = async (poolID: string, providerId: number, enabled: boolean) => {
   const pool = pools.value.find((p) => p.id === poolID)
   if (!pool) return
-  const member = pool.members.find((m) => m.providerId === providerId)
+  const member = pool.members.find((m) => sameProviderId(m.providerId, providerId))
   if (!member) return
   member.enabled = enabled
   try {
@@ -561,6 +660,22 @@ const toggleMemberEnabled = async (poolID: string, providerId: number, enabled: 
   }
 }
 
+const updateMemberLevel = async (poolID: string, providerId: number, level: number) => {
+  const pool = pools.value.find((p) => p.id === poolID)
+  if (!pool) return
+  const member = pool.members.find((m) => sameProviderId(m.providerId, providerId))
+  if (!member) return
+  member.level = level
+  try {
+    await SavePool(pool)
+    showToast(t('components.main.pool.memberUpdated'), 'success')
+  } catch (error: any) {
+    console.error('Failed to update member level:', error)
+    showToast(error?.message || t('components.main.pool.updateFailed'), 'error')
+    await loadPools()
+  }
+}
+
 const openCreatePool = () => {
   poolModalState.editingId = ''
   poolModalState.form = {
@@ -568,33 +683,60 @@ const openCreatePool = () => {
     mode: 'managed',
     manualProviderId: null,
     memberProviderIds: [],
+    memberLevels: {},
+    autoBlacklistEnabled: false,
+    autoBlacklistThreshold: 3,
+    autoBlacklistDurationMinutes: 10,
   }
   poolModalState.open = true
 }
 
 const openEditPool = (pool: ProviderPool) => {
   poolModalState.editingId = pool.id
+  const levels: Record<number, number> = {}
+  for (const m of pool.members) {
+    levels[normalizeProviderId(m.providerId)] = m.level ?? 1
+  }
   poolModalState.form = {
     name: pool.name,
     mode: pool.mode,
     manualProviderId: pool.manualProviderId ?? null,
-    memberProviderIds: pool.members.map((m) => m.providerId),
+    memberProviderIds: pool.members.map((m) => normalizeProviderId(m.providerId)),
+    memberLevels: levels,
+    autoBlacklistEnabled: pool.autoBlacklistEnabled ?? false,
+    autoBlacklistThreshold: pool.autoBlacklistThreshold || 3,
+    autoBlacklistDurationMinutes: pool.autoBlacklistDurationMinutes || 10,
   }
   poolModalState.open = true
 }
+
+const isMemberSelected = (providerId: number | string): boolean =>
+  isProviderIdInList(poolModalState.form.memberProviderIds, providerId)
+
+const getMemberLevel = (providerId: number | string): number =>
+  poolModalState.form.memberLevels[normalizeProviderId(providerId)] ?? 1
 
 const closePoolModal = () => {
   poolModalState.open = false
 }
 
 const toggleMemberSelection = (providerId: number, checked: boolean) => {
+  const normalizedProviderId = normalizeProviderId(providerId)
   if (checked) {
-    if (!poolModalState.form.memberProviderIds.includes(providerId)) {
-      poolModalState.form.memberProviderIds.push(providerId)
+    if (!isMemberSelected(normalizedProviderId)) {
+      poolModalState.form.memberProviderIds.push(normalizedProviderId)
+    }
+    if (!(normalizedProviderId in poolModalState.form.memberLevels)) {
+      poolModalState.form.memberLevels[normalizedProviderId] = 1
     }
   } else {
-    poolModalState.form.memberProviderIds = poolModalState.form.memberProviderIds.filter((id) => id !== providerId)
+    poolModalState.form.memberProviderIds = poolModalState.form.memberProviderIds.filter((id) => !sameProviderId(id, normalizedProviderId))
+    delete poolModalState.form.memberLevels[normalizedProviderId]
   }
+}
+
+const setMemberLevel = (providerId: number, level: number) => {
+  poolModalState.form.memberLevels[normalizeProviderId(providerId)] = level
 }
 
 const submitPoolModal = async () => {
@@ -603,16 +745,18 @@ const submitPoolModal = async () => {
     ? pools.value.find((pool) => pool.id === poolModalState.editingId)
     : null
   const members = memberProviderIds.map((providerId) => {
-    const existingMember = existingPool?.members.find((member) => member.providerId === providerId)
+    const normalizedProviderId = normalizeProviderId(providerId)
+    const existingMember = existingPool?.members.find((member) => sameProviderId(member.providerId, normalizedProviderId))
     return {
-      providerId,
+      providerId: normalizedProviderId,
       enabled: existingMember?.enabled ?? true,
+      level: poolModalState.form.memberLevels[normalizedProviderId] ?? 1,
     }
   })
   const existingManualProviderId = existingPool?.manualProviderId ?? null
   const manualProviderId =
     mode === 'manual'
-      ? memberProviderIds.includes(existingManualProviderId ?? -1)
+      ? isProviderIdInList(memberProviderIds, existingManualProviderId)
         ? existingManualProviderId
         : memberProviderIds[0] ?? null
       : null
@@ -623,6 +767,9 @@ const submitPoolModal = async () => {
     mode,
     manualProviderId,
     members,
+    autoBlacklistEnabled: poolModalState.form.autoBlacklistEnabled,
+    autoBlacklistThreshold: poolModalState.form.autoBlacklistThreshold,
+    autoBlacklistDurationMinutes: poolModalState.form.autoBlacklistDurationMinutes,
   }
 
   if (poolModalState.editingId) {
@@ -649,6 +796,33 @@ const submitPoolModal = async () => {
 const requestDeletePool = (pool: ProviderPool) => {
   deleteConfirmState.pool = pool
   deleteConfirmState.open = true
+}
+
+// 解除 provider 拉黑
+const unblacklistProvider = async (poolID: string, providerID: number) => {
+  try {
+    await ClearProviderBlacklist(props.platform, poolID, providerID)
+    showToast(t('components.main.pool.unblacklisted'), 'success')
+    await loadBlacklistStatus()
+  } catch (error: any) {
+    console.error('Failed to unblacklist:', error)
+    showToast(error?.message || t('components.main.pool.updateFailed'), 'error')
+  }
+}
+
+// 获取 provider 的拉黑剩余时间
+const getBlacklistRemainingMinutes = (penalty: ProviderPoolProviderPenalty): number => {
+  if (!penalty.blacklistedUntil) return 0
+  const until = new Date(penalty.blacklistedUntil).getTime()
+  const now = Date.now()
+  const remaining = Math.ceil((until - now) / 60000)
+  return Math.max(0, remaining)
+}
+
+// 根据 provider ID 获取 provider 名称
+const getProviderNameById = (providerID: number): string => {
+  const provider = props.providers.find((p) => p.id === providerID)
+  return provider?.name ?? `Provider #${providerID}`
 }
 
 const closeDeleteConfirm = () => {
@@ -948,6 +1122,47 @@ watch(
   flex-shrink: 0;
 }
 
+.pool-member-level {
+  flex-shrink: 0;
+  margin-left: 6px;
+}
+
+/* 编辑弹窗中每个成员行 */
+.pool-member-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  width: 100%;
+}
+
+.member-level-input {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.member-level-label {
+  font-size: 11px;
+  color: var(--color-text-tertiary, #9ca3af);
+}
+
+.level-select-inline {
+  font-size: 12px;
+  padding: 2px 4px;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 4px;
+  background: var(--color-bg, #fff);
+  color: var(--color-text, #374151);
+}
+
+.level-select-inline:focus {
+  outline: none;
+  border-color: var(--color-accent, #3b82f6);
+}
+
 .pool-empty {
   width: 100%;
   text-align: center;
@@ -1160,6 +1375,7 @@ watch(
   border-radius: 6px;
   cursor: pointer;
   transition: background 0.1s;
+  min-width: 0;
 }
 
 .pool-member-checkbox:hover {
@@ -1173,6 +1389,10 @@ watch(
 .member-checkbox-label {
   font-size: 13px;
   color: var(--color-text, #1f2937);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .pool-member-empty {

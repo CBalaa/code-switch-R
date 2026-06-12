@@ -21,6 +21,14 @@ const (
 	ProviderPoolModeManual  ProviderPoolMode = "manual"  // 手动模式：只使用池子内"直接应用"的供应商
 )
 
+// normalizePoolMemberLevel 将 pool member Level 归一化：缺失或 <= 0 时默认为 1
+func normalizePoolMemberLevel(level int) int {
+	if level <= 0 {
+		return 1
+	}
+	return level
+}
+
 // ProviderPool 供应商池
 type ProviderPool struct {
 	ID               string               `json:"id"`
@@ -31,12 +39,18 @@ type ProviderPool struct {
 	Members          []ProviderPoolMember `json:"members"`
 	CreatedAt        string               `json:"createdAt"`
 	UpdatedAt        string               `json:"updatedAt"`
+
+	// 自动拉黑配置（仅 managed 模式生效）
+	AutoBlacklistEnabled         bool `json:"autoBlacklistEnabled"`
+	AutoBlacklistThreshold       int  `json:"autoBlacklistThreshold"`
+	AutoBlacklistDurationMinutes int  `json:"autoBlacklistDurationMinutes"`
 }
 
 // ProviderPoolMember 池子成员（Pool 与 Provider 的关联关系）
 type ProviderPoolMember struct {
 	ProviderID int64 `json:"providerId"`
 	Enabled    bool  `json:"enabled"`
+	Level      int   `json:"level,omitempty"`  // 该 pool 内的优先级，数字越小越先尝试（默认 1，回退到 provider 全局 Level）
 	Priority   int   `json:"priority,omitempty"`
 	Weight     int   `json:"weight,omitempty"`
 }
@@ -469,6 +483,7 @@ func SelectProvidersFromPool(pool *ProviderPool, allProviders []Provider) ([]Pro
 
 	case ProviderPoolModeManaged:
 		// 托管模式：只使用 member.Enabled == true 的 provider
+		// 同时将 pool member 的 Level 写入 provider，供后续分组使用
 		selected := make([]Provider, 0)
 		for _, member := range pool.Members {
 			if !member.Enabled {
@@ -479,6 +494,8 @@ func SelectProvidersFromPool(pool *ProviderPool, allProviders []Provider) ([]Pro
 				fmt.Printf("[WARN] 池子 %s 的成员 ProviderID %d 在 providers 中不存在\n", pool.Name, member.ProviderID)
 				continue
 			}
+			// 使用池内 Level，缺失默认 1
+			provider.Level = normalizePoolMemberLevel(member.Level)
 			selected = append(selected, provider)
 		}
 		return selected, nil

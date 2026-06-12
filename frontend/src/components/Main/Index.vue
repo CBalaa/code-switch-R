@@ -165,7 +165,6 @@
 	        v-if="activeTab !== 'others'"
 	        :platform="activeTab"
 	        :providers="activeCards"
-	        :is-last-used="isLastUsedProvider"
 	        :highlighted-provider="highlightedProvider"
 	        :resolved-theme="resolvedTheme"
 	        :provider-favicon-url="providerFaviconUrl"
@@ -221,9 +220,6 @@
             <div class="card-text">
               <div class="card-title-row">
                 <p class="card-title">{{ card.name }}</p>
-                <span v-if="card.level" class="level-badge scheduling-level" :class="`level-${card.level}`">
-                  L{{ card.level }}
-                </span>
                 <button
                   v-if="card.officialSite"
                   class="card-site"
@@ -440,37 +436,6 @@
                   />
                                   </div>
 
-                <div class="form-field">
-                  <div class="label-with-hint">{{ t('components.main.form.labels.level') }} <HelpHint :text="t('components.main.form.hints.level')" /></div>
-                  <Listbox v-model="modalState.form.level" v-slot="{ open }">
-                    <div class="level-select">
-                      <ListboxButton class="level-select-button">
-                        <span class="level-badge" :class="`level-${modalState.form.level || 1}`">
-                          L{{ modalState.form.level || 1 }}
-                        </span>
-                        <span class="level-label">
-                          Level {{ modalState.form.level || 1 }} - {{ getLevelDescription(modalState.form.level || 1) }}
-                        </span>
-                        <svg viewBox="0 0 20 20" aria-hidden="true">
-                          <path d="M6 8l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" />
-                        </svg>
-                      </ListboxButton>
-                      <ListboxOptions v-if="open" class="level-select-options">
-                        <ListboxOption
-                          v-for="lvl in 10"
-                          :key="lvl"
-                          :value="lvl"
-                          v-slot="{ active, selected }"
-                        >
-                          <div :class="['level-option', { active, selected }]">
-                            <span class="level-badge" :class="`level-${lvl}`">L{{ lvl }}</span>
-                            <span class="level-name">Level {{ lvl }} - {{ getLevelDescription(lvl) }}</span>
-                          </div>
-                        </ListboxOption>
-                      </ListboxOptions>
-                    </div>
-                  </Listbox>
-                                  </div>
 
                 <div class="form-field">
                   <ModelWhitelistEditor v-model="modalState.form.supportedModels" />
@@ -1758,7 +1723,6 @@ const defaultFormValues = (platform?: string): VendorForm => ({
   apiKey: '',
   officialSite: '',
   icon: '',
-  level: 1,
   enabled: true,
   supportedModels: {},
   modelMapping: {},
@@ -1821,13 +1785,10 @@ const normalizeLevel = (level: number | string | undefined): number => {
   return Math.floor(num)  // 确保返回整数
 }
 
-// 按 enabled 和 level 排序：启用的排在前面，同启用状态下按 level 升序排序
+// 按名称排序
 const sortProvidersByLevel = (list: AutomationCard[]) => {
   if (!Array.isArray(list)) return
-  list.sort((a, b) => {
-    // 按 level 升序排序（1 -> 10）
-    return normalizeLevel(a.level) - normalizeLevel(b.level)
-  })
+  list.sort((a, b) => a.name.localeCompare(b.name))
 }
 
 const modalState = reactive({
@@ -1991,15 +1952,11 @@ const submitModal = async (): Promise<boolean> => {
   const protocolEndpoints = protocolEndpointsForSave()
 
   if (editingCard.value) {
-    // 仅当 level 变化时才重新排序，避免破坏同级拖拽顺序
-    const prevLevel = normalizeLevel(editingCard.value.level)
-    const nextLevel = normalizeLevel(modalState.form.level)
     Object.assign(editingCard.value, {
       apiUrl: apiUrl || editingCard.value.apiUrl,
       apiKey,
       officialSite,
       icon: '',
-      level: nextLevel,
       enabled: true,
       supportedModels: modalState.form.supportedModels || {},
       modelMapping: modalState.form.modelMapping || {},
@@ -2022,9 +1979,6 @@ const submitModal = async (): Promise<boolean> => {
       connectivityTestEndpoint: '',
       connectivityAuthType: resolveEffectiveAuthType(),
     })
-    if (prevLevel !== nextLevel) {
-      sortProvidersByLevel(list)
-    }
     const saveResult = await persistProviders(modalState.tabId)
     if (!saveResult.ok) {
       // 保存失败，不关闭弹窗，让用户修正配置
@@ -2040,7 +1994,6 @@ const submitModal = async (): Promise<boolean> => {
       icon: '',
       accent: '#0a84ff',
       tint: 'rgba(15, 23, 42, 0.12)',
-      level: normalizeLevel(modalState.form.level),
       enabled: true,
       supportedModels: modalState.form.supportedModels || {},
       modelMapping: modalState.form.modelMapping || {},
