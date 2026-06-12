@@ -19,18 +19,6 @@ type adminLoginRequest struct {
 	Password string `json:"password"`
 }
 
-type adminInitializeRequest struct {
-	Username   string `json:"username"`
-	Password   string `json:"password"`
-	SetupToken string `json:"setupToken"`
-}
-
-type adminUpdateCredentialsRequest struct {
-	CurrentPassword string `json:"currentPassword"`
-	NewUsername     string `json:"newUsername"`
-	NewPassword     string `json:"newPassword"`
-}
-
 type codexRelayKeyCreateRequest struct {
 	Name string `json:"name"`
 }
@@ -61,38 +49,9 @@ func registerAdminAuthRoutes(router *gin.Engine, rt *appRuntime) {
 
 	router.POST("/api/admin/initialize", originRequired, func(c *gin.Context) {
 		c.Header("Cache-Control", "no-store")
-		subject, limited := rejectWhenRateLimited(c, rt.adminSecurity, "initialize")
-		if limited {
-			return
-		}
-
-		var request adminInitializeRequest
-		if err := c.ShouldBindJSON(&request); err != nil {
-			c.JSON(http.StatusBadRequest, apiErrorResponse{
-				Error: apiError{Code: "invalid_request", Message: err.Error()},
-			})
-			return
-		}
-		if rt.adminSecurity != nil && !rt.adminSecurity.isSetupAllowed(c.Request, request.SetupToken) {
-			recordRateLimitFailure(rt.adminSecurity, "initialize", subject)
-			c.JSON(http.StatusForbidden, apiErrorResponse{
-				Error: apiError{Code: "setup_token_required", Message: "首次初始化需要有效的 setup token"},
-			})
-			return
-		}
-
-		token, status, err := rt.adminAuth.InitializeAdmin(request.Username, request.Password)
-		if err != nil {
-			recordRateLimitFailure(rt.adminSecurity, "initialize", subject)
-			c.JSON(http.StatusBadRequest, apiErrorResponse{
-				Error: apiError{Code: "initialize_failed", Message: err.Error()},
-			})
-			return
-		}
-
-		recordRateLimitSuccess(rt.adminSecurity, "initialize", subject)
-		setAdminSessionCookie(c, rt.adminSecurity, token)
-		c.JSON(http.StatusOK, status)
+		c.JSON(http.StatusForbidden, apiErrorResponse{
+			Error: apiError{Code: "web_registration_disabled", Message: "请在服务器运行 scripts/manage-users add --username <name> 创建用户"},
+		})
 	})
 
 	router.POST("/api/admin/login", originRequired, func(c *gin.Context) {
@@ -138,37 +97,15 @@ func registerAdminAuthRoutes(router *gin.Engine, rt *appRuntime) {
 
 	router.POST("/api/admin/credentials", originRequired, authRequired, func(c *gin.Context) {
 		c.Header("Cache-Control", "no-store")
-		var request adminUpdateCredentialsRequest
-		if err := c.ShouldBindJSON(&request); err != nil {
-			c.JSON(http.StatusBadRequest, apiErrorResponse{
-				Error: apiError{Code: "invalid_request", Message: err.Error()},
-			})
-			return
-		}
-
-		token, status, err := rt.adminAuth.UpdateCredentials(
-			request.CurrentPassword,
-			request.NewUsername,
-			request.NewPassword,
-		)
-		if err != nil {
-			statusCode := http.StatusBadRequest
-			if strings.Contains(err.Error(), "当前密码错误") {
-				statusCode = http.StatusUnauthorized
-			}
-			c.JSON(statusCode, apiErrorResponse{
-				Error: apiError{Code: "update_credentials_failed", Message: err.Error()},
-			})
-			return
-		}
-
-		setAdminSessionCookie(c, rt.adminSecurity, token)
-		c.JSON(http.StatusOK, status)
+		c.JSON(http.StatusForbidden, apiErrorResponse{
+			Error: apiError{Code: "web_user_management_disabled", Message: "请在服务器运行 scripts/manage-users 管理用户"},
+		})
 	})
 
 	router.GET("/api/admin/codex-keys", authRequired, func(c *gin.Context) {
 		c.Header("Cache-Control", "no-store")
-		keys, err := rt.codexRelayKeys.ListKeys()
+		userID := adminUserIDFromContext(c)
+		keys, err := rt.codexRelayKeys.ListKeysForUser(userID)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, apiErrorResponse{
 				Error: apiError{Code: "list_keys_failed", Message: err.Error()},
@@ -188,7 +125,7 @@ func registerAdminAuthRoutes(router *gin.Engine, rt *appRuntime) {
 			return
 		}
 
-		result, err := rt.codexRelayKeys.CreateKey(request.Name)
+		result, err := rt.codexRelayKeys.CreateKeyForUser(adminUserIDFromContext(c), request.Name)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, apiErrorResponse{
 				Error: apiError{Code: "create_key_failed", Message: err.Error()},
@@ -200,7 +137,7 @@ func registerAdminAuthRoutes(router *gin.Engine, rt *appRuntime) {
 
 	router.GET("/api/admin/codex-keys/:id/secret", authRequired, func(c *gin.Context) {
 		c.Header("Cache-Control", "no-store")
-		secret, err := rt.codexRelayKeys.GetKeySecret(c.Param("id"))
+		secret, err := rt.codexRelayKeys.GetKeySecretForUser(adminUserIDFromContext(c), c.Param("id"))
 		if err != nil {
 			c.JSON(http.StatusNotFound, apiErrorResponse{
 				Error: apiError{Code: "key_not_found", Message: err.Error()},
@@ -219,7 +156,7 @@ func registerAdminAuthRoutes(router *gin.Engine, rt *appRuntime) {
 			})
 			return
 		}
-		if err := rt.codexRelayKeys.RenameKey(c.Param("id"), request.Name); err != nil {
+		if err := rt.codexRelayKeys.RenameKeyForUser(adminUserIDFromContext(c), c.Param("id"), request.Name); err != nil {
 			statusCode := http.StatusBadRequest
 			if strings.Contains(err.Error(), "未找到") {
 				statusCode = http.StatusNotFound
@@ -234,7 +171,7 @@ func registerAdminAuthRoutes(router *gin.Engine, rt *appRuntime) {
 
 	router.GET("/api/admin/codex-keys/:id/usage", authRequired, func(c *gin.Context) {
 		c.Header("Cache-Control", "no-store")
-		stats, err := rt.codexRelayKeys.GetUsageStats(c.Param("id"), c.Query("range"), c.Query("start"), c.Query("end"))
+		stats, err := rt.codexRelayKeys.GetUsageStatsForUser(adminUserIDFromContext(c), c.Param("id"), c.Query("range"), c.Query("start"), c.Query("end"))
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, apiErrorResponse{
 				Error: apiError{Code: "key_usage_failed", Message: err.Error()},
@@ -246,7 +183,7 @@ func registerAdminAuthRoutes(router *gin.Engine, rt *appRuntime) {
 
 	router.DELETE("/api/admin/codex-keys/:id", originRequired, authRequired, func(c *gin.Context) {
 		c.Header("Cache-Control", "no-store")
-		if err := rt.codexRelayKeys.DeleteKey(c.Param("id")); err != nil {
+		if err := rt.codexRelayKeys.DeleteKeyForUser(adminUserIDFromContext(c), c.Param("id")); err != nil {
 			statusCode := http.StatusBadRequest
 			if strings.Contains(err.Error(), "未找到") {
 				statusCode = http.StatusNotFound
@@ -276,7 +213,7 @@ func requireAdminSession(authService *services.AdminAuthService, security *admin
 			return
 		}
 
-		username, ok, err := authService.ValidateSession(adminSessionTokenFromRequest(c.Request, security))
+		user, ok, err := authService.ValidateUserSession(adminSessionTokenFromRequest(c.Request, security))
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, apiErrorResponse{
 				Error: apiError{Code: "auth_failed", Message: err.Error()},
@@ -293,9 +230,26 @@ func requireAdminSession(authService *services.AdminAuthService, security *admin
 			return
 		}
 
-		c.Set("admin_username", username)
+		c.Set("admin_user_id", user.ID)
+		c.Set("admin_username", user.Username)
+		c.Request = c.Request.WithContext(contextWithAuthenticatedUser(c.Request.Context(), user))
 		c.Next()
 	}
+}
+
+func adminUserIDFromContext(c *gin.Context) string {
+	if c == nil {
+		return ""
+	}
+	value, ok := c.Get("admin_user_id")
+	if !ok {
+		return ""
+	}
+	userID, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(userID)
 }
 
 func sanitizeCookieNamePart(value string) string {

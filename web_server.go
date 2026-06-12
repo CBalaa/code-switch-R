@@ -44,7 +44,7 @@ func (r *rpcRegistry) Register(name string, service any) {
 	r.services[name] = service
 }
 
-func (r *rpcRegistry) Call(name string, args []json.RawMessage) (_ any, err error) {
+func (r *rpcRegistry) Call(ctx context.Context, name string, args []json.RawMessage) (_ any, err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			err = fmt.Errorf("rpc panic: %v", recovered)
@@ -69,17 +69,31 @@ func (r *rpcRegistry) Call(name string, args []json.RawMessage) (_ any, err erro
 	}
 
 	methodType := method.Type()
-	if len(args) != methodType.NumIn() {
-		return nil, fmt.Errorf("invalid argument count for %s: expected %d, got %d", name, methodType.NumIn(), len(args))
+	injectContext := methodType.NumIn() > 0 && methodType.In(0) == reflect.TypeOf((*context.Context)(nil)).Elem()
+	expectedArgs := methodType.NumIn()
+	argOffset := 0
+	if injectContext {
+		expectedArgs--
+		argOffset = 1
+	}
+	if len(args) != expectedArgs {
+		return nil, fmt.Errorf("invalid argument count for %s: expected %d, got %d", name, expectedArgs, len(args))
 	}
 
 	callArgs := make([]reflect.Value, methodType.NumIn())
-	for i := 0; i < methodType.NumIn(); i++ {
-		value, decodeErr := decodeRPCArg(args[i], methodType.In(i))
+	if injectContext {
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		callArgs[0] = reflect.ValueOf(ctx)
+	}
+	for i := 0; i < expectedArgs; i++ {
+		methodIndex := i + argOffset
+		value, decodeErr := decodeRPCArg(args[i], methodType.In(methodIndex))
 		if decodeErr != nil {
 			return nil, fmt.Errorf("decode argument %d for %s: %w", i, name, decodeErr)
 		}
-		callArgs[i] = value
+		callArgs[methodIndex] = value
 	}
 
 	return unpackRPCResults(method.Call(callArgs))
@@ -204,7 +218,7 @@ func newAdminServer(rt *appRuntime) *http.Server {
 			return
 		}
 
-		result, err := registry.Call(request.Name, request.Args)
+		result, err := registry.Call(c.Request.Context(), request.Name, request.Args)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, apiErrorResponse{
 				Error: apiError{Code: "rpc_error", Message: err.Error()},

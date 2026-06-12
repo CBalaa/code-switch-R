@@ -42,6 +42,7 @@ const (
 // HealthCheckResult 健康检查结果
 type HealthCheckResult struct {
 	ID           int64     `json:"id"`
+	UserID       string    `json:"userId,omitempty"`
 	ProviderID   int64     `json:"providerId"`
 	ProviderName string    `json:"providerName"`
 	Platform     string    `json:"platform"`
@@ -155,6 +156,7 @@ func (hcs *HealthCheckService) ensureTable() error {
 
 	const createTableSQL = `CREATE TABLE IF NOT EXISTS health_check_history (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		user_id TEXT,
 		provider_id INTEGER NOT NULL,
 		provider_name TEXT NOT NULL,
 		platform TEXT NOT NULL,
@@ -167,6 +169,9 @@ func (hcs *HealthCheckService) ensureTable() error {
 	)`
 	if _, err := db.Exec(createTableSQL); err != nil {
 		return fmt.Errorf("创建 health_check_history 表失败: %w", err)
+	}
+	if err := ensureRequestLogColumnNamed(db, "health_check_history", "user_id", "TEXT"); err != nil {
+		return err
 	}
 
 	// 创建索引
@@ -181,21 +186,46 @@ func (hcs *HealthCheckService) ensureTable() error {
 	return nil
 }
 
+func ensureRequestLogColumnNamed(db *sql.DB, table string, column string, definition string) error {
+	query := fmt.Sprintf("SELECT COUNT(*) FROM pragma_table_info('%s') WHERE name = ?", table)
+	var count int
+	if err := db.QueryRow(query, column).Scan(&count); err != nil {
+		return err
+	}
+	if count == 0 {
+		alter := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, definition)
+		if _, err := db.Exec(alter); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // GetLatestResults 获取所有 Provider 的最新状态（按平台分组）
 // 优化：使用批量查询避免 N+1 查询问题
 func (hcs *HealthCheckService) GetLatestResults() (map[string][]ProviderTimeline, error) {
+	return hcs.GetLatestResultsForUser("")
+}
+
+func (hcs *HealthCheckService) GetLatestResultsForUser(userID string) (map[string][]ProviderTimeline, error) {
 	results := make(map[string][]ProviderTimeline)
 
 	// 遍历所有平台
 	for _, platform := range []string{"claude", "openai-responses", "openai-chat"} {
-		providers, err := hcs.providerService.LoadProviders(platform)
+		var providers []Provider
+		var err error
+		if strings.TrimSpace(userID) != "" {
+			providers, err = hcs.providerService.LoadProvidersForUser(userID, platform)
+		} else {
+			providers, err = hcs.providerService.LoadProviders(platform)
+		}
 		if err != nil {
 			log.Printf("[HealthCheck] 加载 %s 供应商失败: %v", platform, err)
 			continue
 		}
 
 		// 批量查询该平台的所有历史记录
-		historiesMap, err := hcs.batchGetHistories(platform)
+		historiesMap, err := hcs.batchGetHistoriesForUser(userID, platform)
 		if err != nil {
 			log.Printf("[HealthCheck] 批量查询 %s 历史记录失败: %v", platform, err)
 		}
@@ -230,6 +260,10 @@ func (hcs *HealthCheckService) GetLatestResults() (map[string][]ProviderTimeline
 
 // batchGetHistories 批量获取某平台所有 Provider 的历史记录（避免 N+1 查询）
 func (hcs *HealthCheckService) batchGetHistories(platform string) (map[string]*HealthCheckHistory, error) {
+	return hcs.batchGetHistoriesForUser("", platform)
+}
+
+func (hcs *HealthCheckService) batchGetHistoriesForUser(userID string, platform string) (map[string]*HealthCheckHistory, error) {
 	db, err := xdb.DB("default")
 	if err != nil {
 		return nil, fmt.Errorf("获取数据库连接失败: %w", err)
@@ -238,14 +272,14 @@ func (hcs *HealthCheckService) batchGetHistories(platform string) (map[string]*H
 	// 批量查询：按平台一次性拉取所有记录，按 checked_at 倒序排列
 	// 限制最多 5000 条记录，避免全表扫描
 	query := `
-		SELECT id, provider_id, provider_name, platform, model, endpoint, status, latency_ms, error_message, checked_at
+		SELECT id, COALESCE(user_id, ''), provider_id, provider_name, platform, model, endpoint, status, latency_ms, error_message, checked_at
 		FROM health_check_history
-		WHERE platform = ?
+		WHERE platform = ? AND (? = '' OR user_id = ?)
 		ORDER BY checked_at DESC
 		LIMIT 5000
 	`
 
-	rows, err := db.Query(query, platform)
+	rows, err := db.Query(query, platform, userID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("批量查询历史记录失败: %w", err)
 	}
@@ -260,7 +294,7 @@ func (hcs *HealthCheckService) batchGetHistories(platform string) (map[string]*H
 		var latencyMs sql.NullInt64
 
 		if err := rows.Scan(
-			&r.ID, &r.ProviderID, &r.ProviderName, &r.Platform,
+			&r.ID, &r.UserID, &r.ProviderID, &r.ProviderName, &r.Platform,
 			&model, &endpoint, &r.Status, &latencyMs, &errorMsg, &r.CheckedAt,
 		); err != nil {
 			log.Printf("[HealthCheck] 解析历史记录失败: %v", err)
@@ -326,6 +360,10 @@ func (hcs *HealthCheckService) batchGetHistories(platform string) (map[string]*H
 
 // GetHistory 获取单个 Provider 的历史记录
 func (hcs *HealthCheckService) GetHistory(platform, providerName string, limit int) (*HealthCheckHistory, error) {
+	return hcs.GetHistoryForUser("", platform, providerName, limit)
+}
+
+func (hcs *HealthCheckService) GetHistoryForUser(userID string, platform, providerName string, limit int) (*HealthCheckHistory, error) {
 	db, err := xdb.DB("default")
 	if err != nil {
 		return nil, fmt.Errorf("获取数据库连接失败: %w", err)
@@ -336,14 +374,14 @@ func (hcs *HealthCheckService) GetHistory(platform, providerName string, limit i
 	}
 
 	query := `
-		SELECT id, provider_id, provider_name, platform, model, endpoint, status, latency_ms, error_message, checked_at
+		SELECT id, COALESCE(user_id, ''), provider_id, provider_name, platform, model, endpoint, status, latency_ms, error_message, checked_at
 		FROM health_check_history
-		WHERE platform = ? AND provider_name = ?
+		WHERE platform = ? AND provider_name = ? AND (? = '' OR user_id = ?)
 		ORDER BY checked_at DESC
 		LIMIT ?
 	`
 
-	rows, err := db.Query(query, platform, providerName, limit)
+	rows, err := db.Query(query, platform, providerName, userID, userID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("查询历史记录失败: %w", err)
 	}
@@ -364,7 +402,7 @@ func (hcs *HealthCheckService) GetHistory(platform, providerName string, limit i
 		var latencyMs sql.NullInt64
 
 		if err := rows.Scan(
-			&r.ID, &r.ProviderID, &r.ProviderName, &r.Platform,
+			&r.ID, &r.UserID, &r.ProviderID, &r.ProviderName, &r.Platform,
 			&model, &endpoint, &r.Status, &latencyMs, &errorMsg, &r.CheckedAt,
 		); err != nil {
 			continue
@@ -407,7 +445,17 @@ func (hcs *HealthCheckService) GetHistory(platform, providerName string, limit i
 
 // RunSingleCheck 手动触发单个 Provider 检测
 func (hcs *HealthCheckService) RunSingleCheck(platform string, providerID int64) (*HealthCheckResult, error) {
-	providers, err := hcs.providerService.LoadProviders(platform)
+	return hcs.RunSingleCheckForUser("", platform, providerID)
+}
+
+func (hcs *HealthCheckService) RunSingleCheckForUser(userID string, platform string, providerID int64) (*HealthCheckResult, error) {
+	var providers []Provider
+	var err error
+	if strings.TrimSpace(userID) != "" {
+		providers, err = hcs.providerService.LoadProvidersForUser(userID, platform)
+	} else {
+		providers, err = hcs.providerService.LoadProviders(platform)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("加载供应商失败: %w", err)
 	}
@@ -430,9 +478,10 @@ func (hcs *HealthCheckService) RunSingleCheck(platform string, providerID int64)
 	defer cancel()
 
 	result := hcs.checkProvider(ctx, *targetProvider, platform)
+	result.UserID = strings.TrimSpace(userID)
 
 	// 保存结果
-	if err := hcs.saveResult(result); err != nil {
+	if err := hcs.saveResultForUser(userID, result); err != nil {
 		log.Printf("[HealthCheck] 保存结果失败: %v", err)
 	}
 
@@ -444,10 +493,14 @@ func (hcs *HealthCheckService) RunSingleCheck(platform string, providerID int64)
 
 // RunAllChecks 手动触发全部检测
 func (hcs *HealthCheckService) RunAllChecks() (map[string][]HealthCheckResult, error) {
+	return hcs.RunAllChecksForUser("")
+}
+
+func (hcs *HealthCheckService) RunAllChecksForUser(userID string) (map[string][]HealthCheckResult, error) {
 	results := make(map[string][]HealthCheckResult)
 
 	for _, platform := range []string{"claude", "openai-responses", "openai-chat"} {
-		platformResults := hcs.checkAllProviders(platform)
+		platformResults := hcs.checkAllProvidersForUser(userID, platform)
 		results[platform] = platformResults
 	}
 
@@ -456,7 +509,17 @@ func (hcs *HealthCheckService) RunAllChecks() (map[string][]HealthCheckResult, e
 
 // checkAllProviders 检测指定平台的所有启用监控的供应商
 func (hcs *HealthCheckService) checkAllProviders(platform string) []HealthCheckResult {
-	providers, err := hcs.providerService.LoadProviders(platform)
+	return hcs.checkAllProvidersForUser("", platform)
+}
+
+func (hcs *HealthCheckService) checkAllProvidersForUser(userID string, platform string) []HealthCheckResult {
+	var providers []Provider
+	var err error
+	if strings.TrimSpace(userID) != "" {
+		providers, err = hcs.providerService.LoadProvidersForUser(userID, platform)
+	} else {
+		providers, err = hcs.providerService.LoadProviders(platform)
+	}
 	if err != nil {
 		log.Printf("[HealthCheck] 加载 %s 供应商失败: %v", platform, err)
 		return nil
@@ -483,9 +546,10 @@ func (hcs *HealthCheckService) checkAllProviders(platform string) []HealthCheckR
 			defer func() { <-sem }()
 
 			result := hcs.checkProvider(ctx, p, platform)
+			result.UserID = strings.TrimSpace(userID)
 
 			// 保存结果
-			if err := hcs.saveResult(result); err != nil {
+			if err := hcs.saveResultForUser(userID, result); err != nil {
 				log.Printf("[HealthCheck] 保存结果失败: %v", err)
 			}
 
@@ -787,16 +851,21 @@ func firstHealthcheckProviderModel(provider *Provider) string {
 
 // saveResult 保存检测结果到数据库
 func (hcs *HealthCheckService) saveResult(result *HealthCheckResult) error {
+	return hcs.saveResultForUser("", result)
+}
+
+func (hcs *HealthCheckService) saveResultForUser(userID string, result *HealthCheckResult) error {
 	if GlobalDBQueue == nil {
 		return fmt.Errorf("数据库写入队列未初始化")
 	}
 
 	const insertSQL = `
-		INSERT INTO health_check_history (provider_id, provider_name, platform, model, endpoint, status, latency_ms, error_message, checked_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO health_check_history (user_id, provider_id, provider_name, platform, model, endpoint, status, latency_ms, error_message, checked_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	return GlobalDBQueue.Exec(insertSQL,
+		strings.TrimSpace(userID),
 		result.ProviderID,
 		result.ProviderName,
 		result.Platform,
@@ -910,7 +979,17 @@ func (hcs *HealthCheckService) runAllPlatformChecks() {
 
 // SetAvailabilityMonitorEnabled 启用/禁用指定 Provider 的可用性监控
 func (hcs *HealthCheckService) SetAvailabilityMonitorEnabled(platform string, providerID int64, enabled bool) error {
-	providers, err := hcs.providerService.LoadProviders(platform)
+	return hcs.SetAvailabilityMonitorEnabledForUser("", platform, providerID, enabled)
+}
+
+func (hcs *HealthCheckService) SetAvailabilityMonitorEnabledForUser(userID string, platform string, providerID int64, enabled bool) error {
+	var providers []Provider
+	var err error
+	if strings.TrimSpace(userID) != "" {
+		providers, err = hcs.providerService.LoadProvidersForUser(userID, platform)
+	} else {
+		providers, err = hcs.providerService.LoadProviders(platform)
+	}
 	if err != nil {
 		return fmt.Errorf("加载供应商失败: %w", err)
 	}
@@ -928,7 +1007,12 @@ func (hcs *HealthCheckService) SetAvailabilityMonitorEnabled(platform string, pr
 		return fmt.Errorf("未找到供应商 ID: %d", providerID)
 	}
 
-	if err := hcs.providerService.SaveProviders(platform, providers); err != nil {
+	if strings.TrimSpace(userID) != "" {
+		err = hcs.providerService.SaveProvidersForUser(userID, platform, providers)
+	} else {
+		err = hcs.providerService.SaveProviders(platform, providers)
+	}
+	if err != nil {
 		return fmt.Errorf("保存供应商配置失败: %w", err)
 	}
 
@@ -938,7 +1022,17 @@ func (hcs *HealthCheckService) SetAvailabilityMonitorEnabled(platform string, pr
 
 // SaveAvailabilityConfig 保存 Provider 的可用性高级配置
 func (hcs *HealthCheckService) SaveAvailabilityConfig(platform string, providerID int64, config *AvailabilityConfig) error {
-	providers, err := hcs.providerService.LoadProviders(platform)
+	return hcs.SaveAvailabilityConfigForUser("", platform, providerID, config)
+}
+
+func (hcs *HealthCheckService) SaveAvailabilityConfigForUser(userID string, platform string, providerID int64, config *AvailabilityConfig) error {
+	var providers []Provider
+	var err error
+	if strings.TrimSpace(userID) != "" {
+		providers, err = hcs.providerService.LoadProvidersForUser(userID, platform)
+	} else {
+		providers, err = hcs.providerService.LoadProviders(platform)
+	}
 	if err != nil {
 		return fmt.Errorf("加载供应商失败: %w", err)
 	}
@@ -956,7 +1050,12 @@ func (hcs *HealthCheckService) SaveAvailabilityConfig(platform string, providerI
 		return fmt.Errorf("未找到供应商 ID: %d", providerID)
 	}
 
-	if err := hcs.providerService.SaveProviders(platform, providers); err != nil {
+	if strings.TrimSpace(userID) != "" {
+		err = hcs.providerService.SaveProvidersForUser(userID, platform, providers)
+	} else {
+		err = hcs.providerService.SaveProviders(platform, providers)
+	}
+	if err != nil {
 		return fmt.Errorf("保存供应商配置失败: %w", err)
 	}
 
@@ -985,6 +1084,35 @@ func (hcs *HealthCheckService) CleanupOldRecords(daysToKeep int) (int64, error) 
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected > 0 {
 		log.Printf("[HealthCheck] 已清理 %d 条过期历史记录", rowsAffected)
+	}
+
+	return rowsAffected, nil
+}
+
+// CleanupOldRecordsForUser 清理当前用户的过期历史记录。
+func (hcs *HealthCheckService) CleanupOldRecordsForUser(userID string, daysToKeep int) (int64, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return 0, fmt.Errorf("用户 ID 不能为空")
+	}
+	if daysToKeep <= 0 {
+		daysToKeep = 7
+	}
+
+	db, err := xdb.DB("default")
+	if err != nil {
+		return 0, fmt.Errorf("获取数据库连接失败: %w", err)
+	}
+
+	cutoff := time.Now().AddDate(0, 0, -daysToKeep)
+	result, err := db.Exec(`DELETE FROM health_check_history WHERE user_id = ? AND checked_at < ?`, userID, cutoff)
+	if err != nil {
+		return 0, fmt.Errorf("清理历史记录失败: %w", err)
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected > 0 {
+		log.Printf("[HealthCheck] 已为用户 %s 清理 %d 条过期历史记录", userID, rowsAffected)
 	}
 
 	return rowsAffected, nil

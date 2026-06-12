@@ -50,7 +50,7 @@ type ProviderPool struct {
 type ProviderPoolMember struct {
 	ProviderID int64 `json:"providerId"`
 	Enabled    bool  `json:"enabled"`
-	Level      int   `json:"level,omitempty"`  // 该 pool 内的优先级，数字越小越先尝试（默认 1，回退到 provider 全局 Level）
+	Level      int   `json:"level,omitempty"` // 该 pool 内的优先级，数字越小越先尝试（默认 1，回退到 provider 全局 Level）
 	Priority   int   `json:"priority,omitempty"`
 	Weight     int   `json:"weight,omitempty"`
 }
@@ -81,6 +81,10 @@ type PoolBindingChecker interface {
 	IsPoolBoundToAnyKey(poolID string) (bool, []string, error)
 }
 
+type UserPoolBindingChecker interface {
+	IsPoolBoundToAnyKeyForUser(userID string, poolID string) (bool, []string, error)
+}
+
 // ProviderPoolService 供应商池服务
 // 管理 provider-pools.json 的读写、初始池创建、池子查找
 type ProviderPoolService struct {
@@ -101,6 +105,17 @@ func NewProviderPoolService() *ProviderPoolService {
 		path:           filepath.Join(home, appSettingsDir, providerPoolsFile),
 		bindingChecker: nil,
 	}
+}
+
+func NewProviderPoolServiceForUser(userID string) (*ProviderPoolService, error) {
+	dir, err := UserDataDir(userID)
+	if err != nil {
+		return nil, err
+	}
+	return &ProviderPoolService{
+		path:           filepath.Join(dir, providerPoolsFile),
+		bindingChecker: nil,
+	}, nil
 }
 
 // SetBindingChecker 设置 binding checker（由调用方在初始化时注入）
@@ -128,6 +143,15 @@ func (s *ProviderPoolService) ListPools(platform string) ([]ProviderPool, error)
 	return pools, nil
 }
 
+func (s *ProviderPoolService) ListPoolsForUser(userID string, platform string) ([]ProviderPool, error) {
+	userService, err := NewProviderPoolServiceForUser(userID)
+	if err != nil {
+		return nil, err
+	}
+	userService.bindingChecker = s.bindingChecker
+	return userService.ListPools(platform)
+}
+
 // ListAllPools 列出所有池子（不按 platform 过滤）
 func (s *ProviderPoolService) ListAllPools() ([]ProviderPool, error) {
 	s.mu.Lock()
@@ -139,6 +163,15 @@ func (s *ProviderPoolService) ListAllPools() ([]ProviderPool, error) {
 	}
 
 	return store.Pools, nil
+}
+
+func (s *ProviderPoolService) ListAllPoolsForUser(userID string) ([]ProviderPool, error) {
+	userService, err := NewProviderPoolServiceForUser(userID)
+	if err != nil {
+		return nil, err
+	}
+	userService.bindingChecker = s.bindingChecker
+	return userService.ListAllPools()
 }
 
 // GetPool 根据 ID 获取池子
@@ -159,6 +192,15 @@ func (s *ProviderPoolService) GetPool(poolID string) (*ProviderPool, error) {
 	}
 
 	return nil, nil
+}
+
+func (s *ProviderPoolService) GetPoolForUser(userID string, poolID string) (*ProviderPool, error) {
+	userService, err := NewProviderPoolServiceForUser(userID)
+	if err != nil {
+		return nil, err
+	}
+	userService.bindingChecker = s.bindingChecker
+	return userService.GetPool(poolID)
 }
 
 // SavePool 保存或更新池子
@@ -230,6 +272,15 @@ func (s *ProviderPoolService) SavePool(pool *ProviderPool) (string, error) {
 	return pool.ID, nil
 }
 
+func (s *ProviderPoolService) SavePoolForUser(userID string, pool *ProviderPool) (string, error) {
+	userService, err := NewProviderPoolServiceForUser(userID)
+	if err != nil {
+		return "", err
+	}
+	userService.bindingChecker = s.bindingChecker
+	return userService.SavePool(pool)
+}
+
 // DeletePool 删除池子
 // 被 relay key 绑定的池子不可删除（需先迁移绑定）
 func (s *ProviderPoolService) DeletePool(poolID string) error {
@@ -267,6 +318,18 @@ func (s *ProviderPoolService) DeletePool(poolID string) error {
 
 	store.Pools = filtered
 	return s.saveLocked(store)
+}
+
+func (s *ProviderPoolService) DeletePoolForUser(userID string, poolID string) error {
+	userService, err := NewProviderPoolServiceForUser(userID)
+	if err != nil {
+		return err
+	}
+	userService.bindingChecker = userScopedPoolBindingChecker{
+		userID:  userID,
+		checker: s.bindingChecker,
+	}
+	return userService.DeletePool(poolID)
 }
 
 // findPoolInStoreLocked 在 store 中查找池子（内部方法，调用方已持有锁）
@@ -331,6 +394,15 @@ func (s *ProviderPoolService) EnsureDefaultPool(platform string, providers []Pro
 
 	fmt.Printf("[ProviderPoolService] 为 %s 创建初始池（模式: %s, 成员: %d）\n", platform, seed.Mode, len(members))
 	return &pool, nil
+}
+
+func (s *ProviderPoolService) EnsureDefaultPoolForUser(userID string, platform string, providers []Provider, seed DefaultPoolSeed) (*ProviderPool, error) {
+	userService, err := NewProviderPoolServiceForUser(userID)
+	if err != nil {
+		return nil, err
+	}
+	userService.bindingChecker = s.bindingChecker
+	return userService.EnsureDefaultPool(platform, providers, seed)
 }
 
 // EnsureDefaultPoolsForAllPlatforms 为所有已有 platform 确保初始池
@@ -399,6 +471,30 @@ func (s *ProviderPoolService) ResolvePoolByID(poolID string) (*ProviderPool, err
 	}
 
 	return nil, nil
+}
+
+func (s *ProviderPoolService) ResolvePoolByIDForUser(userID string, poolID string) (*ProviderPool, error) {
+	userService, err := NewProviderPoolServiceForUser(userID)
+	if err != nil {
+		return nil, err
+	}
+	userService.bindingChecker = s.bindingChecker
+	return userService.ResolvePoolByID(poolID)
+}
+
+type userScopedPoolBindingChecker struct {
+	userID  string
+	checker PoolBindingChecker
+}
+
+func (c userScopedPoolBindingChecker) IsPoolBoundToAnyKey(poolID string) (bool, []string, error) {
+	if c.checker == nil {
+		return false, nil, nil
+	}
+	if checker, ok := c.checker.(UserPoolBindingChecker); ok {
+		return checker.IsPoolBoundToAnyKeyForUser(c.userID, poolID)
+	}
+	return c.checker.IsPoolBoundToAnyKey(poolID)
 }
 
 // ========== 内部方法 ==========

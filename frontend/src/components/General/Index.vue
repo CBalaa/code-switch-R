@@ -8,6 +8,9 @@ import ThemeSetting from '../Setting/ThemeSetting.vue'
 import NetworkSettings from '../Setting/NetworkSettings.vue'
 import SecuritySettings from '../Setting/SecuritySettings.vue'
 import { fetchAppSettings, saveAppSettings, type AppSettings } from '../../services/appSettings'
+import { logoutAdmin } from '../../services/adminAuth'
+import { extractErrorMessage } from '../../utils/error'
+import { showToast } from '../../utils/toast'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
@@ -26,9 +29,24 @@ const switchNotifyEnabled = ref(getCachedValue('switchNotify', true)) // 切换�
 const codexStreamGuardEnabled = ref(getCachedValue('codexStreamGuard', true))
 const settingsLoading = ref(true)
 const saveBusy = ref(false)
+const logoutBusy = ref(false)
 
 const goBack = () => {
   router.push('/')
+}
+
+const handleLogout = async () => {
+  if (logoutBusy.value) return
+
+  logoutBusy.value = true
+  try {
+    await logoutAdmin()
+    showToast(t('auth.security.logoutSuccess'), 'success')
+  } catch (error) {
+    showToast(extractErrorMessage(error, t('auth.security.logoutFailed')), 'error')
+  } finally {
+    logoutBusy.value = false
+  }
 }
 
 const loadAppSettings = async () => {
@@ -102,6 +120,9 @@ onMounted(async () => {
   <div class="main-shell general-shell">
     <div class="global-actions">
       <p class="global-eyebrow">{{ $t('components.general.title.application') }}</p>
+      <button class="settings-logout-button" type="button" :disabled="logoutBusy" @click="handleLogout">
+        {{ $t('auth.security.logout') }}
+      </button>
       <button class="ghost-icon" :aria-label="$t('components.general.buttons.back')" @click="goBack">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path
@@ -242,6 +263,28 @@ onMounted(async () => {
 
 .mac-panel + .mac-panel {
   margin-top: 12px;
+}
+
+.settings-logout-button {
+  min-height: 34px;
+  border: 1px solid color-mix(in srgb, #ef4444 28%, var(--mac-border));
+  border-radius: 10px;
+  background: color-mix(in srgb, #ef4444 10%, var(--mac-surface));
+  color: #dc2626;
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease, opacity 0.18s ease;
+}
+
+.settings-logout-button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, #ef4444 45%, var(--mac-border));
+  background: color-mix(in srgb, #ef4444 15%, var(--mac-surface));
+}
+
+.settings-logout-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 
 .toggle-with-hint {

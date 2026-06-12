@@ -2,34 +2,32 @@ package services
 
 import (
 	"crypto/rand"
-	"crypto/subtle"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
-
-	"golang.org/x/crypto/bcrypt"
 )
 
-const (
-	AdminSessionTTL = 7 * 24 * time.Hour
-)
+const AdminSessionTTL = 7 * 24 * time.Hour
 
 type AdminAuthStatus struct {
 	Initialized   bool   `json:"initialized"`
 	Authenticated bool   `json:"authenticated"`
+	UserID        string `json:"userID,omitempty"`
 	Username      string `json:"username,omitempty"`
 }
 
 type adminSessionRecord struct {
+	UserID    string
 	Username  string
 	ExpiresAt time.Time
 }
 
 type AdminAuthService struct {
 	appSettings *AppSettingsService
+	users       *UserStore
 	mu          sync.Mutex
 	sessions    map[string]adminSessionRecord
 	now         func() time.Time
@@ -38,217 +36,167 @@ type AdminAuthService struct {
 func NewAdminAuthService(appSettings *AppSettingsService) *AdminAuthService {
 	return &AdminAuthService{
 		appSettings: appSettings,
+		users:       NewUserStore(),
 		sessions:    make(map[string]adminSessionRecord),
 		now:         time.Now,
 	}
 }
 
-func (s *AdminAuthService) GetStatus(sessionToken string) (*AdminAuthStatus, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (s *AdminAuthService) UserStore() *UserStore {
+	if s == nil {
+		return nil
+	}
+	return s.users
+}
 
-	config, err := s.appSettings.GetAdminAuthConfig()
+func (s *AdminAuthService) GetStatus(sessionToken string) (*AdminAuthStatus, error) {
+	userCount, err := s.users.CountUsers()
 	if err != nil {
 		return nil, err
 	}
-
-	status := &AdminAuthStatus{
-		Initialized: isAdminConfigured(config),
-	}
+	status := &AdminAuthStatus{Initialized: userCount > 0}
 	if !status.Initialized {
 		return status, nil
 	}
 
-	username, ok := s.validateSessionLocked(config, sessionToken)
+	user, ok, err := s.ValidateUserSession(sessionToken)
+	if err != nil {
+		return nil, err
+	}
 	if ok {
 		status.Authenticated = true
-		status.Username = username
+		status.UserID = user.ID
+		status.Username = user.Username
 	}
-
 	return status, nil
 }
 
+// InitializeAdmin is retained for compatibility with existing local tests and
+// desktop callers. The web server no longer exposes user creation.
 func (s *AdminAuthService) InitializeAdmin(username, password string) (string, *AdminAuthStatus, error) {
+	if count, err := s.users.CountUsers(); err != nil {
+		return "", nil, err
+	} else if count > 0 {
+		return "", nil, errors.New("用户已初始化")
+	}
+
+	user, err := s.users.AddUser(username, password)
+	if err != nil {
+		return "", nil, err
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	config, err := s.appSettings.GetAdminAuthConfig()
-	if err != nil {
-		return "", nil, err
-	}
-	if isAdminConfigured(config) {
-		return "", nil, errors.New("管理员账号已初始化")
-	}
-
-	normalizedUsername, err := normalizeAdminUsername(username)
-	if err != nil {
-		return "", nil, err
-	}
-	if err := validateAdminPassword(password); err != nil {
-		return "", nil, err
-	}
-
-	passwordHash, err := hashAdminPassword(password)
-	if err != nil {
-		return "", nil, err
-	}
-	sessionSecret, err := generateAdminSessionSecret()
-	if err != nil {
-		return "", nil, err
-	}
-
-	config = AdminAuthConfig{
-		Enabled:       true,
-		Username:      normalizedUsername,
-		PasswordHash:  passwordHash,
-		SessionSecret: sessionSecret,
-	}
-	if err := s.appSettings.SaveAdminAuthConfig(config); err != nil {
-		return "", nil, err
-	}
-
 	s.sessions = make(map[string]adminSessionRecord)
-
-	token, err := s.issueSessionLocked(normalizedUsername)
+	token, err := s.issueSessionLocked(user.ID, user.Username)
 	if err != nil {
 		return "", nil, err
 	}
-
 	return token, &AdminAuthStatus{
 		Initialized:   true,
 		Authenticated: true,
-		Username:      normalizedUsername,
+		UserID:        user.ID,
+		Username:      user.Username,
 	}, nil
 }
 
 func (s *AdminAuthService) Login(username, password string) (string, *AdminAuthStatus, error) {
+	user, err := s.users.Authenticate(username, password)
+	if err != nil {
+		return "", nil, err
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	config, err := s.appSettings.GetAdminAuthConfig()
+	token, err := s.issueSessionLocked(user.ID, user.Username)
 	if err != nil {
 		return "", nil, err
 	}
-	if !isAdminConfigured(config) {
-		return "", nil, errors.New("管理员账号尚未初始化")
-	}
-
-	normalizedUsername, err := normalizeAdminUsername(username)
-	if err != nil {
-		return "", nil, err
-	}
-	if subtle.ConstantTimeCompare([]byte(normalizedUsername), []byte(config.Username)) != 1 {
-		return "", nil, errors.New("账号或密码错误")
-	}
-	if err := bcrypt.CompareHashAndPassword([]byte(config.PasswordHash), []byte(password)); err != nil {
-		return "", nil, errors.New("账号或密码错误")
-	}
-
-	if strings.TrimSpace(config.SessionSecret) == "" {
-		config.SessionSecret, err = generateAdminSessionSecret()
-		if err != nil {
-			return "", nil, err
-		}
-		if err := s.appSettings.SaveAdminAuthConfig(config); err != nil {
-			return "", nil, err
-		}
-	}
-
-	token, err := s.issueSessionLocked(config.Username)
-	if err != nil {
-		return "", nil, err
-	}
-
 	return token, &AdminAuthStatus{
 		Initialized:   true,
 		Authenticated: true,
-		Username:      config.Username,
+		UserID:        user.ID,
+		Username:      user.Username,
 	}, nil
 }
 
+// UpdateCredentials is kept for compatibility. Operational user management is
+// handled by scripts/manage-users.
 func (s *AdminAuthService) UpdateCredentials(currentPassword, newUsername, newPassword string) (string, *AdminAuthStatus, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	config, err := s.appSettings.GetAdminAuthConfig()
+	current, ok, err := s.currentSingleUser()
 	if err != nil {
 		return "", nil, err
 	}
-	if !isAdminConfigured(config) {
-		return "", nil, errors.New("管理员账号尚未初始化")
+	if !ok {
+		return "", nil, errors.New("没有可更新的用户")
 	}
-	if err := bcrypt.CompareHashAndPassword([]byte(config.PasswordHash), []byte(currentPassword)); err != nil {
+	if _, err := s.users.Authenticate(current.Username, currentPassword); err != nil {
 		return "", nil, errors.New("当前密码错误")
 	}
 
-	nextUsername := config.Username
-	changed := false
-	if strings.TrimSpace(newUsername) != "" {
-		nextUsername, err = normalizeAdminUsername(newUsername)
-		if err != nil {
-			return "", nil, err
-		}
-		changed = true
+	nextUsername := strings.TrimSpace(newUsername)
+	if nextUsername == "" {
+		nextUsername = current.Username
 	}
-
-	nextPasswordHash := config.PasswordHash
-	if strings.TrimSpace(newPassword) != "" {
-		if err := validateAdminPassword(newPassword); err != nil {
-			return "", nil, err
-		}
-		nextPasswordHash, err = hashAdminPassword(newPassword)
-		if err != nil {
-			return "", nil, err
-		}
-		changed = true
-	}
-
-	if !changed {
-		return "", nil, errors.New("没有需要更新的管理员信息")
-	}
-
-	nextSecret, err := generateAdminSessionSecret()
+	user, err := s.users.UpdateSingleUserCredentials(current.ID, nextUsername, newPassword)
 	if err != nil {
 		return "", nil, err
 	}
-
-	config.Enabled = true
-	config.Username = nextUsername
-	config.PasswordHash = nextPasswordHash
-	config.SessionSecret = nextSecret
-
-	if err := s.appSettings.SaveAdminAuthConfig(config); err != nil {
-		return "", nil, err
-	}
-
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.sessions = make(map[string]adminSessionRecord)
-
-	token, err := s.issueSessionLocked(nextUsername)
+	token, err := s.issueSessionLocked(user.ID, user.Username)
 	if err != nil {
 		return "", nil, err
 	}
-
 	return token, &AdminAuthStatus{
 		Initialized:   true,
 		Authenticated: true,
-		Username:      nextUsername,
+		UserID:        user.ID,
+		Username:      user.Username,
 	}, nil
 }
 
 func (s *AdminAuthService) ValidateSession(sessionToken string) (string, bool, error) {
+	user, ok, err := s.ValidateUserSession(sessionToken)
+	if err != nil || !ok {
+		return "", ok, err
+	}
+	return user.Username, true, nil
+}
+
+func (s *AdminAuthService) ValidateUserSession(sessionToken string) (*AuthenticatedUser, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	config, err := s.appSettings.GetAdminAuthConfig()
-	if err != nil {
-		return "", false, err
+	sessionToken = strings.TrimSpace(sessionToken)
+	if sessionToken == "" {
+		return nil, false, nil
 	}
-	if !isAdminConfigured(config) {
-		return "", false, nil
+	s.pruneExpiredSessionsLocked()
+	session, ok := s.sessions[sessionToken]
+	if !ok {
+		return nil, false, nil
+	}
+	if !session.ExpiresAt.After(s.now()) {
+		delete(s.sessions, sessionToken)
+		return nil, false, nil
 	}
 
-	username, ok := s.validateSessionLocked(config, sessionToken)
-	return username, ok, nil
+	user, err := s.users.GetEnabledUserByID(session.UserID)
+	if err != nil {
+		delete(s.sessions, sessionToken)
+		return nil, false, nil
+	}
+	if user == nil {
+		delete(s.sessions, sessionToken)
+		return nil, false, nil
+	}
+	if !strings.EqualFold(user.Username, session.Username) {
+		session.Username = user.Username
+		s.sessions[sessionToken] = session
+	}
+	return &AuthenticatedUser{ID: user.ID, Username: user.Username}, true, nil
 }
 
 func (s *AdminAuthService) Logout(sessionToken string) error {
@@ -259,52 +207,26 @@ func (s *AdminAuthService) Logout(sessionToken string) error {
 	if sessionToken == "" {
 		return nil
 	}
-
 	delete(s.sessions, sessionToken)
 	return nil
 }
 
-func (s *AdminAuthService) validateSessionLocked(config AdminAuthConfig, sessionToken string) (string, bool) {
+func (s *AdminAuthService) issueSessionLocked(userID, username string) (string, error) {
+	userID = strings.TrimSpace(userID)
+	username = strings.TrimSpace(username)
+	if userID == "" || username == "" {
+		return "", errors.New("用户信息不能为空")
+	}
 	s.pruneExpiredSessionsLocked()
-
-	sessionToken = strings.TrimSpace(sessionToken)
-	if sessionToken == "" {
-		return "", false
-	}
-
-	session, ok := s.sessions[sessionToken]
-	if !ok {
-		return "", false
-	}
-	if session.ExpiresAt.Before(s.now()) || session.ExpiresAt.Equal(s.now()) {
-		delete(s.sessions, sessionToken)
-		return "", false
-	}
-	if subtle.ConstantTimeCompare([]byte(session.Username), []byte(config.Username)) != 1 {
-		delete(s.sessions, sessionToken)
-		return "", false
-	}
-
-	return session.Username, true
-}
-
-func (s *AdminAuthService) issueSessionLocked(username string) (string, error) {
-	if strings.TrimSpace(username) == "" {
-		return "", errors.New("管理员账号不能为空")
-	}
-
-	s.pruneExpiredSessionsLocked()
-
 	token, err := generateAdminOpaqueToken()
 	if err != nil {
 		return "", err
 	}
-
 	s.sessions[token] = adminSessionRecord{
+		UserID:    userID,
 		Username:  username,
 		ExpiresAt: s.now().Add(AdminSessionTTL),
 	}
-
 	return token, nil
 }
 
@@ -317,33 +239,27 @@ func (s *AdminAuthService) pruneExpiredSessionsLocked() {
 	}
 }
 
+func (s *AdminAuthService) currentSingleUser() (*UserAccount, bool, error) {
+	users, err := s.users.ListUsers()
+	if err != nil {
+		return nil, false, err
+	}
+	if len(users) != 1 {
+		return nil, false, nil
+	}
+	return &users[0], true, nil
+}
+
 func normalizeAdminUsername(username string) (string, error) {
-	username = strings.TrimSpace(username)
-	if username == "" {
-		return "", errors.New("管理员账号不能为空")
-	}
-	if len([]rune(username)) > 64 {
-		return "", errors.New("管理员账号长度不能超过 64 个字符")
-	}
-	return username, nil
+	return NormalizeUsername(username)
 }
 
 func validateAdminPassword(password string) error {
-	if len(password) < 8 {
-		return errors.New("管理员密码至少需要 8 个字符")
-	}
-	if len(password) > 256 {
-		return errors.New("管理员密码长度不能超过 256 个字符")
-	}
-	return nil
+	return ValidateUserPassword(password)
 }
 
 func hashAdminPassword(password string) (string, error) {
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		return "", fmt.Errorf("生成管理员密码哈希失败: %w", err)
-	}
-	return string(hash), nil
+	return HashUserPassword(password)
 }
 
 func generateAdminSessionSecret() (string, error) {
@@ -357,7 +273,7 @@ func generateAdminOpaqueToken() (string, error) {
 func generateAdminRandomToken(size int, name string) (string, error) {
 	buf := make([]byte, size)
 	if _, err := rand.Read(buf); err != nil {
-		return "", fmt.Errorf("生成管理员 %s 失败: %w", name, err)
+		return "", fmt.Errorf("生成 %s 失败: %w", name, err)
 	}
 	return base64.RawURLEncoding.EncodeToString(buf), nil
 }

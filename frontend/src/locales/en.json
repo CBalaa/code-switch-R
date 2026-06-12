@@ -83,10 +83,15 @@
       "submitting": "Signing in...",
       "success": "Signed in successfully"
     },
+    "noUsers": {
+      "eyebrow": "No users yet",
+      "title": "Create a user on the server",
+      "description": "Web registration is disabled. Run scripts/manage-users add --username <name> on the server, then return here to sign in."
+    },
     "security": {
-      "description": "Manage the 8080 admin account credentials. Relay access keys are managed from the Keys page in the sidebar.",
+      "description": "The current user is managed by the server-side script. Relay access keys are managed from the Keys page in the sidebar.",
       "adminCardTitle": "Admin account",
-      "adminCardDescription": "Current signed-in account: {username}. Leave the new username or password blank to keep the current value.",
+      "adminCardDescription": "Current signed-in account: {username}. To disable users or reset passwords, run scripts/manage-users on the server.",
       "update": "Update credentials",
       "updating": "Updating...",
       "updateSuccess": "Admin credentials updated",

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { initializeAdmin, loginAdmin, useAdminAuthState } from '../../services/adminAuth'
+import { loginAdmin, useAdminAuthState } from '../../services/adminAuth'
 import { extractErrorMessage } from '../../utils/error'
 import { showToast } from '../../utils/toast'
 
@@ -10,34 +10,20 @@ const authState = useAdminAuthState()
 
 const username = ref('')
 const password = ref('')
-const confirmPassword = ref('')
-const setupToken = ref('')
 const submitting = ref(false)
 
-const isSetupMode = computed(() => !authState.initialized)
+const hasUsers = computed(() => authState.initialized)
 
 const submit = async () => {
   if (submitting.value) {
     return
   }
 
-  if (isSetupMode.value && password.value !== confirmPassword.value) {
-    showToast(t('auth.errors.passwordMismatch'), 'error')
-    return
-  }
-
   submitting.value = true
   try {
-    if (isSetupMode.value) {
-      await initializeAdmin(username.value.trim(), password.value, setupToken.value.trim())
-      showToast(t('auth.setup.success'), 'success')
-    } else {
-      await loginAdmin(username.value.trim(), password.value)
-      showToast(t('auth.login.success'), 'success')
-    }
+    await loginAdmin(username.value.trim(), password.value)
+    showToast(t('auth.login.success'), 'success')
     password.value = ''
-    confirmPassword.value = ''
-    setupToken.value = ''
   } catch (error) {
     showToast(extractErrorMessage(error, t('auth.errors.requestFailed')), 'error')
   } finally {
@@ -65,15 +51,21 @@ const submit = async () => {
           <span>{{ t('auth.statusChecking') }}</span>
         </div>
 
+        <div v-else-if="!hasUsers" class="auth-form">
+          <p class="auth-form-eyebrow">{{ t('auth.noUsers.eyebrow') }}</p>
+          <h2 class="auth-form-title">{{ t('auth.noUsers.title') }}</h2>
+          <p class="auth-form-description">{{ t('auth.noUsers.description') }}</p>
+        </div>
+
         <form v-else class="auth-form" @submit.prevent="submit">
           <p class="auth-form-eyebrow">
-            {{ isSetupMode ? t('auth.setup.eyebrow') : t('auth.login.eyebrow') }}
+            {{ t('auth.login.eyebrow') }}
           </p>
           <h2 class="auth-form-title">
-            {{ isSetupMode ? t('auth.setup.title') : t('auth.login.title') }}
+            {{ t('auth.login.title') }}
           </h2>
           <p class="auth-form-description">
-            {{ isSetupMode ? t('auth.setup.description') : t('auth.login.description') }}
+            {{ t('auth.login.description') }}
           </p>
 
           <label class="auth-field">
@@ -102,42 +94,8 @@ const submit = async () => {
             />
           </label>
 
-          <label v-if="isSetupMode" class="auth-field">
-            <span>{{ t('auth.fields.confirmPassword') }}</span>
-            <input
-              v-model="confirmPassword"
-              class="base-input"
-              type="password"
-              autocomplete="new-password"
-              :placeholder="t('auth.placeholders.confirmPassword')"
-              :disabled="submitting"
-              required
-            />
-          </label>
-
-          <label v-if="isSetupMode" class="auth-field">
-            <span>{{ t('auth.fields.setupToken') }}</span>
-            <input
-              v-model="setupToken"
-              class="base-input"
-              type="password"
-              autocomplete="one-time-code"
-              :placeholder="t('auth.placeholders.setupToken')"
-              :disabled="submitting"
-            />
-            <small>{{ t('auth.setup.tokenHint') }}</small>
-          </label>
-
           <button class="auth-submit" type="submit" :disabled="submitting">
-            {{
-              submitting
-                ? isSetupMode
-                  ? t('auth.setup.submitting')
-                  : t('auth.login.submitting')
-                : isSetupMode
-                  ? t('auth.setup.submit')
-                  : t('auth.login.submit')
-            }}
+            {{ submitting ? t('auth.login.submitting') : t('auth.login.submit') }}
           </button>
         </form>
       </section>

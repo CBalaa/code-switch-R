@@ -159,17 +159,20 @@ func TestAdminServerInitializeAndManageCodexKeys(t *testing.T) {
 	rt := newTestWebRuntime(t)
 	server := newAdminServer(rt)
 
-	initialize := performRequest(t, server.Handler, http.MethodPost, "/api/admin/initialize", map[string]string{
+	if _, _, err := rt.adminAuth.InitializeAdmin("admin", "password123"); err != nil {
+		t.Fatalf("failed to seed user: %v", err)
+	}
+	login := performRequest(t, server.Handler, http.MethodPost, "/api/admin/login", map[string]string{
 		"username": "admin",
 		"password": "password123",
 	})
-	if initialize.Code != http.StatusOK {
-		t.Fatalf("expected initialize 200, got %d: %s", initialize.Code, initialize.Body.String())
+	if login.Code != http.StatusOK {
+		t.Fatalf("expected login 200, got %d: %s", login.Code, login.Body.String())
 	}
 
-	cookies := initialize.Result().Cookies()
+	cookies := login.Result().Cookies()
 	if len(cookies) == 0 {
-		t.Fatal("expected initialize response to set an admin session cookie")
+		t.Fatal("expected login response to set an admin session cookie")
 	}
 	adminCookie := cookies[0]
 
@@ -207,8 +210,8 @@ func TestAdminServerInitializeAndManageCodexKeys(t *testing.T) {
 	}
 
 	deleteLast := performRequest(t, server.Handler, http.MethodDelete, "/api/admin/codex-keys/"+firstKey.ID, nil, adminCookie)
-	if deleteLast.Code != http.StatusBadRequest {
-		t.Fatalf("expected deleting last key to fail with 400, got %d: %s", deleteLast.Code, deleteLast.Body.String())
+	if deleteLast.Code != http.StatusNoContent {
+		t.Fatalf("expected deleting own key to succeed, got %d: %s", deleteLast.Code, deleteLast.Body.String())
 	}
 
 	createSecond := performRequest(t, server.Handler, http.MethodPost, "/api/admin/codex-keys", map[string]string{
@@ -216,11 +219,6 @@ func TestAdminServerInitializeAndManageCodexKeys(t *testing.T) {
 	}, adminCookie)
 	if createSecond.Code != http.StatusOK {
 		t.Fatalf("expected create second key 200, got %d: %s", createSecond.Code, createSecond.Body.String())
-	}
-
-	deleteFirst := performRequest(t, server.Handler, http.MethodDelete, "/api/admin/codex-keys/"+firstKey.ID, nil, adminCookie)
-	if deleteFirst.Code != http.StatusNoContent {
-		t.Fatalf("expected deleting first key to succeed, got %d: %s", deleteFirst.Code, deleteFirst.Body.String())
 	}
 
 	listKeys := performRequest(t, server.Handler, http.MethodGet, "/api/admin/codex-keys", nil, adminCookie)
@@ -245,20 +243,23 @@ func TestAdminSessionCookiesAreIsolatedPerHost(t *testing.T) {
 	rt := newTestWebRuntime(t)
 	server := newAdminServer(rt)
 
-	initialize := performRequestWithOptions(t, server.Handler, http.MethodPost, "/api/admin/initialize", map[string]string{
+	if _, _, err := rt.adminAuth.InitializeAdmin("admin", "password123"); err != nil {
+		t.Fatalf("failed to seed user: %v", err)
+	}
+	login := performRequestWithOptions(t, server.Handler, http.MethodPost, "/api/admin/login", map[string]string{
 		"username": "admin",
 		"password": "password123",
 	}, requestOptions{
 		RemoteAddr: "127.0.0.1:12345",
 		Host:       "localhost:8080",
 	})
-	if initialize.Code != http.StatusOK {
-		t.Fatalf("expected initialize on localhost:8080 to return 200, got %d: %s", initialize.Code, initialize.Body.String())
+	if login.Code != http.StatusOK {
+		t.Fatalf("expected login on localhost:8080 to return 200, got %d: %s", login.Code, login.Body.String())
 	}
 
-	cookies := initialize.Result().Cookies()
+	cookies := login.Result().Cookies()
 	if len(cookies) == 0 {
-		t.Fatal("expected initialize response to set an admin session cookie")
+		t.Fatal("expected login response to set an admin session cookie")
 	}
 	adminCookie := cookies[0]
 	if adminCookie.Name != "code_switch_admin_session_localhost_8080" {
@@ -355,13 +356,8 @@ func TestAdminServerRemoteInitializeRequiresSetupToken(t *testing.T) {
 			"X-Forwarded-Host":  "admin.example.com",
 		},
 	})
-	if withToken.Code != http.StatusOK {
-		t.Fatalf("expected remote initialize with setup token to return 200, got %d: %s", withToken.Code, withToken.Body.String())
-	}
-
-	cookies := withToken.Result().Cookies()
-	if len(cookies) == 0 || !cookies[0].Secure {
-		t.Fatalf("expected remote https initialize to set a secure session cookie, got %+v", cookies)
+	if withToken.Code != http.StatusForbidden {
+		t.Fatalf("expected remote initialize with setup token to remain disabled, got %d: %s", withToken.Code, withToken.Body.String())
 	}
 }
 
@@ -369,12 +365,8 @@ func TestAdminServerRateLimitsLogin(t *testing.T) {
 	rt := newTestWebRuntime(t)
 	server := newAdminServer(rt)
 
-	initialize := performRequest(t, server.Handler, http.MethodPost, "/api/admin/initialize", map[string]string{
-		"username": "admin",
-		"password": "password123",
-	})
-	if initialize.Code != http.StatusOK {
-		t.Fatalf("expected initialize 200, got %d: %s", initialize.Code, initialize.Body.String())
+	if _, _, err := rt.adminAuth.InitializeAdmin("admin", "password123"); err != nil {
+		t.Fatalf("failed to seed user: %v", err)
 	}
 
 	for i := 0; i < services.AdminAuthMaxFailures; i++ {
@@ -403,7 +395,11 @@ func TestAdminServerRejectsCrossSiteAdminMutation(t *testing.T) {
 	rt := newTestWebRuntime(t)
 	server := newAdminServer(rt)
 
-	initialize := performRequestWithOptions(t, server.Handler, http.MethodPost, "/api/admin/initialize", map[string]string{
+	if _, _, err := rt.adminAuth.InitializeAdmin("admin", "password123"); err != nil {
+		t.Fatalf("failed to seed user: %v", err)
+	}
+
+	login := performRequestWithOptions(t, server.Handler, http.MethodPost, "/api/admin/login", map[string]string{
 		"username": "admin",
 		"password": "password123",
 	}, requestOptions{
@@ -413,11 +409,11 @@ func TestAdminServerRejectsCrossSiteAdminMutation(t *testing.T) {
 			"Origin": "http://example.com",
 		},
 	})
-	if initialize.Code != http.StatusOK {
-		t.Fatalf("expected initialize 200, got %d: %s", initialize.Code, initialize.Body.String())
+	if login.Code != http.StatusOK {
+		t.Fatalf("expected login 200, got %d: %s", login.Code, login.Body.String())
 	}
 
-	adminCookie := initialize.Result().Cookies()[0]
+	adminCookie := login.Result().Cookies()[0]
 
 	crossSite := performRequestWithOptions(t, server.Handler, http.MethodPost, "/api/admin/codex-keys", map[string]string{
 		"name": "evil",

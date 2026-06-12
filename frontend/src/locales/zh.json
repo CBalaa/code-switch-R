@@ -83,10 +83,15 @@
       "submitting": "登录中...",
       "success": "登录成功"
     },
+    "noUsers": {
+      "eyebrow": "尚未创建用户",
+      "title": "需要服务器管理员创建用户",
+      "description": "网页端不开放注册。请在服务器运行 scripts/manage-users add --username <name> 创建第一个用户，然后回到这里登录。"
+    },
     "security": {
-      "description": "管理 8080 后台账号密码。Relay 访问密钥请在侧栏的“密钥”页面管理。",
+      "description": "当前用户由服务器脚本管理。Relay 访问密钥请在侧栏的“密钥”页面管理。",
       "adminCardTitle": "管理员账号",
-      "adminCardDescription": "当前登录账号：{username}。新账号或新密码留空时表示保持不变。",
+      "adminCardDescription": "当前登录账号：{username}。如需禁用用户或重置密码，请在服务器运行 scripts/manage-users。",
       "update": "更新账号密码",
       "updating": "更新中...",
       "updateSuccess": "管理员账号已更新",

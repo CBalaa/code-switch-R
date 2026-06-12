@@ -23,6 +23,7 @@ const (
 
 type CodexRelayKey struct {
 	ID           string            `json:"id"`
+	OwnerUserID  string            `json:"ownerUserID,omitempty"`
 	Name         string            `json:"name"`
 	Key          string            `json:"key"`
 	Enabled      bool              `json:"enabled"`
@@ -32,6 +33,7 @@ type CodexRelayKey struct {
 
 type CodexRelayKeyListItem struct {
 	ID           string            `json:"id"`
+	OwnerUserID  string            `json:"ownerUserID,omitempty"`
 	Name         string            `json:"name"`
 	MaskedKey    string            `json:"maskedKey"`
 	Enabled      bool              `json:"enabled"`
@@ -40,15 +42,17 @@ type CodexRelayKeyListItem struct {
 }
 
 type CodexRelayKeyCreateResult struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Key       string    `json:"key"`
-	Enabled   bool      `json:"enabled"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID          string    `json:"id"`
+	OwnerUserID string    `json:"ownerUserID,omitempty"`
+	Name        string    `json:"name"`
+	Key         string    `json:"key"`
+	Enabled     bool      `json:"enabled"`
+	CreatedAt   time.Time `json:"createdAt"`
 }
 
 type CodexRelayKeyMatch struct {
 	ID           string            `json:"id"`
+	OwnerUserID  string            `json:"ownerUserID,omitempty"`
 	Name         string            `json:"name"`
 	PoolBindings map[string]string `json:"poolBindings,omitempty"` // platform -> poolID
 }
@@ -105,6 +109,7 @@ func (s *CodexRelayKeyService) ListKeys() ([]CodexRelayKeyListItem, error) {
 	for _, key := range store.Keys {
 		keys = append(keys, CodexRelayKeyListItem{
 			ID:           key.ID,
+			OwnerUserID:  key.OwnerUserID,
 			Name:         key.Name,
 			MaskedKey:    maskCodexRelayKey(key.Key),
 			Enabled:      key.Enabled,
@@ -113,6 +118,33 @@ func (s *CodexRelayKeyService) ListKeys() ([]CodexRelayKeyListItem, error) {
 		})
 	}
 
+	return keys, nil
+}
+
+func (s *CodexRelayKeyService) ListKeysForUser(userID string) ([]CodexRelayKeyListItem, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	store, err := s.loadLocked()
+	if err != nil {
+		return nil, err
+	}
+
+	keys := make([]CodexRelayKeyListItem, 0)
+	for _, key := range store.Keys {
+		if key.OwnerUserID != userID {
+			continue
+		}
+		keys = append(keys, CodexRelayKeyListItem{
+			ID:           key.ID,
+			OwnerUserID:  key.OwnerUserID,
+			Name:         key.Name,
+			MaskedKey:    maskCodexRelayKey(key.Key),
+			Enabled:      key.Enabled,
+			CreatedAt:    key.CreatedAt,
+			PoolBindings: key.PoolBindings,
+		})
+	}
 	return keys, nil
 }
 
@@ -155,6 +187,50 @@ func (s *CodexRelayKeyService) CreateKey(name string) (*CodexRelayKeyCreateResul
 	}, nil
 }
 
+func (s *CodexRelayKeyService) CreateKeyForUser(userID string, name string) (*CodexRelayKeyCreateResult, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return nil, errors.New("用户 ID 不能为空")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	store, err := s.loadLocked()
+	if err != nil {
+		return nil, err
+	}
+	value, err := s.generateUniqueKeyValueLocked(store)
+	if err != nil {
+		return nil, err
+	}
+
+	key := CodexRelayKey{
+		ID:          fmt.Sprintf("codex-key-%d", time.Now().UnixNano()),
+		OwnerUserID: userID,
+		Name:        strings.TrimSpace(name),
+		Key:         value,
+		Enabled:     true,
+		CreatedAt:   time.Now().UTC(),
+	}
+	if key.Name == "" {
+		key.Name = fmt.Sprintf("key-%d", len(store.Keys)+1)
+	}
+
+	store.Keys = append(store.Keys, key)
+	if err := s.saveLocked(store); err != nil {
+		return nil, err
+	}
+	return &CodexRelayKeyCreateResult{
+		ID:          key.ID,
+		OwnerUserID: key.OwnerUserID,
+		Name:        key.Name,
+		Key:         key.Key,
+		Enabled:     key.Enabled,
+		CreatedAt:   key.CreatedAt,
+	}, nil
+}
+
 func (s *CodexRelayKeyService) DeleteKey(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -191,6 +267,30 @@ func (s *CodexRelayKeyService) DeleteKey(id string) error {
 	return s.saveLocked(store)
 }
 
+func (s *CodexRelayKeyService) DeleteKeyForUser(userID string, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	store, err := s.loadLocked()
+	if err != nil {
+		return err
+	}
+	filtered := make([]CodexRelayKey, 0, len(store.Keys))
+	found := false
+	for _, key := range store.Keys {
+		if key.ID == id && key.OwnerUserID == userID {
+			found = true
+			continue
+		}
+		filtered = append(filtered, key)
+	}
+	if !found {
+		return fmt.Errorf("未找到 Codex relay key: %s", id)
+	}
+	store.Keys = filtered
+	return s.saveLocked(store)
+}
+
 func (s *CodexRelayKeyService) RenameKey(id string, name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -215,6 +315,27 @@ func (s *CodexRelayKeyService) RenameKey(id string, name string) error {
 	return fmt.Errorf("未找到 Codex relay key: %s", id)
 }
 
+func (s *CodexRelayKeyService) RenameKeyForUser(userID string, id string, name string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return errors.New("密钥名称不能为空")
+	}
+	store, err := s.loadLocked()
+	if err != nil {
+		return err
+	}
+	for index := range store.Keys {
+		if store.Keys[index].ID == id && store.Keys[index].OwnerUserID == userID {
+			store.Keys[index].Name = name
+			return s.saveLocked(store)
+		}
+	}
+	return fmt.Errorf("未找到 Codex relay key: %s", id)
+}
+
 func (s *CodexRelayKeyService) GetKeySecret(id string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -230,6 +351,22 @@ func (s *CodexRelayKeyService) GetKeySecret(id string) (string, error) {
 		}
 	}
 
+	return "", fmt.Errorf("未找到 Codex relay key: %s", id)
+}
+
+func (s *CodexRelayKeyService) GetKeySecretForUser(userID string, id string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	store, err := s.loadLocked()
+	if err != nil {
+		return "", err
+	}
+	for _, key := range store.Keys {
+		if key.ID == id && key.OwnerUserID == userID {
+			return key.Key, nil
+		}
+	}
 	return "", fmt.Errorf("未找到 Codex relay key: %s", id)
 }
 
@@ -296,7 +433,7 @@ func (s *CodexRelayKeyService) ValidateKeyMatch(candidate string) (*CodexRelayKe
 			continue
 		}
 		if subtle.ConstantTimeCompare([]byte(candidate), []byte(key.Key)) == 1 {
-			return &CodexRelayKeyMatch{ID: key.ID, Name: key.Name, PoolBindings: key.PoolBindings}, nil
+			return &CodexRelayKeyMatch{ID: key.ID, OwnerUserID: key.OwnerUserID, Name: key.Name, PoolBindings: key.PoolBindings}, nil
 		}
 	}
 
@@ -304,6 +441,17 @@ func (s *CodexRelayKeyService) ValidateKeyMatch(candidate string) (*CodexRelayKe
 }
 
 func (s *CodexRelayKeyService) GetUsageStats(id string, rangeKey string, startRaw string, endRaw string) (*CodexRelayKeyUsageStats, error) {
+	return s.GetUsageStatsForUser("", id, rangeKey, startRaw, endRaw)
+}
+
+func (s *CodexRelayKeyService) GetUsageStatsForUser(userID string, id string, rangeKey string, startRaw string, endRaw string) (*CodexRelayKeyUsageStats, error) {
+	if strings.TrimSpace(userID) != "" {
+		if ok, err := s.keyBelongsToUser(userID, id); err != nil {
+			return nil, err
+		} else if !ok {
+			return nil, fmt.Errorf("未找到 Codex relay key: %s", id)
+		}
+	}
 	rangeKey, start, end, step, err := resolveRelayKeyUsageWindow(rangeKey, startRaw, endRaw)
 	if err != nil {
 		return nil, err
@@ -338,11 +486,12 @@ func (s *CodexRelayKeyService) GetUsageStats(id string, rangeKey string, startRa
 			COALESCE(SUM(reasoning_tokens), 0) AS reasoning_tokens
 		FROM request_log
 		WHERE relay_key_id = ?
+			AND (? = '' OR user_id = ?)
 			AND created_at >= ?
 			AND created_at < ?
 		GROUP BY bucket_unix
 		ORDER BY bucket_unix
-	`, int64(step.Seconds()), int64(step.Seconds()), id, start.Format("2006-01-02 15:04:05"), queryEnd.Format("2006-01-02 15:04:05"))
+	`, int64(step.Seconds()), int64(step.Seconds()), id, userID, userID, start.Format("2006-01-02 15:04:05"), queryEnd.Format("2006-01-02 15:04:05"))
 	if err != nil {
 		return nil, err
 	}
@@ -492,6 +641,42 @@ func generateCodexRelayKeyValue() (string, error) {
 	return "csk_" + base64.RawURLEncoding.EncodeToString(buf), nil
 }
 
+func (s *CodexRelayKeyService) generateUniqueKeyValueLocked(store *codexRelayKeyStore) (string, error) {
+	for attempts := 0; attempts < 10; attempts++ {
+		value, err := generateCodexRelayKeyValue()
+		if err != nil {
+			return "", err
+		}
+		duplicate := false
+		for _, key := range store.Keys {
+			if subtle.ConstantTimeCompare([]byte(value), []byte(key.Key)) == 1 {
+				duplicate = true
+				break
+			}
+		}
+		if !duplicate {
+			return value, nil
+		}
+	}
+	return "", errors.New("生成唯一 Codex relay key 失败")
+}
+
+func (s *CodexRelayKeyService) keyBelongsToUser(userID string, keyID string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	store, err := s.loadLocked()
+	if err != nil {
+		return false, err
+	}
+	for _, key := range store.Keys {
+		if key.ID == keyID && key.OwnerUserID == userID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // GetPoolBinding 获取 relay key 在指定 platform 上的池子绑定
 func (s *CodexRelayKeyService) GetPoolBinding(keyID string, platform string) (string, bool, error) {
 	s.mu.Lock()
@@ -504,6 +689,28 @@ func (s *CodexRelayKeyService) GetPoolBinding(keyID string, platform string) (st
 
 	for _, key := range store.Keys {
 		if key.ID == keyID {
+			if key.PoolBindings == nil {
+				return "", false, nil
+			}
+			poolID, ok := key.PoolBindings[platform]
+			return poolID, ok, nil
+		}
+	}
+
+	return "", false, fmt.Errorf("未找到 Codex relay key: %s", keyID)
+}
+
+func (s *CodexRelayKeyService) GetPoolBindingForUser(userID string, keyID string, platform string) (string, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	store, err := s.loadLocked()
+	if err != nil {
+		return "", false, err
+	}
+
+	for _, key := range store.Keys {
+		if key.ID == keyID && key.OwnerUserID == userID {
 			if key.PoolBindings == nil {
 				return "", false, nil
 			}
@@ -542,6 +749,30 @@ func (s *CodexRelayKeyService) SetPoolBinding(keyID string, platform string, poo
 	return fmt.Errorf("未找到 Codex relay key: %s", keyID)
 }
 
+func (s *CodexRelayKeyService) SetPoolBindingForUser(userID string, keyID string, platform string, poolID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	store, err := s.loadLocked()
+	if err != nil {
+		return err
+	}
+	for i := range store.Keys {
+		if store.Keys[i].ID == keyID && store.Keys[i].OwnerUserID == userID {
+			if store.Keys[i].PoolBindings == nil {
+				store.Keys[i].PoolBindings = make(map[string]string)
+			}
+			if poolID == "" {
+				delete(store.Keys[i].PoolBindings, platform)
+			} else {
+				store.Keys[i].PoolBindings[platform] = poolID
+			}
+			return s.saveLocked(store)
+		}
+	}
+	return fmt.Errorf("未找到 Codex relay key: %s", keyID)
+}
+
 // IsPoolBoundToAnyKey 检查指定 poolID 是否被任何 relay key 绑定
 // 用于删除 pool 前的检查
 func (s *CodexRelayKeyService) IsPoolBoundToAnyKey(poolID string) (bool, []string, error) {
@@ -566,6 +797,29 @@ func (s *CodexRelayKeyService) IsPoolBoundToAnyKey(poolID string) (bool, []strin
 		}
 	}
 
+	return len(boundKeys) > 0, boundKeys, nil
+}
+
+func (s *CodexRelayKeyService) IsPoolBoundToAnyKeyForUser(userID string, poolID string) (bool, []string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	store, err := s.loadLocked()
+	if err != nil {
+		return false, nil, err
+	}
+	boundKeys := make([]string, 0)
+	for _, key := range store.Keys {
+		if key.OwnerUserID != userID || key.PoolBindings == nil {
+			continue
+		}
+		for _, boundPoolID := range key.PoolBindings {
+			if boundPoolID == poolID {
+				boundKeys = append(boundKeys, key.Name)
+				break
+			}
+		}
+	}
 	return len(boundKeys) > 0, boundKeys, nil
 }
 

@@ -123,6 +123,18 @@ func providerFilePath(kind string) (string, error) {
 		return "", err
 	}
 	dir := filepath.Join(home, ".code-switch")
+	return providerFilePathInDir(dir, kind)
+}
+
+func providerFilePathForUser(userID string, kind string) (string, error) {
+	dir, err := UserDataDir(userID)
+	if err != nil {
+		return "", err
+	}
+	return providerFilePathInDir(dir, kind)
+}
+
+func providerFilePathInDir(dir string, kind string) (string, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
@@ -159,6 +171,16 @@ func (ps *ProviderService) SaveProviders(kind string, providers []Provider) erro
 	return ps.saveProvidersLocked(kind, providers)
 }
 
+func (ps *ProviderService) SaveProvidersForUser(userID string, kind string, providers []Provider) error {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	path, err := providerFilePathForUser(userID, kind)
+	if err != nil {
+		return err
+	}
+	return ps.saveProvidersToPathLocked(path, kind, providers)
+}
+
 // loadProvidersRaw 原样读取配置文件（不迁移、不保存）
 // 用于内部需要读取现有配置但不触发迁移的场景（如名称校验）
 func (ps *ProviderService) loadProvidersRaw(kind string) ([]Provider, error) {
@@ -166,7 +188,10 @@ func (ps *ProviderService) loadProvidersRaw(kind string) ([]Provider, error) {
 	if err != nil {
 		return nil, err
 	}
+	return ps.loadProvidersRawFromPath(path)
+}
 
+func (ps *ProviderService) loadProvidersRawFromPath(path string) ([]Provider, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -193,10 +218,13 @@ func (ps *ProviderService) saveProvidersLocked(kind string, providers []Provider
 	if err != nil {
 		return err
 	}
+	return ps.saveProvidersToPathLocked(path, kind, providers)
+}
 
+func (ps *ProviderService) saveProvidersToPathLocked(path string, kind string, providers []Provider) error {
 	// 加载现有配置，用于检查 name 是否被修改
 	// 使用原样读取，避免触发迁移导致死锁
-	existingProviders, err := ps.loadProvidersRaw(kind)
+	existingProviders, err := ps.loadProvidersRawFromPath(path)
 	if err != nil {
 		return err
 	}
@@ -294,6 +322,48 @@ func (ps *ProviderService) LoadProviders(kind string) ([]Provider, error) {
 		}
 	}
 
+	return envelope.Providers, nil
+}
+
+func (ps *ProviderService) LoadProvidersForUser(userID string, kind string) ([]Provider, error) {
+	path, err := providerFilePathForUser(userID, kind)
+	if err != nil {
+		return nil, err
+	}
+	return ps.loadProvidersFromPath(path, kind, true)
+}
+
+func (ps *ProviderService) loadProvidersFromPath(path string, kind string, persistMigrations bool) ([]Provider, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var envelope providerEnvelope
+	if len(data) == 0 {
+		return []Provider{}, nil
+	}
+	if err := json.Unmarshal(data, &envelope); err != nil {
+		return nil, err
+	}
+
+	migrated := false
+	for i := range envelope.Providers {
+		if envelope.Providers[i].migrateFromLegacy() {
+			migrated = true
+		}
+	}
+	if migrated && persistMigrations {
+		ps.mu.Lock()
+		err := ps.saveProvidersToPathLocked(path, kind, envelope.Providers)
+		ps.mu.Unlock()
+		if err != nil {
+			log.Printf("[ProviderService] 迁移后写入失败: %v\n", err)
+		}
+	}
 	return envelope.Providers, nil
 }
 
@@ -517,6 +587,84 @@ func (ps *ProviderService) DuplicateProvider(kind string, sourceID int64) (*Prov
 		return nil, fmt.Errorf("保存副本失败: %w", err)
 	}
 
+	return cloned, nil
+}
+
+func (ps *ProviderService) DuplicateProviderForUser(userID string, kind string, sourceID int64) (*Provider, error) {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+
+	path, err := providerFilePathForUser(userID, kind)
+	if err != nil {
+		return nil, err
+	}
+	providers, err := ps.loadProvidersFromPath(path, kind, false)
+	if err != nil {
+		return nil, fmt.Errorf("加载供应商配置失败: %w", err)
+	}
+
+	var source *Provider
+	for i := range providers {
+		if providers[i].ID == sourceID {
+			source = &providers[i]
+			break
+		}
+	}
+	if source == nil {
+		return nil, fmt.Errorf("未找到 ID 为 %d 的供应商", sourceID)
+	}
+
+	maxID := int64(0)
+	for _, p := range providers {
+		if p.ID > maxID {
+			maxID = p.ID
+		}
+	}
+	newID := maxID + 1
+	cloned := &Provider{
+		ID:                         newID,
+		Name:                       source.Name + " (副本)",
+		APIURL:                     source.APIURL,
+		APIKey:                     source.APIKey,
+		Site:                       source.Site,
+		Icon:                       source.Icon,
+		Tint:                       source.Tint,
+		Accent:                     source.Accent,
+		Enabled:                    false,
+		Level:                      source.Level,
+		APIEndpoint:                source.APIEndpoint,
+		ResponsesEndpoint:          source.ResponsesEndpoint,
+		ChatEndpoint:               source.ChatEndpoint,
+		UpstreamProtocol:           source.UpstreamProtocol,
+		SupportsWebSearch:          source.SupportsWebSearch,
+		SupportsCountTokens:        source.SupportsCountTokens,
+		ConnectivityAuthType:       source.ConnectivityAuthType,
+		AvailabilityMonitorEnabled: source.AvailabilityMonitorEnabled,
+	}
+	if source.SupportedModels != nil {
+		cloned.SupportedModels = make(map[string]bool, len(source.SupportedModels))
+		for k, v := range source.SupportedModels {
+			cloned.SupportedModels[k] = v
+		}
+	}
+	if source.AvailabilityConfig != nil {
+		cloned.AvailabilityConfig = &AvailabilityConfig{
+			TestModel:    source.AvailabilityConfig.TestModel,
+			TestEndpoint: source.AvailabilityConfig.TestEndpoint,
+			Timeout:      source.AvailabilityConfig.Timeout,
+		}
+	}
+	if source.ModelMapping != nil {
+		cloned.ModelMapping = make(map[string]string, len(source.ModelMapping))
+		for k, v := range source.ModelMapping {
+			cloned.ModelMapping[k] = v
+		}
+	}
+
+	providers = append(providers, *cloned)
+	if err := ps.saveProvidersToPathLocked(path, kind, providers); err != nil {
+		return nil, fmt.Errorf("保存副本失败: %w", err)
+	}
 	return cloned, nil
 }
 

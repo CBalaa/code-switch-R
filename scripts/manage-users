@@ -1,0 +1,14 @@
+#!/usr/bin/env sh
+set -eu
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+REPO_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+
+os_name=$(uname -s 2>/dev/null || printf unknown)
+arch_name=$(uname -m 2>/dev/null || printf unknown)
+
+if [ -x "$SCRIPT_DIR/manage-users-bin" ] && [ "$os_name" = "Linux" ] && { [ "$arch_name" = "x86_64" ] || [ "$arch_name" = "amd64" ]; }; then
+  exec "$SCRIPT_DIR/manage-users-bin" "$@"
+fi
+
+exec go run "$REPO_DIR/cmd/manage-users" "$@"

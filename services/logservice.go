@@ -25,6 +25,10 @@ func NewLogService() *LogService {
 }
 
 func (ls *LogService) ListRequestLogs(platform string, provider string, limit int) ([]ReqeustLog, error) {
+	return ls.ListRequestLogsForUser("", platform, provider, limit)
+}
+
+func (ls *LogService) ListRequestLogsForUser(userID string, platform string, provider string, limit int) ([]ReqeustLog, error) {
 	if limit <= 0 {
 		limit = 100
 	}
@@ -42,16 +46,20 @@ func (ls *LogService) ListRequestLogs(platform string, provider string, limit in
 	if provider != "" {
 		options = append(options, xdb.WhereEq("provider", provider))
 	}
+	if strings.TrimSpace(userID) != "" {
+		options = append(options, xdb.WhereEq("user_id", userID))
+	}
 	records, err := model.Selects(options...)
 	if err != nil {
 		return nil, err
 	}
-	keyNames := ls.relayKeyNameMap()
+	keyNames := ls.relayKeyNameMapForUser(userID)
 	logs := make([]ReqeustLog, 0, len(records))
 	for _, record := range records {
 		relayKeyID := strings.TrimSpace(record.GetString("relay_key_id"))
 		logEntry := ReqeustLog{
 			ID:                record.GetInt64("id"),
+			UserID:            record.GetString("user_id"),
 			Platform:          record.GetString("platform"),
 			Model:             record.GetString("model"),
 			Provider:          record.GetString("provider"),
@@ -76,10 +84,20 @@ func (ls *LogService) ListRequestLogs(platform string, provider string, limit in
 }
 
 func (ls *LogService) relayKeyNameMap() map[string]string {
+	return ls.relayKeyNameMapForUser("")
+}
+
+func (ls *LogService) relayKeyNameMapForUser(userID string) map[string]string {
 	if ls == nil || ls.relayKeys == nil {
 		return nil
 	}
-	keys, err := ls.relayKeys.ListKeys()
+	var keys []CodexRelayKeyListItem
+	var err error
+	if strings.TrimSpace(userID) == "" {
+		keys, err = ls.relayKeys.ListKeys()
+	} else {
+		keys, err = ls.relayKeys.ListKeysForUser(userID)
+	}
 	if err != nil {
 		return nil
 	}
@@ -105,6 +123,10 @@ func relayKeyDisplayName(id string, names map[string]string) string {
 }
 
 func (ls *LogService) ListProviders(platform string) ([]string, error) {
+	return ls.ListProvidersForUser("", platform)
+}
+
+func (ls *LogService) ListProvidersForUser(userID string, platform string) ([]string, error) {
 	model := xdb.New("request_log")
 	options := []xdb.Option{
 		xdb.Field("DISTINCT provider as provider"),
@@ -113,6 +135,9 @@ func (ls *LogService) ListProviders(platform string) ([]string, error) {
 	}
 	if platform != "" {
 		options = append(options, xdb.WhereEq("platform", platform))
+	}
+	if strings.TrimSpace(userID) != "" {
+		options = append(options, xdb.WhereEq("user_id", userID))
 	}
 	records, err := model.Selects(options...)
 	if err != nil {
@@ -129,6 +154,10 @@ func (ls *LogService) ListProviders(platform string) ([]string, error) {
 }
 
 func (ls *LogService) StatsSince(platform string) (LogStats, error) {
+	return ls.StatsSinceForUser("", platform)
+}
+
+func (ls *LogService) StatsSinceForUser(userID string, platform string) (LogStats, error) {
 	const seriesHours = 24
 
 	stats := LogStats{
@@ -157,6 +186,9 @@ func (ls *LogService) StatsSince(platform string) (LogStats, error) {
 	}
 	if platform != "" {
 		options = append(options, xdb.WhereEq("platform", platform))
+	}
+	if strings.TrimSpace(userID) != "" {
+		options = append(options, xdb.WhereEq("user_id", userID))
 	}
 	records, err := model.Selects(options...)
 	if err != nil {
@@ -239,6 +271,10 @@ func (ls *LogService) StatsSince(platform string) (LogStats, error) {
 }
 
 func (ls *LogService) ProviderDailyStats(platform string) ([]ProviderDailyStat, error) {
+	return ls.ProviderDailyStatsForUser("", platform)
+}
+
+func (ls *LogService) ProviderDailyStatsForUser(userID string, platform string) ([]ProviderDailyStat, error) {
 	loc := beijingLocation
 	start := startOfDay(time.Now().In(loc))
 	end := start.Add(24 * time.Hour)
@@ -262,6 +298,9 @@ func (ls *LogService) ProviderDailyStats(platform string) ([]ProviderDailyStat, 
 	}
 	if platform != "" {
 		options = append(options, xdb.WhereEq("platform", platform))
+	}
+	if strings.TrimSpace(userID) != "" {
+		options = append(options, xdb.WhereEq("user_id", userID))
 	}
 	records, err := model.Selects(options...)
 	if err != nil {

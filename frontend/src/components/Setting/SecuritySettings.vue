@@ -3,7 +3,6 @@ import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   logoutAdmin,
-  updateAdminCredentials,
   useAdminAuthState,
 } from '../../services/adminAuth'
 import { extractErrorMessage } from '../../utils/error'
@@ -12,33 +11,7 @@ import { showToast } from '../../utils/toast'
 const { t } = useI18n()
 const authState = useAdminAuthState()
 
-const currentPassword = ref('')
-const newUsername = ref('')
-const newPassword = ref('')
 const credentialsBusy = ref(false)
-
-const handleUpdateCredentials = async () => {
-  if (credentialsBusy.value) {
-    return
-  }
-
-  credentialsBusy.value = true
-  try {
-    await updateAdminCredentials(
-      currentPassword.value,
-      newUsername.value.trim(),
-      newPassword.value,
-    )
-    currentPassword.value = ''
-    newUsername.value = ''
-    newPassword.value = ''
-    showToast(t('auth.security.updateSuccess'), 'success')
-  } catch (error) {
-    showToast(extractErrorMessage(error, t('auth.security.updateFailed')), 'error')
-  } finally {
-    credentialsBusy.value = false
-  }
-}
 
 const handleLogout = async () => {
   if (credentialsBusy.value) {
@@ -74,54 +47,7 @@ const handleLogout = async () => {
         <span class="security-badge">{{ authState.username || '--' }}</span>
       </div>
 
-      <div class="security-grid">
-        <label class="security-field">
-          <span>{{ t('auth.fields.currentPassword') }}</span>
-          <input
-            v-model="currentPassword"
-            class="base-input"
-            type="password"
-            autocomplete="current-password"
-            :placeholder="t('auth.placeholders.currentPassword')"
-            :disabled="credentialsBusy"
-          />
-        </label>
-
-        <label class="security-field">
-          <span>{{ t('auth.fields.newUsername') }}</span>
-          <input
-            v-model="newUsername"
-            class="base-input"
-            type="text"
-            autocomplete="username"
-            :placeholder="t('auth.placeholders.newUsername')"
-            :disabled="credentialsBusy"
-          />
-          <small>{{ t('auth.security.keepHint') }}</small>
-        </label>
-
-        <label class="security-field">
-          <span>{{ t('auth.fields.newPassword') }}</span>
-          <input
-            v-model="newPassword"
-            class="base-input"
-            type="password"
-            autocomplete="new-password"
-            :placeholder="t('auth.placeholders.newPassword')"
-            :disabled="credentialsBusy"
-          />
-          <small>{{ t('auth.security.keepHint') }}</small>
-        </label>
-      </div>
-
       <div class="security-actions">
-        <button
-          class="security-btn"
-          :disabled="credentialsBusy"
-          @click="handleUpdateCredentials"
-        >
-          {{ credentialsBusy ? t('auth.security.updating') : t('auth.security.update') }}
-        </button>
         <button
           class="security-btn secondary"
           :disabled="credentialsBusy"

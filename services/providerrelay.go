@@ -26,6 +26,7 @@ import (
 
 // ProviderPoolProviderPenalty 池子内单个 provider 的运行时惩罚状态
 type ProviderPoolProviderPenalty struct {
+	UserID           string    `json:"userID,omitempty"`
 	Platform         string    `json:"platform"`
 	PoolID           string    `json:"poolID"`
 	ProviderID       int64     `json:"providerID"`
@@ -35,6 +36,7 @@ type ProviderPoolProviderPenalty struct {
 	LastReason       string    `json:"lastReason"`
 }
 type LastUsedProvider struct {
+	UserID       string `json:"userID,omitempty"`
 	Platform     string `json:"platform"`      // 平台
 	PoolID       string `json:"pool_id"`       // 池子 ID（pool 维度隔离）
 	ProviderName string `json:"provider_name"` // 供应商名称
@@ -114,18 +116,32 @@ func newRelayHTTPClient() *http.Client {
 	return &http.Client{Transport: transport}
 }
 
-// setLastUsedProvider 记录最后使用的供应商（platform + poolID 维度）
-// 不同 pool/key 之间不互相影响
-func (prs *ProviderRelayService) setLastUsedProvider(platform, poolID, providerName string) {
-	key := platform + ":" + poolID
+func lastUsedKey(userID, platform, poolID string) string {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return platform + ":" + poolID
+	}
+	return userID + ":" + platform + ":" + poolID
+}
+
+// setLastUsedProviderForUser 记录最后使用的供应商（user + platform + poolID 维度）
+// 不同用户和不同 pool/key 之间不互相影响
+func (prs *ProviderRelayService) setLastUsedProviderForUser(userID, platform, poolID, providerName string) {
+	key := lastUsedKey(userID, platform, poolID)
 	prs.lastUsedMu.Lock()
 	defer prs.lastUsedMu.Unlock()
 	prs.lastUsed[key] = &LastUsedProvider{
+		UserID:       strings.TrimSpace(userID),
 		Platform:     platform,
 		PoolID:       poolID,
 		ProviderName: providerName,
 		UpdatedAt:    time.Now().UnixMilli(),
 	}
+}
+
+// setLastUsedProvider 记录最后使用的供应商（旧兼容 API）。
+func (prs *ProviderRelayService) setLastUsedProvider(platform, poolID, providerName string) {
+	prs.setLastUsedProviderForUser("", platform, poolID, providerName)
 }
 
 // GetLastUsedProvider 获取指定平台最后使用的供应商（兼容旧 API，返回任意 pool 的）
@@ -139,6 +155,24 @@ func (prs *ProviderRelayService) GetLastUsedProvider(platform string) *LastUsedP
 		}
 	}
 	return prs.lastUsed[platform] // 兼容旧的纯 platform key
+}
+
+// GetAllLastUsedProvidersForUser 获取当前用户的最后使用供应商状态。
+func (prs *ProviderRelayService) GetAllLastUsedProvidersForUser(userID string) []*LastUsedProvider {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return prs.GetAllLastUsedProviders()
+	}
+	prefix := userID + ":"
+	prs.lastUsedMu.RLock()
+	defer prs.lastUsedMu.RUnlock()
+	result := make([]*LastUsedProvider, 0, len(prs.lastUsed))
+	for key, v := range prs.lastUsed {
+		if v != nil && strings.HasPrefix(key, prefix) {
+			result = append(result, v)
+		}
+	}
+	return result
 }
 
 // GetLastUsedProviderByPool 获取指定平台+池子最后使用的供应商
@@ -233,9 +267,21 @@ func (prs *ProviderRelayService) codexDirectAppliedProviderFilter(kind string, r
 	return id, true
 }
 
-// penaltyKey builds a stable key for pool-level provider penalty state.
-func penaltyKey(platform, poolID string, providerID int64) string {
-	return fmt.Sprintf("%s:%s:%d", platform, poolID, providerID)
+// penaltyKey builds a stable key for user/pool-level provider penalty state.
+func penaltyKey(userID, platform, poolID string, providerID int64) string {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return fmt.Sprintf("%s:%s:%d", platform, poolID, providerID)
+	}
+	return fmt.Sprintf("%s:%s:%s:%d", userID, platform, poolID, providerID)
+}
+
+func penaltyKeyPrefix(userID, platform, poolID string) string {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return platform + ":" + poolID + ":"
+	}
+	return userID + ":" + platform + ":" + poolID + ":"
 }
 
 // getProviderLevelInPool resolves the Level for a provider within a pool.
@@ -254,12 +300,13 @@ func getProviderLevelInPool(pool *ProviderPool, provider Provider) int {
 	return 1
 }
 
-// isProviderBlacklisted checks whether a provider is currently blacklisted in the given pool.
-func (prs *ProviderRelayService) isProviderBlacklisted(platform, poolID string, providerID int64) bool {
+// isProviderBlacklistedForUser checks whether a provider is currently blacklisted in the given user pool.
+func (prs *ProviderRelayService) isProviderBlacklistedForUser(userID, platform, poolID string, providerID int64) bool {
 	prs.poolPenaltyMu.Lock()
 	defer prs.poolPenaltyMu.Unlock()
 
-	p, ok := prs.poolPenalties[penaltyKey(platform, poolID, providerID)]
+	key := penaltyKey(userID, platform, poolID, providerID)
+	p, ok := prs.poolPenalties[key]
 	if !ok {
 		return false
 	}
@@ -268,20 +315,25 @@ func (prs *ProviderRelayService) isProviderBlacklisted(platform, poolID string, 
 	}
 	if time.Now().After(p.BlacklistedUntil) {
 		// 懒清理：过期自动恢复
-		delete(prs.poolPenalties, penaltyKey(platform, poolID, providerID))
+		delete(prs.poolPenalties, key)
 		return false
 	}
 	return true
 }
 
-// filterBlacklistedProviders removes blacklisted providers from a candidate list.
-func (prs *ProviderRelayService) filterBlacklistedProviders(platform, poolID string, providers []Provider) []Provider {
+// isProviderBlacklisted checks whether a provider is currently blacklisted in the given pool.
+func (prs *ProviderRelayService) isProviderBlacklisted(platform, poolID string, providerID int64) bool {
+	return prs.isProviderBlacklistedForUser("", platform, poolID, providerID)
+}
+
+// filterBlacklistedProvidersForUser removes blacklisted providers from a candidate list.
+func (prs *ProviderRelayService) filterBlacklistedProvidersForUser(userID, platform, poolID string, providers []Provider) []Provider {
 	if len(providers) == 0 {
 		return providers
 	}
 	filtered := make([]Provider, 0, len(providers))
 	for _, p := range providers {
-		if prs.isProviderBlacklisted(platform, poolID, p.ID) {
+		if prs.isProviderBlacklistedForUser(userID, platform, poolID, p.ID) {
 			continue
 		}
 		filtered = append(filtered, p)
@@ -289,17 +341,27 @@ func (prs *ProviderRelayService) filterBlacklistedProviders(platform, poolID str
 	return filtered
 }
 
-// recordProviderSuccess clears the failure count for a provider in a pool.
-func (prs *ProviderRelayService) recordProviderSuccess(platform, poolID string, provider Provider) {
-	prs.poolPenaltyMu.Lock()
-	defer prs.poolPenaltyMu.Unlock()
-	delete(prs.poolPenalties, penaltyKey(platform, poolID, provider.ID))
+// filterBlacklistedProviders removes blacklisted providers from a candidate list.
+func (prs *ProviderRelayService) filterBlacklistedProviders(platform, poolID string, providers []Provider) []Provider {
+	return prs.filterBlacklistedProvidersForUser("", platform, poolID, providers)
 }
 
-// recordProviderFailure increments the consecutive failure count and, if the threshold
+// recordProviderSuccessForUser clears the failure count for a provider in a pool.
+func (prs *ProviderRelayService) recordProviderSuccessForUser(userID, platform, poolID string, provider Provider) {
+	prs.poolPenaltyMu.Lock()
+	defer prs.poolPenaltyMu.Unlock()
+	delete(prs.poolPenalties, penaltyKey(userID, platform, poolID, provider.ID))
+}
+
+// recordProviderSuccess clears the failure count for a provider in a pool.
+func (prs *ProviderRelayService) recordProviderSuccess(platform, poolID string, provider Provider) {
+	prs.recordProviderSuccessForUser("", platform, poolID, provider)
+}
+
+// recordProviderFailureForUser increments the consecutive failure count and, if the threshold
 // is reached, blacklists the provider. Returns true when this failure resulted in a new
 // blacklist.
-func (prs *ProviderRelayService) recordProviderFailure(platform, poolID string, pool *ProviderPool, provider Provider, reason string) bool {
+func (prs *ProviderRelayService) recordProviderFailureForUser(userID, platform, poolID string, pool *ProviderPool, provider Provider, reason string) bool {
 	if pool == nil {
 		return false
 	}
@@ -319,13 +381,14 @@ func (prs *ProviderRelayService) recordProviderFailure(platform, poolID string, 
 		durationMinutes = 10
 	}
 
-	key := penaltyKey(platform, poolID, provider.ID)
+	key := penaltyKey(userID, platform, poolID, provider.ID)
 	prs.poolPenaltyMu.Lock()
 	defer prs.poolPenaltyMu.Unlock()
 
 	p, ok := prs.poolPenalties[key]
 	if !ok {
 		p = &ProviderPoolProviderPenalty{
+			UserID:     strings.TrimSpace(userID),
 			Platform:   platform,
 			PoolID:     poolID,
 			ProviderID: provider.ID,
@@ -343,20 +406,32 @@ func (prs *ProviderRelayService) recordProviderFailure(platform, poolID string, 
 	return false
 }
 
-// clearProviderBlacklist manually removes the blacklist for a provider in a pool.
-func (prs *ProviderRelayService) clearProviderBlacklist(platform, poolID string, providerID int64) {
-	prs.poolPenaltyMu.Lock()
-	defer prs.poolPenaltyMu.Unlock()
-	delete(prs.poolPenalties, penaltyKey(platform, poolID, providerID))
+// recordProviderFailure increments the consecutive failure count and, if the threshold
+// is reached, blacklists the provider. Returns true when this failure resulted in a new
+// blacklist.
+func (prs *ProviderRelayService) recordProviderFailure(platform, poolID string, pool *ProviderPool, provider Provider, reason string) bool {
+	return prs.recordProviderFailureForUser("", platform, poolID, pool, provider, reason)
 }
 
-// listProviderBlacklistStatus returns penalty entries for providers that are
+// clearProviderBlacklistForUser manually removes the blacklist for a provider in a pool.
+func (prs *ProviderRelayService) clearProviderBlacklistForUser(userID, platform, poolID string, providerID int64) {
+	prs.poolPenaltyMu.Lock()
+	defer prs.poolPenaltyMu.Unlock()
+	delete(prs.poolPenalties, penaltyKey(userID, platform, poolID, providerID))
+}
+
+// clearProviderBlacklist manually removes the blacklist for a provider in a pool.
+func (prs *ProviderRelayService) clearProviderBlacklist(platform, poolID string, providerID int64) {
+	prs.clearProviderBlacklistForUser("", platform, poolID, providerID)
+}
+
+// listProviderBlacklistStatusForUser returns penalty entries for providers that are
 // currently blacklisted (BlacklistedUntil non-zero and not expired).
-func (prs *ProviderRelayService) listProviderBlacklistStatus(platform, poolID string) []ProviderPoolProviderPenalty {
+func (prs *ProviderRelayService) listProviderBlacklistStatusForUser(userID, platform, poolID string) []ProviderPoolProviderPenalty {
 	prs.poolPenaltyMu.Lock()
 	defer prs.poolPenaltyMu.Unlock()
 	now := time.Now()
-	prefix := platform + ":" + poolID + ":"
+	prefix := penaltyKeyPrefix(userID, platform, poolID)
 
 	result := make([]ProviderPoolProviderPenalty, 0)
 	for key, p := range prs.poolPenalties {
@@ -369,6 +444,12 @@ func (prs *ProviderRelayService) listProviderBlacklistStatus(platform, poolID st
 		result = append(result, *p)
 	}
 	return result
+}
+
+// listProviderBlacklistStatus returns penalty entries for providers that are
+// currently blacklisted (BlacklistedUntil non-zero and not expired).
+func (prs *ProviderRelayService) listProviderBlacklistStatus(platform, poolID string) []ProviderPoolProviderPenalty {
+	return prs.listProviderBlacklistStatusForUser("", platform, poolID)
 }
 
 // selectProvidersForRequest 从请求上下文解析 pool
@@ -389,7 +470,14 @@ func (prs *ProviderRelayService) resolvePoolFromContext(c *gin.Context, kind str
 		return nil, fmt.Errorf("relay key 未绑定 %s 的池子", kind)
 	}
 
-	pool, err := prs.poolService.ResolvePoolByID(poolID)
+	userID := relayUserIDFromContext(c)
+	var pool *ProviderPool
+	var err error
+	if strings.TrimSpace(userID) != "" {
+		pool, err = prs.poolService.ResolvePoolByIDForUser(userID, poolID)
+	} else {
+		pool, err = prs.poolService.ResolvePoolByID(poolID)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("查找池子 %s 失败: %w", poolID, err)
 	}
@@ -405,12 +493,18 @@ func (prs *ProviderRelayService) resolvePoolFromContext(c *gin.Context, kind str
 
 // selectProvidersForRequest 根据池子选择供应商
 // 这是 pool 模式下的统一入口，替代旧的 shouldRequireProviderEnabled + codexDirectAppliedProviderFilter
-func (prs *ProviderRelayService) selectProvidersForRequest(kind string, pool *ProviderPool, requestedModel string) ([]Provider, error) {
+func (prs *ProviderRelayService) selectProvidersForRequestForUser(userID string, kind string, pool *ProviderPool, requestedModel string) ([]Provider, error) {
 	if pool == nil {
 		return nil, fmt.Errorf("%s 无可用池子", kind)
 	}
 
-	providers, err := prs.providerService.LoadProviders(kind)
+	var providers []Provider
+	var err error
+	if strings.TrimSpace(userID) != "" {
+		providers, err = prs.providerService.LoadProvidersForUser(userID, kind)
+	} else {
+		providers, err = prs.providerService.LoadProviders(kind)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("加载 %s providers 失败: %w", kind, err)
 	}
@@ -445,6 +539,10 @@ func (prs *ProviderRelayService) selectProvidersForRequest(kind string, pool *Pr
 	}
 
 	return active, nil
+}
+
+func (prs *ProviderRelayService) selectProvidersForRequest(kind string, pool *ProviderPool, requestedModel string) ([]Provider, error) {
+	return prs.selectProvidersForRequestForUser("", kind, pool, requestedModel)
 }
 
 // EnsureDefaultPoolsAndBindings 启动时确保默认池子存在
@@ -676,7 +774,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 		}
 
 		fmt.Printf("[INFO] 池子模式: %s/%s (模式: %s, 成员: %d)\n", kind, pool.Name, pool.Mode, len(pool.Members))
-		active, selectErr := prs.selectProvidersForRequest(kind, pool, requestedModel)
+		active, selectErr := prs.selectProvidersForRequestForUser(relayUserIDFromContext(c), kind, pool, requestedModel)
 		if selectErr != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": selectErr.Error()})
 			return
@@ -702,10 +800,11 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 		c.Set("pool", pool)
 		c.Set(providerPoolIDContextKey, pool.ID)
 		poolID := pool.ID
+		userID := relayUserIDFromContext(c)
 
 		// 过滤掉当前 pool 下仍在拉黑期的 provider（仅 managed 模式）
 		if pool.Mode == ProviderPoolModeManaged {
-			active = prs.filterBlacklistedProviders(kind, poolID, active)
+			active = prs.filterBlacklistedProvidersForUser(userID, kind, poolID, active)
 		}
 
 		if len(active) == 0 {
@@ -795,9 +894,9 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 					fmt.Printf("[INFO]   ✓ Level %d 成功: %s | 耗时: %.2fs\n", level, provider.Name, duration.Seconds())
 
 					// 记录最后使用的供应商
-					prs.setLastUsedProvider(kind, poolID, provider.Name)
+					prs.setLastUsedProviderForUser(userID, kind, poolID, provider.Name)
 					// 成功：清空该 provider 连续失败计数
-					prs.recordProviderSuccess(kind, poolID, provider)
+					prs.recordProviderSuccessForUser(userID, kind, poolID, provider)
 
 					return // 成功，立即返回
 				}
@@ -832,7 +931,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 
 				// 记录 provider 失败（自动拉黑逻辑）。空流重试路径已在内部计数，跳过。
 				if !failedFromEmptyStreamRetry {
-					prs.recordProviderFailure(kind, poolID, pool, provider, errorMsg)
+					prs.recordProviderFailureForUser(userID, kind, poolID, pool, provider, errorMsg)
 				}
 
 				// 发送切换通知：检查是否有下一个可用的 provider
@@ -1030,6 +1129,7 @@ func (prs *ProviderRelayService) forwardRequest(
 		Platform:   kind,
 		Provider:   provider.Name,
 		Model:      model,
+		UserID:     relayUserIDFromContext(c),
 		IsStream:   isStream,
 		RelayKeyID: relayKeyIDFromContext(c),
 	}
@@ -1050,12 +1150,13 @@ func (prs *ProviderRelayService) forwardRequest(
 
 		err := GlobalDBQueueLogs.ExecBatchCtx(ctx, `
 			INSERT INTO request_log (
-				platform, model, provider, relay_key_id, http_code,
+				user_id, platform, model, provider, relay_key_id, http_code,
 				input_tokens, output_tokens, cache_create_tokens, cache_read_tokens,
 				reasoning_tokens, is_stream, duration_sec,
 				upstream_header_sec, first_event_sec, first_text_sec, created_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`,
+			requestLog.UserID,
 			requestLog.Platform,
 			requestLog.Model,
 			requestLog.Provider,
@@ -1387,9 +1488,10 @@ func (prs *ProviderRelayService) retryCodexEmptyStreamSameProvider(
 	provider := initialProvider
 	attempts := 0
 	totalDuration := time.Duration(0)
+	userID := relayUserIDFromContext(c)
 
 	// 第一次空流已由 forwardRequest 检测到，计入失败
-	blacklisted := prs.recordProviderFailure(kind, poolID, pool, provider, "codex empty stream")
+	blacklisted := prs.recordProviderFailureForUser(userID, kind, poolID, pool, provider, "codex empty stream")
 	if blacklisted {
 		fmt.Printf("[INFO] Codex 空流保护: Provider %s 因空流被自动拉黑，停止同 provider 重试\n", provider.Name)
 		return false, provider, fmt.Errorf("provider %s blacklisted after empty stream", provider.Name), attempts, totalDuration, true
@@ -1400,7 +1502,7 @@ func (prs *ProviderRelayService) retryCodexEmptyStreamSameProvider(
 			return false, provider, fmt.Errorf("%w: %v", errClientAbort, err), attempts, totalDuration, false
 		}
 
-		nextProvider, ok, err := prs.selectCodexEmptyStreamRetryProvider(kind, poolID, provider.Name, requestedModel)
+		nextProvider, ok, err := prs.selectCodexEmptyStreamRetryProviderForUser(userID, kind, poolID, provider.Name, requestedModel)
 		if err != nil {
 			return false, provider, err, attempts, totalDuration, false
 		}
@@ -1434,14 +1536,14 @@ func (prs *ProviderRelayService) retryCodexEmptyStreamSameProvider(
 			fmt.Printf("[INFO] Codex 空流保护: 重试成功 | Provider: %s | 后台重试 %d 次 | 耗时: %.2fs\n",
 				provider.Name, attempts, totalDuration.Seconds())
 			// 成功：清空失败计数
-			prs.recordProviderSuccess(kind, poolID, provider)
+			prs.recordProviderSuccessForUser(userID, kind, poolID, provider)
 			return true, provider, nil, attempts, totalDuration, false
 		}
 		if errors.Is(requestErr, errCodexEmptyStream) {
 			fmt.Printf("[WARN] Codex 空流保护: Provider %s 仍返回空流，继续后台重试 | 耗时: %.2fs\n",
 				provider.Name, duration.Seconds())
 			// 每次空流都计入失败
-			if prs.recordProviderFailure(kind, poolID, pool, provider, "codex empty stream") {
+			if prs.recordProviderFailureForUser(userID, kind, poolID, pool, provider, "codex empty stream") {
 				fmt.Printf("[INFO] Codex 空流保护: Provider %s 因连续空流被自动拉黑，停止同 provider 重试\n", provider.Name)
 				return false, provider, fmt.Errorf("provider %s blacklisted after repeated empty streams", provider.Name), attempts, totalDuration, true
 			}
@@ -1455,17 +1557,32 @@ func (prs *ProviderRelayService) retryCodexEmptyStreamSameProvider(
 // fail-closed: 必须在当前 pool 内查找，不能跳到其他 pool
 // same platform + same pool + same provider
 func (prs *ProviderRelayService) selectCodexEmptyStreamRetryProvider(kind, poolID, currentProviderName, requestedModel string) (Provider, bool, error) {
+	return prs.selectCodexEmptyStreamRetryProviderForUser("", kind, poolID, currentProviderName, requestedModel)
+}
+
+func (prs *ProviderRelayService) selectCodexEmptyStreamRetryProviderForUser(userID, kind, poolID, currentProviderName, requestedModel string) (Provider, bool, error) {
 	if prs.providerService == nil || prs.poolService == nil {
 		return Provider{}, false, fmt.Errorf("provider/pool service unavailable")
 	}
 
 	// 只在当前 pool 内查找
-	pool, err := prs.poolService.ResolvePoolByID(poolID)
+	var pool *ProviderPool
+	var err error
+	if strings.TrimSpace(userID) != "" {
+		pool, err = prs.poolService.ResolvePoolByIDForUser(userID, poolID)
+	} else {
+		pool, err = prs.poolService.ResolvePoolByID(poolID)
+	}
 	if err != nil || pool == nil {
 		return Provider{}, false, fmt.Errorf("池子 %s 不存在", poolID)
 	}
 
-	providers, err := prs.providerService.LoadProviders(kind)
+	var providers []Provider
+	if strings.TrimSpace(userID) != "" {
+		providers, err = prs.providerService.LoadProvidersForUser(userID, kind)
+	} else {
+		providers, err = prs.providerService.LoadProviders(kind)
+	}
 	if err != nil {
 		return Provider{}, false, err
 	}
@@ -2081,6 +2198,7 @@ func ensureRequestLogTable() error {
 func ensureRequestLogTableWithDB(db *sql.DB) error {
 	const createTableSQL = `CREATE TABLE IF NOT EXISTS request_log (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		user_id TEXT,
 		platform TEXT,
 		model TEXT,
 		provider TEXT,
@@ -2104,6 +2222,9 @@ func ensureRequestLogTableWithDB(db *sql.DB) error {
 	}
 
 	if err := ensureRequestLogColumn(db, "created_at", "DATETIME DEFAULT CURRENT_TIMESTAMP"); err != nil {
+		return err
+	}
+	if err := ensureRequestLogColumn(db, "user_id", "TEXT"); err != nil {
 		return err
 	}
 	if err := ensureRequestLogColumn(db, "relay_key_id", "TEXT"); err != nil {
@@ -2226,6 +2347,7 @@ func ssePayloadHasText(data string) bool {
 
 type ReqeustLog struct {
 	ID                          int64   `json:"id"`
+	UserID                      string  `json:"user_id"`
 	Platform                    string  `json:"platform"` // claude、codex 或自定义 CLI
 	Model                       string  `json:"model"`
 	Provider                    string  `json:"provider"` // provider name
@@ -2643,7 +2765,7 @@ func (prs *ProviderRelayService) customCliProxyHandler() gin.HandlerFunc {
 
 				if ok {
 					fmt.Printf("[CustomCLI][INFO]   ✓ Level %d 成功: %s | 耗时: %.2fs\n", level, provider.Name, duration.Seconds())
-					prs.setLastUsedProvider(kind, poolID, provider.Name)
+					prs.setLastUsedProviderForUser(relayUserIDFromContext(c), kind, poolID, provider.Name)
 					return
 				}
 
@@ -2717,7 +2839,14 @@ func (prs *ProviderRelayService) forwardModelsRequest(
 	fmt.Printf("[%s] 收到 /v1/models 请求, kind=%s\n", logPrefix, kind)
 
 	// 加载 providers
-	providers, err := prs.providerService.LoadProviders(kind)
+	userID := relayUserIDFromContext(c)
+	var providers []Provider
+	var err error
+	if strings.TrimSpace(userID) != "" {
+		providers, err = prs.providerService.LoadProvidersForUser(userID, kind)
+	} else {
+		providers, err = prs.providerService.LoadProviders(kind)
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load providers"})
 		return fmt.Errorf("failed to load providers: %w", err)
@@ -2957,7 +3086,17 @@ func (prs *ProviderRelayService) ListProviderBlacklistStatus(platform, poolID st
 	return prs.listProviderBlacklistStatus(platform, poolID)
 }
 
+// ListProviderBlacklistStatusForUser 返回指定用户池子内所有 provider 的拉黑状态。
+func (prs *ProviderRelayService) ListProviderBlacklistStatusForUser(userID, platform, poolID string) []ProviderPoolProviderPenalty {
+	return prs.listProviderBlacklistStatusForUser(userID, platform, poolID)
+}
+
 // ClearProviderBlacklist 手动清除指定池子内某个 provider 的拉黑状态
 func (prs *ProviderRelayService) ClearProviderBlacklist(platform, poolID string, providerID int64) {
 	prs.clearProviderBlacklist(platform, poolID, providerID)
+}
+
+// ClearProviderBlacklistForUser 手动清除指定用户池子内某个 provider 的拉黑状态。
+func (prs *ProviderRelayService) ClearProviderBlacklistForUser(userID, platform, poolID string, providerID int64) {
+	prs.clearProviderBlacklistForUser(userID, platform, poolID, providerID)
 }

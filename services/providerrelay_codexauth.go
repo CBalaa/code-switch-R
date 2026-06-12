@@ -14,18 +14,13 @@ const codexRelayKeyHeader = "X-Code-Switch-Key"
 
 const relayKeyIDContextKey = "relay_key_id"
 const relayKeyNameContextKey = "relay_key_name"
+const relayUserIDContextKey = "relay_user_id"
 const providerPoolIDContextKey = "provider_pool_id"
 
 func (prs *ProviderRelayService) claudeRelayAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if prs.codexRelayKeys == nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "relay key service is unavailable"})
-			c.Abort()
-			return
-		}
-
-		if _, err := prs.codexRelayKeys.EnsureDefaultKey(); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to initialize relay keys"})
 			c.Abort()
 			return
 		}
@@ -46,7 +41,17 @@ func (prs *ProviderRelayService) claudeRelayAuthMiddleware() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
+		if statusCode, ok := prs.rejectInvalidRelayOwner(match); !ok {
+			if statusCode == http.StatusForbidden {
+				c.JSON(http.StatusForbidden, gin.H{"error": "relay key owner is disabled"})
+			} else {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "relay key owner is invalid"})
+			}
+			c.Abort()
+			return
+		}
 		c.Set(relayKeyIDContextKey, match.ID)
+		c.Set(relayUserIDContextKey, match.OwnerUserID)
 		c.Set(relayKeyNameContextKey, match.Name)
 		c.Set("relay_key_pool_bindings", match.PoolBindings)
 
@@ -91,12 +96,6 @@ func (prs *ProviderRelayService) codexRelayAuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		if _, err := prs.codexRelayKeys.EnsureDefaultKey(); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to initialize codex relay keys"})
-			c.Abort()
-			return
-		}
-
 		candidate, source := extractCodexRelayKeyWithSource(c.Request)
 		match, err := prs.codexRelayKeys.ValidateKeyMatch(candidate)
 		if err != nil {
@@ -113,7 +112,17 @@ func (prs *ProviderRelayService) codexRelayAuthMiddleware() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
+		if statusCode, ok := prs.rejectInvalidRelayOwner(match); !ok {
+			if statusCode == http.StatusForbidden {
+				c.JSON(http.StatusForbidden, gin.H{"error": "relay key owner is disabled"})
+			} else {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "relay key owner is invalid"})
+			}
+			c.Abort()
+			return
+		}
 		c.Set(relayKeyIDContextKey, match.ID)
+		c.Set(relayUserIDContextKey, match.OwnerUserID)
 		c.Set(relayKeyNameContextKey, match.Name)
 		c.Set("relay_key_pool_bindings", match.PoolBindings)
 
@@ -125,6 +134,33 @@ func (prs *ProviderRelayService) codexRelayAuthMiddleware() gin.HandlerFunc {
 
 		c.Next()
 	}
+}
+
+func (prs *ProviderRelayService) rejectInvalidRelayOwner(match *CodexRelayKeyMatch) (int, bool) {
+	if match == nil {
+		return http.StatusUnauthorized, false
+	}
+	ownerID := strings.TrimSpace(match.OwnerUserID)
+	users := NewUserStore()
+	count, err := users.CountUsers()
+	if err != nil {
+		fmt.Printf("[WARN] relay owner check failed: %v\n", err)
+		return http.StatusUnauthorized, false
+	}
+	if count == 0 {
+		return http.StatusOK, true
+	}
+	if ownerID == "" {
+		return http.StatusUnauthorized, false
+	}
+	user, err := users.GetEnabledUserByID(ownerID)
+	if err != nil {
+		return http.StatusForbidden, false
+	}
+	if user == nil {
+		return http.StatusUnauthorized, false
+	}
+	return http.StatusOK, true
 }
 
 func extractCodexRelayKey(req *http.Request) string {
@@ -205,6 +241,21 @@ func relayKeyNameFromContext(c *gin.Context) string {
 		return ""
 	}
 	return strings.TrimSpace(name)
+}
+
+func relayUserIDFromContext(c *gin.Context) string {
+	if c == nil {
+		return ""
+	}
+	value, ok := c.Get(relayUserIDContextKey)
+	if !ok {
+		return ""
+	}
+	userID, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(userID)
 }
 
 func relayKeyPoolBindingsFromContext(c *gin.Context) map[string]string {
