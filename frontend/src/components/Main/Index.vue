@@ -352,7 +352,16 @@
                   />
                 </label>
 
-                <!-- 协议端点（可选）-->
+                <!-- 协议端点（按平台互斥显示）-->
+                <label v-if="showMessagesEndpointField" class="form-field">
+                  <div class="label-with-hint">{{ t('components.main.form.labels.messagesEndpoint') }} <HelpHint :text="t('components.main.form.hints.messagesEndpoint')" /></div>
+                  <BaseInput
+                    v-model="modalState.form.apiEndpoint"
+                    type="text"
+                    :placeholder="t('components.main.form.placeholders.messagesEndpoint')"
+                  />
+                </label>
+
                 <label v-if="showResponsesEndpointField" class="form-field">
                   <div class="label-with-hint">{{ t('components.main.form.labels.responsesEndpoint') }} <HelpHint :text="t('components.main.form.hints.responsesEndpoint')" /></div>
                   <BaseInput
@@ -369,7 +378,7 @@
                     type="text"
                     :placeholder="t('components.main.form.placeholders.chatEndpoint')"
                   />
-                                  </label>
+                </label>
 
                 <!-- 认证方式 -->
                 <div class="form-field">
@@ -1776,26 +1785,18 @@ const authTypeOptions = computed(() => [
   { value: 'x-api-key', label: 'X-API-Key' },
 ])
 
-const platformSupportsResponsesEndpoint = (platform: ProviderTab) => platform !== 'openai-chat'
-const platformSupportsChatEndpoint = (platform: ProviderTab) => platform !== 'openai-responses'
-
-const showResponsesEndpointField = computed(() =>
-  platformSupportsResponsesEndpoint(modalState.tabId)
-)
-
-const showChatEndpointField = computed(() =>
-  platformSupportsChatEndpoint(modalState.tabId)
-)
+const showMessagesEndpointField = computed(() => modalState.tabId === 'claude')
+const showResponsesEndpointField = computed(() => modalState.tabId === 'openai-responses')
+const showChatEndpointField = computed(() => modalState.tabId === 'openai-chat')
 
 const protocolEndpointsForSave = () => ({
-  apiEndpoint:
-    modalState.tabId === 'openai-responses' || modalState.tabId === 'openai-chat'
-      ? ''
-      : modalState.form.apiEndpoint || '',
-  responsesEndpoint: platformSupportsResponsesEndpoint(modalState.tabId)
+  apiEndpoint: modalState.tabId === 'claude'
+    ? modalState.form.apiEndpoint || ''
+    : '',
+  responsesEndpoint: modalState.tabId === 'openai-responses'
     ? modalState.form.responsesEndpoint || ''
     : '',
-  chatEndpoint: platformSupportsChatEndpoint(modalState.tabId)
+  chatEndpoint: modalState.tabId === 'openai-chat'
     ? modalState.form.chatEndpoint || ''
     : '',
 })

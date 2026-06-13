@@ -247,6 +247,7 @@
           "availabilityTestModel": "Test Model (optional)",
           "availabilityTestEndpoint": "Test Endpoint (optional)",
           "availabilityTimeout": "Timeout (ms)",
+          "messagesEndpoint": "Messages endpoint",
           "responsesEndpoint": "Responses endpoint",
           "chatEndpoint": "Chat endpoint",
           "connectivityCheck": "Availability Monitoring (legacy, deprecated)",
@@ -259,6 +260,7 @@
           "apiUrl": "https://api.aicoding.sh",
           "apiKey": "sk-xxxxx",
           "apiEndpoint": "Leave blank for the platform default endpoint",
+          "messagesEndpoint": "For example: /v1/messages",
           "responsesEndpoint": "For example: /responses or /v1/responses",
           "chatEndpoint": "For example: /chat/completions",
           "officialSite": "https://vendor.com",
@@ -275,6 +277,7 @@
         "hints": {
           "level": "Lower numbers = higher priority. Level 1 providers are tried first, then Level 2, etc.",
           "apiEndpoint": "Override the platform default endpoint. Leave blank for default (Claude: /v1/messages; OpenAI Responses: /responses; OpenAI Chat: /chat/completions). For GLM models use /chat/completions",
+          "messagesEndpoint": "Used for Claude Messages requests. Leave blank to use the platform default endpoint /v1/messages.",
           "responsesEndpoint": "Used when the client requests /responses or /v1/responses. Leave blank to fall back to the legacy API endpoint or platform default.",
           "chatEndpoint": "Used when the client requests /chat/completions. Leave blank to fall back to the legacy API endpoint or platform default.",
           "availabilityMonitor": "Enable background health checks for this provider. Checks are performed periodically to monitor availability.",

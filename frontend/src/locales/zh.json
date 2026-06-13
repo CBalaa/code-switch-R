@@ -248,6 +248,7 @@
           "availabilityTestModel": "测试模型（可选）",
           "availabilityTestEndpoint": "测试端点（可选）",
           "availabilityTimeout": "超时时间（毫秒）",
+          "messagesEndpoint": "Messages 协议端点",
           "responsesEndpoint": "Responses 协议端点",
           "chatEndpoint": "Chat 协议端点",
           "connectivityCheck": "可用性监控（旧字段，已废弃）",
@@ -260,6 +261,7 @@
           "apiUrl": "https://api.aicoding.sh",
           "apiKey": "sk-xxxxx",
           "apiEndpoint": "留空使用平台默认端点",
+          "messagesEndpoint": "例如：/v1/messages",
           "responsesEndpoint": "例如：/responses 或 /v1/responses",
           "chatEndpoint": "例如：/chat/completions",
           "officialSite": "https://vendor.com",
@@ -276,6 +278,7 @@
         "hints": {
           "level": "数字越小优先级越高，Level 1 会被优先尝试，失败后依次尝试 Level 2、Level 3 等",
           "apiEndpoint": "覆盖平台默认端点。留空使用默认（Claude: /v1/messages；OpenAI Responses: /responses；OpenAI Chat: /chat/completions）。GLM 模型请使用 /chat/completions",
+          "messagesEndpoint": "Claude Messages 协议请求使用此端点；留空则使用平台默认端点 /v1/messages",
           "responsesEndpoint": "客户端请求 /responses 或 /v1/responses 时使用此端点；留空则使用旧 API 端点或平台默认端点",
           "chatEndpoint": "客户端请求 /chat/completions 时使用此端点；留空则使用旧 API 端点或平台默认端点",
           "availabilityMonitor": "启用后会定期进行健康检查，监控此供应商的可用性状态",
