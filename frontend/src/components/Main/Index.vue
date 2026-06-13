@@ -666,7 +666,7 @@ import ModelMappingEditor from '../common/ModelMappingEditor.vue'
 import CustomCliConfigEditor from '../common/CustomCliConfigEditor.vue'
 import PoolPanel from './PoolPanel.vue'
 import { ListRelayKeys, type RelayKeyItem } from '../../services/providerPool'
-import { LoadProviders, SaveProviders, DuplicateProvider } from '../../../bindings/codeswitch/services/providerservice'
+import { LoadProviders, SaveProviders } from '../../../bindings/codeswitch/services/providerservice'
 import { fetchProxyStatus, enableProxy, disableProxy } from '../../services/claudeSettings'
 import { fetchProviderDailyStats, type ProviderDailyStat } from '../../services/logs'
 import { fetchCurrentVersion } from '../../services/version'
@@ -1994,7 +1994,7 @@ const submitModal = async (): Promise<boolean> => {
       icon: '',
       accent: '#0a84ff',
       tint: 'rgba(15, 23, 42, 0.12)',
-      enabled: true,
+      enabled: modalState.form.enabled ?? true,
       supportedModels: modalState.form.supportedModels || {},
       modelMapping: modalState.form.modelMapping || {},
       apiEndpoint: protocolEndpoints.apiEndpoint,
@@ -2087,23 +2087,61 @@ const requestRemove = (card: AutomationCard) => {
   confirmState.open = true
 }
 
-// 复制供应商
-const handleDuplicate = async (card: AutomationCard) => {
-  try {
-    const tab = activeTab.value
+// 复制供应商：打开新建表单并预填源供应商数据
+const handleDuplicate = (card: AutomationCard) => {
+  modalState.tabId = activeTab.value
+  modalState.editingId = null // 创建模式（非编辑）
+  editingCard.value = null
 
-    const newProvider = await DuplicateProvider(tab, card.id)
-    if (!newProvider) {
-      console.warn('[Duplicate] DuplicateProvider 返回空结果，已跳过刷新')
-      return
-    }
-    console.log(`[Duplicate] Provider "${card.name}" duplicated as "${newProvider.name}"`)
+  const sourceName = card.name?.trim() || '未命名供应商'
+  Object.assign(modalState.form, {
+    name: `${sourceName}（副本）`,
+    apiUrl: card.apiUrl,
+    apiKey: card.apiKey,
+    officialSite: card.officialSite,
+    icon: card.icon,
+    level: card.level || 1,
+    enabled: card.enabled,
+    supportedModels: card.supportedModels ? { ...card.supportedModels } : {},
+    modelMapping: card.modelMapping ? { ...card.modelMapping } : {},
+    apiEndpoint: card.apiEndpoint || '',
+    responsesEndpoint: legacyResponsesEndpoint(card),
+    chatEndpoint: legacyChatEndpoint(card),
+    upstreamProtocol: card.upstreamProtocol || 'auto',
+    availabilityMonitorEnabled:
+      card.availabilityMonitorEnabled ?? card.connectivityCheck ?? false,
+    availabilityConfig: {
+      testModel:
+        card.availabilityConfig?.testModel || card.connectivityTestModel || '',
+      testEndpoint:
+        card.availabilityConfig?.testEndpoint ||
+        card.connectivityTestEndpoint ||
+        getDefaultEndpoint(activeTab.value, card.upstreamProtocol || 'auto'),
+      timeout: card.availabilityConfig?.timeout || 15000,
+    },
+    connectivityCheck: false,
+    connectivityTestModel: '',
+    connectivityTestEndpoint: '',
+    connectivityAuthType: card.connectivityAuthType || '',
+  })
 
-    // 刷新列表以显示新副本
-    await loadProvidersFromDisk()
-  } catch (error) {
-    console.error('[Duplicate] Failed to duplicate provider:', error)
+  // 初始化认证方式状态
+  const storedAuth = (card.connectivityAuthType || '').trim()
+  const lower = storedAuth.toLowerCase()
+  if (!storedAuth) {
+    selectedAuthType.value = getDefaultAuthType(activeTab.value)
+    customAuthHeader.value = ''
+  } else if (lower === 'bearer' || lower === 'x-api-key') {
+    selectedAuthType.value = lower
+    customAuthHeader.value = ''
+  } else {
+    selectedAuthType.value = getDefaultAuthType(activeTab.value)
+    customAuthHeader.value = storedAuth
   }
+
+  connectivityTestResult.value = null
+  modalState.errors.apiUrl = ''
+  modalState.open = true
 }
 
 const confirmRemove = async () => {
