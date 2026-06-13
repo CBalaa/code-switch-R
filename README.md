@@ -202,7 +202,56 @@ sudo systemctl restart codeswitch
 | 远程本机 Web 端口 | `127.0.0.1:8080` |
 | 远程本机 Relay 端口 | `127.0.0.1:18100` |
 
-### 1. 本地构建
+### 1. 判断发布类型
+
+后端通过 `CODE_SWITCH_STATIC_DIR=frontend/dist` 从磁盘读取前端静态文件，不会把前端构建产物打进 `codeswitch-web` 二进制。因此：
+
+- **只改前端**：只需要本地构建 `frontend/dist` 并上传到 `rn`，不需要重启 `codeswitch.service`。
+- **改了 Go 后端、RPC 服务、数据结构、路由、用户脚本二进制等**：需要构建并上传 `codeswitch-web`，然后重启 `codeswitch.service`。
+- **只改 `scripts/manage-users` 脚本或 `manage-users-bin`**：只上传脚本/二进制即可；服务端运行不依赖它，不需要重启。
+
+注意：正常发布是替换已有 `frontend/dist`，不需要重启。只有当服务启动时远端没有 `frontend/dist/index.html`（例如首次部署或 dist 目录被删空后启动过服务），后端会把前端标记为不可用；这种情况上传 dist 后仍需重启一次。
+
+### 2. 纯前端发布
+
+只涉及 `frontend/` 下页面、样式、文案、前端 TS/Vue 逻辑时，按这个流程发布：
+
+```bash
+cd /home/chh/gitprojects/code-switch-R/frontend
+npm install
+npm run build
+
+STAMP="$(date +%Y%m%d-%H%M%S)"
+REMOTE_DIR="/home/chh/apps/code-switch"
+
+tar -C /home/chh/gitprojects/code-switch-R/frontend -czf /tmp/codeswitch-frontend-dist.$STAMP.tgz dist
+ssh rn "mkdir -p $REMOTE_DIR/frontend"
+scp /tmp/codeswitch-frontend-dist.$STAMP.tgz "rn:/tmp/codeswitch-frontend-dist.$STAMP.tgz"
+
+ssh rn "
+  set -e
+  cd $REMOTE_DIR
+
+  rm -rf frontend/dist.new
+  mkdir -p frontend/dist.new
+  tar -xzf /tmp/codeswitch-frontend-dist.$STAMP.tgz -C frontend/dist.new --strip-components=1
+
+  if [ -d frontend/dist ]; then
+    rm -rf frontend/dist.bak.$STAMP
+    mv frontend/dist frontend/dist.bak.$STAMP
+  fi
+
+  mv frontend/dist.new frontend/dist
+"
+```
+
+纯前端发布完成后，不需要执行 `sudo systemctl restart codeswitch.service`。如果浏览器仍看到旧页面，强制刷新或重新打开页面即可；构建后的 JS/CSS 文件名带 hash，正常情况下会自动加载新资源。
+
+### 3. 后端或全量发布
+
+涉及 Go 后端、接口、relay 路由、数据库/日志逻辑，或不确定是否影响后端时，按全量流程发布。
+
+#### 3.1 本地构建
 
 在本地仓库构建前端和后端：
 
@@ -223,7 +272,7 @@ tar -C frontend -czf /tmp/codeswitch-frontend-dist.tgz dist
 - `/tmp/codeswitch-frontend-dist.tgz`
 - `frontend/dist/`
 
-### 2. 上传到 rn
+#### 3.2 上传到 rn
 
 只上传构建产物，不在 `rn` 上跑 `npm install`、`npm run build` 或 `go build`：
 
@@ -258,7 +307,7 @@ ssh rn "
 "
 ```
 
-### 3. 远程启动方式
+#### 3.3 重启服务
 
 `rn` 上只用 systemd 管理服务，不要手工长期运行：
 
