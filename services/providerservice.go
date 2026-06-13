@@ -67,18 +67,6 @@ type Provider struct {
 	// 空值时使用平台默认（claude: x-api-key, codex: bearer）
 	ConnectivityAuthType string `json:"connectivityAuthType,omitempty"`
 
-	// 上游协议类型 - anthropic / openai_chat / auto
-	// anthropic: 上游使用 Anthropic Messages API（默认）
-	// openai_chat: 上游使用 OpenAI Compatible API（/responses 或 /chat/completions），自动转换请求/响应格式
-	// auto: 根据 APIEndpoint 自动检测（包含 /responses 或 /chat/completions 则为 openai_chat）
-	UpstreamProtocol string `json:"upstreamProtocol,omitempty"`
-
-	// Claude WebSearch 兼容开关
-	// 仅用于 Claude -> OpenAI Responses 协议适配。
-	// 为 true 时，允许把 Claude hosted web_search 工具映射为 Responses API 的 web_search_preview。
-	// 默认 false，避免对不支持该工具类型的 OpenAI-compatible 中转盲目透传并触发上游 400。
-	SupportsWebSearch bool `json:"supportsWebSearch,omitempty"`
-
 	// 是否支持 /v1/messages/count_tokens 接口
 	// 部分上游（如 Chatbox / ISRC）虽然支持 Anthropic Messages API，
 	// 但不提供 count_tokens 端点。关闭后中转站会本地估算 token 数，
@@ -134,6 +122,22 @@ func providerFilePathForUser(userID string, kind string) (string, error) {
 	return providerFilePathInDir(dir, kind)
 }
 
+func providerPlatformForPool(kind string) string {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "claude", "claude-code", "claude_code":
+		return "claude"
+	case "codex", "openai-responses":
+		return "openai-responses"
+	case "openai-chat", "openai_chat":
+		return "openai-chat"
+	default:
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(kind)), "custom:") {
+			return strings.TrimSpace(kind)
+		}
+		return strings.TrimSpace(kind)
+	}
+}
+
 func providerFilePathInDir(dir string, kind string) (string, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
@@ -173,12 +177,23 @@ func (ps *ProviderService) SaveProviders(kind string, providers []Provider) erro
 
 func (ps *ProviderService) SaveProvidersForUser(userID string, kind string, providers []Provider) error {
 	ps.mu.Lock()
-	defer ps.mu.Unlock()
 	path, err := providerFilePathForUser(userID, kind)
+	if err != nil {
+		ps.mu.Unlock()
+		return err
+	}
+	if err := ps.saveProvidersToPathLocked(path, kind, providers); err != nil {
+		ps.mu.Unlock()
+		return err
+	}
+	ps.mu.Unlock()
+
+	poolService, err := NewProviderPoolServiceForUser(userID)
 	if err != nil {
 		return err
 	}
-	return ps.saveProvidersToPathLocked(path, kind, providers)
+	_, err = poolService.EnsureDefaultPool(providerPlatformForPool(kind), providers, DefaultPoolSeed{Mode: ProviderPoolModeManaged})
+	return err
 }
 
 // loadProvidersRaw 原样读取配置文件（不迁移、不保存）
@@ -549,8 +564,6 @@ func (ps *ProviderService) DuplicateProvider(kind string, sourceID int64) (*Prov
 		APIEndpoint:          source.APIEndpoint,          // 复制端点配置
 		ResponsesEndpoint:    source.ResponsesEndpoint,    // 复制 Responses 端点配置
 		ChatEndpoint:         source.ChatEndpoint,         // 复制 Chat 端点配置
-		UpstreamProtocol:     source.UpstreamProtocol,     // 复制上游协议配置
-		SupportsWebSearch:    source.SupportsWebSearch,    // 复制 WebSearch 兼容开关
 		SupportsCountTokens:  source.SupportsCountTokens,  // 复制 count_tokens 支持开关
 		ConnectivityAuthType: source.ConnectivityAuthType, // 复制认证方式
 		// 可用性监控配置
@@ -635,8 +648,6 @@ func (ps *ProviderService) DuplicateProviderForUser(userID string, kind string, 
 		APIEndpoint:                source.APIEndpoint,
 		ResponsesEndpoint:          source.ResponsesEndpoint,
 		ChatEndpoint:               source.ChatEndpoint,
-		UpstreamProtocol:           source.UpstreamProtocol,
-		SupportsWebSearch:          source.SupportsWebSearch,
 		SupportsCountTokens:        source.SupportsCountTokens,
 		ConnectivityAuthType:       source.ConnectivityAuthType,
 		AvailabilityMonitorEnabled: source.AvailabilityMonitorEnabled,
@@ -768,54 +779,6 @@ func (p *Provider) endpointForRoute(defaultEndpoint string) string {
 		}
 	}
 	return p.APIEndpoint
-}
-
-// UpstreamProtocolType 上游协议类型
-type UpstreamProtocolType string
-
-const (
-	// UpstreamProtocolAnthropic Anthropic Messages API（默认）
-	UpstreamProtocolAnthropic UpstreamProtocolType = "anthropic"
-	// UpstreamProtocolOpenAIChat OpenAI Compatible API（/responses 或 /chat/completions）
-	UpstreamProtocolOpenAIChat UpstreamProtocolType = "openai_chat"
-	// UpstreamProtocolAuto 自动检测
-	UpstreamProtocolAuto UpstreamProtocolType = "auto"
-)
-
-// GetUpstreamProtocol 获取上游协议类型
-// 空值或无效值默认返回 anthropic
-func (p *Provider) GetUpstreamProtocol() UpstreamProtocolType {
-	protocol := strings.TrimSpace(strings.ToLower(p.UpstreamProtocol))
-	switch protocol {
-	case "openai_chat", "openai-chat", "openai":
-		return UpstreamProtocolOpenAIChat
-	case "auto":
-		return UpstreamProtocolAuto
-	default:
-		return UpstreamProtocolAnthropic
-	}
-}
-
-// DetectUpstreamProtocol 根据端点自动检测上游协议
-// 用于 auto 模式的启发式判断
-func DetectUpstreamProtocol(endpoint string) UpstreamProtocolType {
-	ep := strings.ToLower(endpoint)
-	// 检测 OpenAI Compatible 端点
-	if strings.Contains(ep, "/chat/completions") || strings.Contains(ep, "/responses") {
-		return UpstreamProtocolOpenAIChat
-	}
-	// 默认 Anthropic
-	return UpstreamProtocolAnthropic
-}
-
-// ResolveUpstreamProtocol 解析最终的上游协议
-// 如果是 auto 模式，根据端点自动检测
-func (p *Provider) ResolveUpstreamProtocol(effectiveEndpoint string) UpstreamProtocolType {
-	protocol := p.GetUpstreamProtocol()
-	if protocol == UpstreamProtocolAuto {
-		return DetectUpstreamProtocol(effectiveEndpoint)
-	}
-	return protocol
 }
 
 // ValidateConfiguration 验证 provider 的模型配置

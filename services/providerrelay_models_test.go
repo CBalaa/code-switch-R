@@ -327,13 +327,12 @@ func TestCodexResponsesRequireManagedKey(t *testing.T) {
 	providerService, relayService := newTestRelayService(t)
 	err := providerService.SaveProviders("openai-responses", []Provider{
 		{
-			ID:               1,
-			Name:             "CodexProvider",
-			APIURL:           upstreamServer.URL,
-			APIKey:           "provider-api-key",
-			Enabled:          true,
-			Level:            1,
-			UpstreamProtocol: "auto",
+			ID:      1,
+			Name:    "CodexProvider",
+			APIURL:  upstreamServer.URL,
+			APIKey:  "provider-api-key",
+			Enabled: true,
+			Level:   1,
 		},
 	})
 	if err != nil {

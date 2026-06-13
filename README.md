@@ -109,14 +109,6 @@ provider relay listening on http://0.0.0.0:18100
 
 如果管理员账号已经初始化过，就不会再输出 `admin setup token`。
 
-Claude WebSearch 的本地 fallback 现在固定使用 `cn.bing.com` 的“国际版模式”。
-
-说明：
-
-- 本地 fallback 会默认过滤一部分低质量站点结果，例如 `csdn.net`、`cnblogs.com`
-- 请求会固定带 `ensearch=1`，并直接访问 `cn.bing.com`
-- 这些行为只影响 Claude WebSearch fallback，不影响普通对话转发
-
 ### 5. 验证服务
 
 健康检查：
@@ -390,8 +382,6 @@ export CODE_SWITCH_SETUP_TOKEN='change-this-to-a-long-random-token'
 
 如果不设置，程序会在“管理员尚未初始化”时自动生成一次并打印到启动日志。
 
-Claude WebSearch 的本地 fallback 固定使用 Bing 国际站。
-
 如果你的 HTTPS 反代不在同一台机器上，或者是 Docker / 容器网段转发，需要把代理地址加入受信列表，例如：
 
 ```bash
@@ -568,26 +558,6 @@ curl http://127.0.0.1:18100/v1/models \
 2. 填写供应商名称、API URL、API Key
 3. 按需配置模型支持和模型映射
 4. 保存
-
-如果你要把一个 OpenAI 风格的中转站，作为 Claude 的供应商来用 GPT-5.4，可以直接这样填：
-
-1. 进入 `Claude Code` 这一栏
-2. 点击右上角 `+`
-3. 填写基础信息：
-   - `名称`：例如 `my-gpt54-for-claude`
-   - `API URL`：填供应商的 base URL，例如 `https://api.example.com`
-   - `API Key`：填你的 `sk-...`
-4. 关键兼容项这样配：
-   - `上游协议类型`：选 `OpenAI Compatible`
-   - `API Endpoint`：填 `/v1/responses`
-   - `模型映射`：至少加一条 `claude-*` -> `gpt-5.4`
-5. 保存后，在 Claude 代理里选择或启用这个供应商即可
-
-补充说明：
-
-- `API URL` 填 base URL，不要把 `/v1/responses` 直接拼进去；路径放到 `API Endpoint`
-- 如果你只想把某个 Claude 模型映射到 GPT-5.4，也可以写成精确映射，例如 `claude-sonnet-4-6` -> `gpt-5.4`
-- Claude 开启 `thinking` 后，当前网关会把它默认映射成 OpenAI Responses 的 `reasoning.effort = xhigh`
 
 推荐至少配置两个供应商，这样自动降级才有意义。
 

@@ -1271,14 +1271,6 @@ export class Provider {
     "connectivityAuthType"?: string;
 
     /**
-     * 上游协议类型 - anthropic / openai_chat / auto
-     * anthropic: 上游使用 Anthropic Messages API（默认）
-     * openai_chat: 上游使用 OpenAI Compatible API（/responses 或 /chat/completions），自动转换请求/响应格式
-     * auto: 根据 APIEndpoint 自动检测（包含 /responses 或 /chat/completions 则为 openai_chat）
-     */
-    "upstreamProtocol"?: string;
-
-    /**
      * [已废弃] 连通性检测开关 - 迁移到 AvailabilityMonitorEnabled
      */
     "connectivityCheck"?: boolean;

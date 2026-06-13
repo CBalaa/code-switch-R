@@ -2,6 +2,8 @@ package services
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"sort"
 	"testing"
 )
@@ -182,43 +184,6 @@ func TestApplyWildcardMapping(t *testing.T) {
 			if result != tt.expected {
 				t.Errorf("applyWildcardMapping(%q, %q, %q) = %q, 期望 %q",
 					tt.pattern, tt.replacement, tt.input, result, tt.expected)
-			}
-		})
-	}
-}
-
-func TestDetectUpstreamProtocol(t *testing.T) {
-	tests := []struct {
-		name     string
-		endpoint string
-		want     UpstreamProtocolType
-	}{
-		{
-			name:     "Anthropic Messages",
-			endpoint: "/v1/messages",
-			want:     UpstreamProtocolAnthropic,
-		},
-		{
-			name:     "OpenAI Chat Completions",
-			endpoint: "/chat/completions",
-			want:     UpstreamProtocolOpenAIChat,
-		},
-		{
-			name:     "OpenAI Chat Completions legacy v1 path",
-			endpoint: "/v1/chat/completions",
-			want:     UpstreamProtocolOpenAIChat,
-		},
-		{
-			name:     "OpenAI Responses",
-			endpoint: "/v1/responses",
-			want:     UpstreamProtocolOpenAIChat,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := DetectUpstreamProtocol(tt.endpoint); got != tt.want {
-				t.Fatalf("DetectUpstreamProtocol(%q) = %q, want %q", tt.endpoint, got, tt.want)
 			}
 		})
 	}
@@ -907,5 +872,51 @@ func TestDuplicateProvider(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestSaveProvidersForUserEnsuresUserDefaultPool(t *testing.T) {
+	testHome := t.TempDir()
+	t.Setenv("HOME", testHome)
+
+	providerService := NewProviderService()
+	providers := []Provider{
+		{
+			ID:      101,
+			Name:    "user provider",
+			APIURL:  "https://provider.example.com",
+			APIKey:  "sk-test",
+			Enabled: true,
+		},
+	}
+
+	if err := providerService.SaveProvidersForUser("usr_test", "openai-responses", providers); err != nil {
+		t.Fatalf("SaveProvidersForUser failed: %v", err)
+	}
+
+	poolService, err := NewProviderPoolServiceForUser("usr_test")
+	if err != nil {
+		t.Fatalf("NewProviderPoolServiceForUser failed: %v", err)
+	}
+	pools, err := poolService.ListPools("openai-responses")
+	if err != nil {
+		t.Fatalf("ListPools failed: %v", err)
+	}
+	if len(pools) != 1 {
+		t.Fatalf("expected 1 user pool, got %d", len(pools))
+	}
+	if pools[0].ID != "pool_openai-responses_default" {
+		t.Fatalf("unexpected default pool id %q", pools[0].ID)
+	}
+	if pools[0].Mode != ProviderPoolModeManaged {
+		t.Fatalf("expected managed default pool, got %q", pools[0].Mode)
+	}
+	if len(pools[0].Members) != 1 || pools[0].Members[0].ProviderID != 101 || !pools[0].Members[0].Enabled {
+		t.Fatalf("unexpected default pool members: %+v", pools[0].Members)
+	}
+
+	globalPoolFile := filepath.Join(testHome, appSettingsDir, providerPoolsFile)
+	if _, err := os.Stat(globalPoolFile); !os.IsNotExist(err) {
+		t.Fatalf("global provider pool file should not be created, stat err: %v", err)
 	}
 }

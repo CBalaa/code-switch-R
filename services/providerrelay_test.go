@@ -32,19 +32,6 @@ func TestResolveRelayEndpointUsesProtocolSpecificEndpoint(t *testing.T) {
 	}
 }
 
-func TestResolveRelayEndpointUsesResponsesEndpointForClaudeOpenAICompatible(t *testing.T) {
-	relay := &ProviderRelayService{}
-	provider := Provider{
-		APIEndpoint:       "/legacy",
-		ResponsesEndpoint: "/v1/responses",
-		UpstreamProtocol:  string(UpstreamProtocolOpenAIChat),
-	}
-
-	if got := relay.resolveRelayEndpoint("claude", provider, "/v1/messages"); got != "/v1/responses" {
-		t.Fatalf("claude openai-compatible endpoint = %q, want /v1/responses", got)
-	}
-}
-
 // ==================== ReplaceModelInRequestBody 测试 ====================
 
 func TestReplaceModelInRequestBody(t *testing.T) {
@@ -1060,7 +1047,7 @@ func TestParseNonStreamingTokensAnthropic(t *testing.T) {
 	}`)
 
 	log := &ReqeustLog{}
-	parseNonStreamingTokens(body, "claude", false, nil, log)
+	parseNonStreamingTokens(body, "claude", log)
 
 	if log.InputTokens != 15 {
 		t.Fatalf("expected InputTokens=15, got %d", log.InputTokens)
@@ -1078,7 +1065,7 @@ func TestHasContentInResponseOpenAIChatWithContent(t *testing.T) {
 		"choices": [{"index": 0, "message": {"role": "assistant", "content": "Hello!"}}]
 	}`)
 
-	if !hasContentInResponse(body, "openai-chat", false) {
+	if !hasContentInResponse(body, "openai-chat") {
 		t.Fatal("expected hasContent=true for OpenAI Chat with content")
 	}
 }
@@ -1089,7 +1076,7 @@ func TestHasContentInResponseOpenAIChatEmpty(t *testing.T) {
 		"choices": [{"index": 0, "message": {"role": "assistant", "content": ""}}]
 	}`)
 
-	if hasContentInResponse(body, "openai-chat", false) {
+	if hasContentInResponse(body, "openai-chat") {
 		t.Fatal("expected hasContent=false for OpenAI Chat with empty content")
 	}
 }
@@ -1100,7 +1087,7 @@ func TestHasContentInResponseOpenAIChatWithToolCalls(t *testing.T) {
 		"choices": [{"index": 0, "message": {"role": "assistant", "content": null, "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "get_weather"}}]}}]
 	}`)
 
-	if !hasContentInResponse(body, "openai-chat", false) {
+	if !hasContentInResponse(body, "openai-chat") {
 		t.Fatal("expected hasContent=true for OpenAI Chat with tool_calls")
 	}
 }
@@ -1113,7 +1100,7 @@ func TestHasContentInResponseAnthropicWithText(t *testing.T) {
 		"content": [{"type": "text", "text": "Hello!"}]
 	}`)
 
-	if !hasContentInResponse(body, "claude", false) {
+	if !hasContentInResponse(body, "claude") {
 		t.Fatal("expected hasContent=true for Anthropic with text")
 	}
 }
@@ -1126,7 +1113,7 @@ func TestHasContentInResponseAnthropicEmpty(t *testing.T) {
 		"content": []
 	}`)
 
-	if hasContentInResponse(body, "claude", false) {
+	if hasContentInResponse(body, "claude") {
 		t.Fatal("expected hasContent=false for Anthropic with empty content")
 	}
 }
@@ -1139,7 +1126,7 @@ func TestHasContentInResponseAnthropicToolUse(t *testing.T) {
 		"content": [{"type": "tool_use", "id": "toolu_1", "name": "get_weather"}]
 	}`)
 
-	if !hasContentInResponse(body, "claude", false) {
+	if !hasContentInResponse(body, "claude") {
 		t.Fatal("expected hasContent=true for Anthropic with tool_use")
 	}
 }
@@ -1189,7 +1176,7 @@ func TestEmptyShellDetectionOpenAIChat(t *testing.T) {
 	log := &ReqeustLog{}
 	OpenAIChatParseTokenUsageFromResponse(string(body), log)
 
-	isShell := log.isEmptyShell() && !hasContentInResponse(body, "openai-chat", false)
+	isShell := log.isEmptyShell() && !hasContentInResponse(body, "openai-chat")
 	if isShell {
 		t.Fatal("has content → should NOT be empty shell")
 	}
@@ -1199,7 +1186,7 @@ func TestEmptyShellDetectionOpenAIChat(t *testing.T) {
 	log2 := &ReqeustLog{}
 	OpenAIChatParseTokenUsageFromResponse(string(body2), log2)
 
-	isShell2 := log2.isEmptyShell() && !hasContentInResponse(body2, "openai-chat", false)
+	isShell2 := log2.isEmptyShell() && !hasContentInResponse(body2, "openai-chat")
 	if !isShell2 {
 		t.Fatal("no content and no usage → should be empty shell")
 	}
@@ -1209,9 +1196,9 @@ func TestEmptyShellDetectionAnthropic(t *testing.T) {
 	// 有内容：不判空壳
 	body := []byte(`{"type":"message","content":[{"type":"text","text":"Hello!"}],"usage":{"input_tokens":0,"output_tokens":0}}`)
 	log := &ReqeustLog{}
-	parseNonStreamingTokens(body, "claude", false, nil, log)
+	parseNonStreamingTokens(body, "claude", log)
 
-	isShell := log.isEmptyShell() && !hasContentInResponse(body, "claude", false)
+	isShell := log.isEmptyShell() && !hasContentInResponse(body, "claude")
 	if isShell {
 		t.Fatal("has text content → should NOT be empty shell")
 	}
@@ -1219,9 +1206,9 @@ func TestEmptyShellDetectionAnthropic(t *testing.T) {
 	// 无内容且 usage 全 0：判空壳
 	body2 := []byte(`{"type":"message","content":[],"usage":{"input_tokens":0,"output_tokens":0}}`)
 	log2 := &ReqeustLog{}
-	parseNonStreamingTokens(body2, "claude", false, nil, log2)
+	parseNonStreamingTokens(body2, "claude", log2)
 
-	isShell2 := log2.isEmptyShell() && !hasContentInResponse(body2, "claude", false)
+	isShell2 := log2.isEmptyShell() && !hasContentInResponse(body2, "claude")
 	if !isShell2 {
 		t.Fatal("no content and zero usage → should be empty shell")
 	}

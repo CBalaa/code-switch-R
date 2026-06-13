@@ -731,12 +731,6 @@ func (prs *ProviderRelayService) registerRoutes(router gin.IRouter) {
 }
 
 func (prs *ProviderRelayService) resolveRelayEndpoint(kind string, provider Provider, routeEndpoint string) string {
-	if strings.EqualFold(kind, "claude") &&
-		routeEndpoint == "/v1/messages" &&
-		provider.GetUpstreamProtocol() == UpstreamProtocolOpenAIChat {
-		return provider.GetEffectiveEndpoint("/v1/responses")
-	}
-
 	return provider.GetEffectiveEndpoint(routeEndpoint)
 }
 
@@ -913,17 +907,6 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 				fmt.Printf("[WARN]   ✗ Level %d 失败: %s | 错误: %s | 耗时: %.2fs\n",
 					level, provider.Name, errorMsg, duration.Seconds())
 
-				// 客户端请求被拒绝（不支持的格式/功能）：直接返回 400，不重试
-				if errors.Is(err, ErrClientRequestRejected) {
-					fmt.Printf("[INFO] 🚫 客户端请求被拒绝: %s\n", errorMsg)
-					c.JSON(http.StatusBadRequest, gin.H{
-						"type":    "error",
-						"error":   map[string]string{"type": "invalid_request_error", "message": errorMsg},
-						"message": errorMsg,
-					})
-					return
-				}
-
 				if errors.Is(err, errClientAbort) {
 					fmt.Printf("[INFO] 客户端中断，停止重试: %s\n", provider.Name)
 					return
@@ -1006,75 +989,6 @@ func (prs *ProviderRelayService) forwardRequest(
 		}
 	}
 
-	// ========== 协议转换检测 ==========
-	upstreamProtocol := provider.ResolveUpstreamProtocol(endpoint)
-	var sseConverter SSEProtocolConverter
-	useResponsesTransform := false
-	var convertInfo ConvertInfo
-	webSearchFallback, hasWebSearchFallback := claudeWebSearchFallbackRequest{}, false
-	if kind == "claude" && upstreamProtocol == UpstreamProtocolOpenAIChat {
-		webSearchFallback, hasWebSearchFallback = detectClaudeWebSearchFallbackRequest(bodyBytes)
-	}
-
-	if kind == "claude" && strings.HasSuffix(endpoint, "/count_tokens") && upstreamProtocol != UpstreamProtocolAnthropic {
-		return false, NewClientRequestRejectedError("当前 OpenAI Compatible Claude 供应商暂不支持 /v1/messages/count_tokens")
-	}
-
-	// Codex 客户端本身就是 OpenAI Responses 协议，请求体和响应体都应直接透传。
-	// 只有 Claude / 自定义 CLI 的 Anthropic Messages 入口才需要做协议转换。
-	shouldConvertOpenAICompatiblePayload := kind != "codex" && kind != "openai-responses" && kind != "openai-chat"
-
-	// 如果上游是 OpenAI Compatible，需要转换请求体
-	if upstreamProtocol == UpstreamProtocolOpenAIChat && shouldConvertOpenAICompatiblePayload {
-		fmt.Printf("[协议转换] Provider %s 使用 OpenAI Compatible 协议\n", provider.Name)
-
-		var (
-			convertedBody []byte
-			info          ConvertInfo
-			err           error
-		)
-
-		if isResponsesEndpoint(endpoint) {
-			convertedBody, info, err = ConvertAnthropicToOpenAIResponses(bodyBytes, ResponsesConvertOptions{
-				AllowWebSearch: provider.SupportsWebSearch || hasWebSearchFallback,
-				ProviderName:   provider.Name,
-			})
-			if err == nil {
-				useResponsesTransform = true
-				if isStream {
-					sseConverter = NewResponsesToAnthropicSSEConverter(model)
-				}
-			}
-		} else {
-			opts := DefaultConvertOptions()
-			convertedBody, info, err = ConvertAnthropicToOpenAI(bodyBytes, opts)
-			if err == nil && isStream {
-				sseConverter = NewOpenAIToAnthropicSSEConverter(model)
-			}
-		}
-
-		if err != nil {
-			// 客户端请求被拒绝（不支持的功能）
-			return false, err
-		}
-
-		bodyBytes = convertedBody
-		convertInfo = info
-
-		// 打印转换信息
-		if len(info.DroppedMetadataKeys) > 0 {
-			fmt.Printf("[协议转换] 丢弃 metadata keys: %v\n", info.DroppedMetadataKeys)
-		}
-		if len(info.DroppedFields) > 0 {
-			fmt.Printf("[协议转换] 丢弃顶层字段: %v\n", info.DroppedFields)
-		}
-		if info.MappedUser != "" {
-			fmt.Printf("[协议转换] metadata.user_id -> user: %s\n", info.MappedUser)
-		}
-
-	}
-	_ = convertInfo // 避免未使用警告
-
 	if kind == "openai-chat" && isStream {
 		bodyBytes = ensureOpenAIChatStreamUsage(bodyBytes)
 	}
@@ -1087,8 +1001,7 @@ func (prs *ProviderRelayService) forwardRequest(
 	case "x-api-key":
 		// 仅当用户显式选择 x-api-key 时使用（Anthropic 官方 API）
 		headers["x-api-key"] = provider.APIKey
-		// 只有 Anthropic 协议才注入 anthropic-version
-		if upstreamProtocol == UpstreamProtocolAnthropic {
+		if kind == "claude" {
 			headers["anthropic-version"] = "2023-06-01"
 		}
 	case "", "bearer":
@@ -1101,17 +1014,6 @@ func (prs *ProviderRelayService) forwardRequest(
 			headerName = "Authorization"
 		}
 		headers[headerName] = provider.APIKey
-	}
-
-	// OpenAI 协议时移除 Anthropic 专用头
-	if upstreamProtocol == UpstreamProtocolOpenAIChat {
-		deleteHeaderCaseInsensitive(headers, "anthropic-version")
-		deleteHeaderCaseInsensitive(headers, "anthropic-beta")
-		deleteHeaderCaseInsensitive(headers, "x-api-key")
-		// 确保使用 Bearer 认证
-		if headers["Authorization"] == "" {
-			headers["Authorization"] = fmt.Sprintf("Bearer %s", provider.APIKey)
-		}
 	}
 
 	if _, ok := headers["Accept"]; !ok {
@@ -1181,22 +1083,12 @@ func (prs *ProviderRelayService) forwardRequest(
 		}
 	}()
 
-	if hasWebSearchFallback {
-		fmt.Printf("[WebSearchFallback] Provider %s 命中 Claude WebSearch 请求，直接使用本地 fallback\n", provider.Name)
-		return prs.serveClaudeWebSearchFallback(c, webSearchFallback, isStream, model, requestLog)
-	}
-
 	resp, err := prs.doProviderRequest(c.Request.Context(), targetURL, headers, query, bodyBytes)
 	requestLog.markUpstreamHeaders()
 
 	// 无论成功失败，先尝试记录 HttpCode
 	if resp != nil {
 		requestLog.HttpCode = resp.StatusCode()
-	}
-
-	if hasWebSearchFallback && isUnsupportedWebSearchToolError(resp, err) {
-		fmt.Printf("[WebSearchFallback] Provider %s 不支持 web_search_preview，切换到本地 fallback\n", provider.Name)
-		return prs.serveClaudeWebSearchFallback(c, webSearchFallback, isStream, model, requestLog)
 	}
 
 	if err != nil {
@@ -1247,12 +1139,7 @@ func (prs *ProviderRelayService) forwardRequest(
 	if status == 0 {
 		fmt.Printf("[WARN] Provider %s 返回状态码 0，但无错误，当作成功处理\n", provider.Name)
 		var copyErr error
-		if useResponsesTransform && !isStream {
-			copyErr = writeTransformedJSONResponse(c.Writer, resp, requestLog)
-		} else if sseConverter != nil && isStream {
-			// 使用协议转换 Hook
-			_, copyErr = writeStreamingResponse(c.Writer, resp, requestLog, protocolConvertHook(sseConverter, kind, requestLog))
-		} else if isStreamResponse(resp, isStream) {
+		if isStreamResponse(resp, isStream) {
 			if prs.shouldUseCodexStreamGuard(kind, endpoint) {
 				var responseWritten bool
 				_, responseWritten, copyErr = writeCodexGuardedStreamingResponse(c.Writer, resp, requestLog, ReqeustLogHook(c, kind, requestLog))
@@ -1291,16 +1178,7 @@ func (prs *ProviderRelayService) forwardRequest(
 			finalBody := bodyData
 			contentType := resp.RawResponse.Header.Get("Content-Type")
 
-			if useResponsesTransform {
-				// Claude → OpenAI Responses：先转换回 Anthropic 格式再解析
-				transformed, transformErr := ConvertOpenAIResponsesToAnthropic(bodyData)
-				if transformErr != nil {
-					return false, fmt.Errorf("responses transform failed: %w", transformErr)
-				}
-				finalBody = transformed
-				ClaudeCodeParseTokenUsageFromResponse(string(transformed), requestLog)
-				contentType = "application/json"
-			} else if kind == "openai-chat" {
+			if kind == "openai-chat" {
 				// OpenAI Chat：使用正确的 prompt_tokens/completion_tokens 解析
 				OpenAIChatParseTokenUsageFromResponse(string(bodyData), requestLog)
 				if contentType == "" {
@@ -1314,11 +1192,11 @@ func (prs *ProviderRelayService) forwardRequest(
 				}
 			} else {
 				// 通用格式（Anthropic 等）
-				parseNonStreamingTokens(bodyData, kind, false, nil, requestLog)
+				parseNonStreamingTokens(bodyData, kind, requestLog)
 			}
 
 			// 空壳检测
-			if requestLog.isEmptyShell() && !hasContentInResponse(finalBody, kind, useResponsesTransform) {
+			if requestLog.isEmptyShell() && !hasContentInResponse(finalBody, kind) {
 				fmt.Printf("[WARN] Provider %s 返回 200 空壳响应（无 tokens 且无内容），计为失败\n", provider.Name)
 				return false, fmt.Errorf("%w: provider %s returned 200 empty shell", errProviderEmptyShell, provider.Name)
 			}
@@ -1337,12 +1215,7 @@ func (prs *ProviderRelayService) forwardRequest(
 		}
 
 		var copyErr error
-		if useResponsesTransform && !isStream {
-			copyErr = writeTransformedJSONResponse(c.Writer, resp, requestLog)
-		} else if sseConverter != nil && isStream {
-			// 使用协议转换 Hook
-			_, copyErr = writeStreamingResponse(c.Writer, resp, requestLog, protocolConvertHook(sseConverter, kind, requestLog))
-		} else if isStreamResponse(resp, isStream) {
+		if isStreamResponse(resp, isStream) {
 			if prs.shouldUseCodexStreamGuard(kind, endpoint) {
 				var responseWritten bool
 				_, responseWritten, copyErr = writeCodexGuardedStreamingResponse(c.Writer, resp, requestLog, ReqeustLogHook(c, kind, requestLog))
@@ -2022,37 +1895,6 @@ func appendCacheControlDirective(value, directive string) string {
 	return value + ", " + directive
 }
 
-func writeTransformedJSONResponse(w http.ResponseWriter, resp *xrequest.Response, requestLog *ReqeustLog) error {
-	if resp == nil || resp.RawResponse == nil {
-		return fmt.Errorf("empty upstream response")
-	}
-
-	transformedBody, err := ConvertOpenAIResponsesToAnthropic(resp.Bytes())
-	if err != nil {
-		return err
-	}
-
-	ClaudeCodeParseTokenUsageFromResponse(string(transformedBody), requestLog)
-
-	for key, values := range resp.Headers() {
-		lowerKey := strings.ToLower(key)
-		switch lowerKey {
-		case "content-length", "content-encoding", "transfer-encoding", "connection":
-			continue
-		}
-		for _, value := range values {
-			w.Header().Add(key, value)
-		}
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Del("Content-Length")
-	w.WriteHeader(resp.StatusCode())
-
-	_, err = w.Write(transformedBody)
-	return err
-}
-
 func writeOpenAIChatJSONResponse(w http.ResponseWriter, resp *xrequest.Response, requestLog *ReqeustLog) error {
 	if resp == nil || resp.RawResponse == nil {
 		return fmt.Errorf("empty upstream response")
@@ -2260,28 +2102,6 @@ func ensureRequestLogTableWithDB(db *sql.DB) error {
 	return nil
 }
 
-// protocolConvertHook 协议转换 Hook：将上游 SSE 转换为 Anthropic SSE，并提取 usage
-// 注意：xrequest 的 hook 是逐行回调（每次收到一行 SSE 数据）
-func protocolConvertHook(converter SSEProtocolConverter, kind string, usage *ReqeustLog) func(data []byte) (bool, []byte) {
-	return func(data []byte) (bool, []byte) {
-		// xrequest 逐行回调，直接传给 ProcessLine
-		line := string(data)
-		converted := converter.ProcessLine(line)
-
-		// 如果没有输出，返回 flush=false 丢弃该行（避免写出空行）
-		if converted == "" {
-			return false, nil
-		}
-
-		// 从转换后的 Anthropic SSE 中提取 usage（使用现有解析器）
-		parseEventPayload(converted, ClaudeCodeParseTokenUsageFromResponse, usage)
-		markFirstTextFromSSEPayload(converted, usage)
-
-		// 返回转换后的数据
-		return true, []byte(converted)
-	}
-}
-
 func ReqeustLogHook(c *gin.Context, kind string, usage *ReqeustLog) func(data []byte) (bool, []byte) { // SSE 钩子：累计字节和解析 token 用量
 	return func(data []byte) (bool, []byte) {
 		payload := strings.TrimSpace(string(data))
@@ -2433,7 +2253,7 @@ func copyResponseHeaders(w http.ResponseWriter, upstream http.Header) {
 
 // parseNonStreamingTokens extracts token usage from a non-streaming response body
 // and populates requestLog fields.
-func parseNonStreamingTokens(body []byte, kind string, useResponsesTransform bool, sseConverter SSEProtocolConverter, requestLog *ReqeustLog) {
+func parseNonStreamingTokens(body []byte, kind string, requestLog *ReqeustLog) {
 	if requestLog == nil || len(body) == 0 {
 		return
 	}
@@ -2469,7 +2289,7 @@ func parseNonStreamingTokens(body []byte, kind string, useResponsesTransform boo
 
 // hasContentInResponse checks whether a non-streaming response body contains actual
 // text content, tool calls, or reasoning output — beyond just empty JSON structures.
-func hasContentInResponse(body []byte, kind string, useResponsesTransform bool) bool {
+func hasContentInResponse(body []byte, kind string) bool {
 	if len(body) == 0 {
 		return false
 	}

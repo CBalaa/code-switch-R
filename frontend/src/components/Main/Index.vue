@@ -371,36 +371,6 @@
                   />
                                   </label>
 
-                <!-- 上游协议类型 -->
-                <div class="form-field">
-                  <div class="label-with-hint">{{ t('components.main.form.labels.upstreamProtocol') }} <HelpHint :text="t('components.main.form.hints.upstreamProtocol')" /></div>
-                  <Listbox v-model="modalState.form.upstreamProtocol" v-slot="{ open }">
-                    <div class="level-select">
-                      <ListboxButton class="level-select-button">
-                        <span class="level-label">
-                          {{ upstreamProtocolOptions.find((item) => item.value === modalState.form.upstreamProtocol)?.label || modalState.form.upstreamProtocol }}
-                        </span>
-                        <svg viewBox="0 0 20 20" aria-hidden="true">
-                          <path d="M6 8l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none" />
-                        </svg>
-                      </ListboxButton>
-                      <ListboxOptions v-if="open" class="level-select-options">
-                        <ListboxOption
-                          v-for="option in upstreamProtocolOptions"
-                          :key="option.value"
-                          :value="option.value"
-                          v-slot="{ active, selected }"
-                        >
-                          <div :class="['level-option', { active, selected }]">
-                            <span class="level-name">{{ option.label }}</span>
-                            <span class="level-desc">{{ option.desc }}</span>
-                          </div>
-                        </ListboxOption>
-                      </ListboxOptions>
-                    </div>
-                  </Listbox>
-                                  </div>
-
                 <!-- 认证方式 -->
                 <div class="form-field">
                   <div class="label-with-hint">{{ t('components.main.form.labels.connectivityAuthType') }} <HelpHint :text="t('components.main.form.hints.connectivityAuthType')" /></div>
@@ -1576,10 +1546,7 @@ const testingConnectivity = ref(false)
 const connectivityTestResult = ref<{ success: boolean; message: string } | null>(null)
 
 // 获取平台默认端点
-const getDefaultEndpoint = (platform: string, upstreamProtocol = 'auto') => {
-  if (platform === 'claude' && upstreamProtocol === 'openai_chat') {
-    return '/v1/responses'
-  }
+const getDefaultEndpoint = (platform: string) => {
   const defaults: Record<string, string> = {
     claude: '/v1/messages',
     'openai-responses': '/responses',
@@ -1604,7 +1571,7 @@ const handleTestConnectivity = async () => {
       modalState.form.apiUrl,
       modalState.form.apiKey,
       modalState.form.connectivityTestModel || '',
-      modalState.form.connectivityTestEndpoint || getDefaultEndpoint(platform, modalState.form.upstreamProtocol || 'auto'),
+      modalState.form.connectivityTestEndpoint || getDefaultEndpoint(platform),
       resolveEffectiveAuthType()
     )
 
@@ -1656,15 +1623,13 @@ const toggleTheme = () => {
 
 const syncDefaultTestEndpoint = (
   platform: string,
-  nextProtocol: string,
-  previousPlatform: string,
-  prevProtocol: string
+  previousPlatform: string
 ) => {
   const availabilityConfig = modalState.form.availabilityConfig
   if (!availabilityConfig) return
 
-  const previousDefault = getDefaultEndpoint(previousPlatform, prevProtocol || 'auto')
-  const nextDefault = getDefaultEndpoint(platform, nextProtocol || 'auto')
+  const previousDefault = getDefaultEndpoint(previousPlatform)
+  const nextDefault = getDefaultEndpoint(platform)
   const currentValue = availabilityConfig.testEndpoint || ''
 
   if (!currentValue || currentValue === previousDefault) {
@@ -1701,8 +1666,6 @@ type VendorForm = {
   connectivityTestEndpoint?: string
   /** @deprecated */
   connectivityAuthType?: string
-  // 上游协议类型
-  upstreamProtocol?: string
 }
 
 const failedFaviconSites = reactive<Record<string, boolean>>({})
@@ -1734,12 +1697,11 @@ const defaultFormValues = (platform?: string): VendorForm => ({
   apiEndpoint: '', // API 端点（可选）
   responsesEndpoint: '',
   chatEndpoint: '',
-  upstreamProtocol: 'auto', // 上游协议类型（anthropic/openai_chat/auto）
   // 可用性监控配置（新）
   availabilityMonitorEnabled: false,
   availabilityConfig: {
     testModel: '',
-    testEndpoint: getDefaultEndpoint(platform || 'claude', 'auto'),
+    testEndpoint: getDefaultEndpoint(platform || 'claude'),
     timeout: 15000,
   },
   // 旧可用性字段（已废弃，置空）
@@ -1814,13 +1776,6 @@ const authTypeOptions = computed(() => [
   { value: 'x-api-key', label: 'X-API-Key' },
 ])
 
-// 上游协议类型选项
-const upstreamProtocolOptions = computed(() => [
-  { value: 'auto', label: t('components.main.form.upstreamProtocol.auto'), desc: t('components.main.form.upstreamProtocol.autoDesc') },
-  { value: 'anthropic', label: t('components.main.form.upstreamProtocol.anthropic'), desc: t('components.main.form.upstreamProtocol.anthropicDesc') },
-  { value: 'openai_chat', label: t('components.main.form.upstreamProtocol.openaiChat'), desc: t('components.main.form.upstreamProtocol.openaiChatDesc') },
-])
-
 const platformSupportsResponsesEndpoint = (platform: ProviderTab) => platform !== 'openai-chat'
 const platformSupportsChatEndpoint = (platform: ProviderTab) => platform !== 'openai-responses'
 
@@ -1881,7 +1836,6 @@ const openEditModal = (card: AutomationCard) => {
     apiEndpoint: card.apiEndpoint || '',
     responsesEndpoint: legacyResponsesEndpoint(card),
     chatEndpoint: legacyChatEndpoint(card),
-    upstreamProtocol: card.upstreamProtocol || 'auto',
     // 可用性监控配置（新）- 兼容从旧字段迁移
     availabilityMonitorEnabled:
       card.availabilityMonitorEnabled ?? card.connectivityCheck ?? false,
@@ -1891,7 +1845,7 @@ const openEditModal = (card: AutomationCard) => {
       testEndpoint:
         card.availabilityConfig?.testEndpoint ||
         card.connectivityTestEndpoint ||
-        getDefaultEndpoint(activeTab.value, card.upstreamProtocol || 'auto'),
+        getDefaultEndpoint(activeTab.value),
       timeout: card.availabilityConfig?.timeout || 15000,
     },
     // 旧可用性字段不再写入表单
@@ -1920,12 +1874,11 @@ const openEditModal = (card: AutomationCard) => {
 }
 
 watch(
-  () => [modalState.open, modalState.tabId, modalState.form.upstreamProtocol] as const,
-  ([open, platform, nextProtocol], [prevOpen, prevPlatform, prevProtocol]) => {
+  () => [modalState.open, modalState.tabId] as const,
+  ([open, platform], [prevOpen, prevPlatform]) => {
     if (!open) return
     const previousPlatform = prevOpen ? prevPlatform : platform
-    const previousProtocol = prevOpen ? (prevProtocol || 'auto') : (nextProtocol || 'auto')
-    syncDefaultTestEndpoint(platform, nextProtocol || 'auto', previousPlatform, previousProtocol)
+    syncDefaultTestEndpoint(platform, previousPlatform)
   }
 )
 
@@ -1968,14 +1921,13 @@ const submitModal = async (): Promise<boolean> => {
       apiEndpoint: protocolEndpoints.apiEndpoint,
       responsesEndpoint: protocolEndpoints.responsesEndpoint,
       chatEndpoint: protocolEndpoints.chatEndpoint,
-      upstreamProtocol: modalState.form.upstreamProtocol || 'auto',
       // 可用性监控配置（新）
       availabilityMonitorEnabled: !!modalState.form.availabilityMonitorEnabled,
       availabilityConfig: {
         testModel: modalState.form.availabilityConfig?.testModel || '',
         testEndpoint:
           modalState.form.availabilityConfig?.testEndpoint ||
-          getDefaultEndpoint(modalState.tabId, modalState.form.upstreamProtocol || 'auto'),
+          getDefaultEndpoint(modalState.tabId),
         timeout: modalState.form.availabilityConfig?.timeout || 15000,
       },
       // 旧可用性字段清空（避免再次写入）
@@ -2005,14 +1957,13 @@ const submitModal = async (): Promise<boolean> => {
       apiEndpoint: protocolEndpoints.apiEndpoint,
       responsesEndpoint: protocolEndpoints.responsesEndpoint,
       chatEndpoint: protocolEndpoints.chatEndpoint,
-      upstreamProtocol: modalState.form.upstreamProtocol || 'auto',
       // 可用性监控配置（新）
       availabilityMonitorEnabled: !!modalState.form.availabilityMonitorEnabled,
       availabilityConfig: {
         testModel: modalState.form.availabilityConfig?.testModel || '',
         testEndpoint:
           modalState.form.availabilityConfig?.testEndpoint ||
-          getDefaultEndpoint(modalState.tabId, modalState.form.upstreamProtocol || 'auto'),
+          getDefaultEndpoint(modalState.tabId),
         timeout: modalState.form.availabilityConfig?.timeout || 15000,
       },
       // 旧可用性字段清空
@@ -2112,7 +2063,6 @@ const handleDuplicate = (card: AutomationCard) => {
     apiEndpoint: card.apiEndpoint || '',
     responsesEndpoint: legacyResponsesEndpoint(card),
     chatEndpoint: legacyChatEndpoint(card),
-    upstreamProtocol: card.upstreamProtocol || 'auto',
     availabilityMonitorEnabled:
       card.availabilityMonitorEnabled ?? card.connectivityCheck ?? false,
     availabilityConfig: {
@@ -2121,7 +2071,7 @@ const handleDuplicate = (card: AutomationCard) => {
       testEndpoint:
         card.availabilityConfig?.testEndpoint ||
         card.connectivityTestEndpoint ||
-        getDefaultEndpoint(activeTab.value, card.upstreamProtocol || 'auto'),
+        getDefaultEndpoint(activeTab.value),
       timeout: card.availabilityConfig?.timeout || 15000,
     },
     connectivityCheck: false,

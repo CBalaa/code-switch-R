@@ -582,7 +582,6 @@ func (hcs *HealthCheckService) checkProvider(ctx context.Context, provider Provi
 	// 获取有效的测试参数
 	model := hcs.getEffectiveModel(&provider, platform)
 	endpoint := hcs.getEffectiveEndpoint(&provider, platform)
-	upstreamProtocol := provider.ResolveUpstreamProtocol(endpoint)
 	timeout := hcs.getEffectiveTimeout(&provider)
 
 	result.Model = model
@@ -621,7 +620,7 @@ func (hcs *HealthCheckService) checkProvider(ctx context.Context, provider Provi
 		switch authType {
 		case "x-api-key":
 			req.Header.Set("x-api-key", provider.APIKey)
-			if upstreamProtocol == UpstreamProtocolAnthropic {
+			if strings.EqualFold(platform, "claude") {
 				req.Header.Set("anthropic-version", "2023-06-01")
 			}
 		case "bearer":
@@ -726,15 +725,6 @@ func (hcs *HealthCheckService) getEffectiveModel(provider *Provider, platform st
 	// 平台默认模型
 	switch strings.ToLower(platform) {
 	case "claude":
-		if provider.GetUpstreamProtocol() == UpstreamProtocolOpenAIChat {
-			if mapped := provider.GetEffectiveModel("claude-haiku-4-5-20251001"); mapped != "" && mapped != "claude-haiku-4-5-20251001" {
-				return mapped
-			}
-			if fallback := firstHealthcheckProviderModel(provider); fallback != "" {
-				return fallback
-			}
-			return "gpt-4.1-mini"
-		}
 		return "claude-haiku-4-5-20251001"
 	case "openai-responses":
 		return "gpt-4o-mini"
@@ -749,12 +739,6 @@ func (hcs *HealthCheckService) getEffectiveModel(provider *Provider, platform st
 func (hcs *HealthCheckService) getEffectiveEndpoint(provider *Provider, platform string) string {
 	// 优先级 1：用户配置的健康检查专用端点
 	if provider.AvailabilityConfig != nil && provider.AvailabilityConfig.TestEndpoint != "" {
-		if strings.ToLower(platform) == "claude" &&
-			provider.GetUpstreamProtocol() == UpstreamProtocolOpenAIChat &&
-			strings.EqualFold(provider.AvailabilityConfig.TestEndpoint, "/v1/messages") &&
-			strings.TrimSpace(provider.APIEndpoint) == "" {
-			return "/v1/responses"
-		}
 		return provider.AvailabilityConfig.TestEndpoint
 	}
 
@@ -766,9 +750,6 @@ func (hcs *HealthCheckService) getEffectiveEndpoint(provider *Provider, platform
 	// 优先级 3：平台默认端点
 	switch strings.ToLower(platform) {
 	case "claude":
-		if provider.GetUpstreamProtocol() == UpstreamProtocolOpenAIChat {
-			return "/v1/responses"
-		}
 		return "/v1/messages"
 	case "openai-responses":
 		return "/responses"

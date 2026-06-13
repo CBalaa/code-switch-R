@@ -112,7 +112,6 @@ func (cts *ConnectivityTestService) TestProvider(ctx context.Context, provider P
 
 	// 根据用户配置的端点拼接目标 URL
 	targetURL := cts.buildTargetURL(&provider, platform)
-	upstreamProtocol := provider.ResolveUpstreamProtocol(cts.getEffectiveEndpoint(&provider, platform))
 	authType := cts.getEffectiveAuthType(&provider, platform)
 
 	// 调试日志：打印最终请求信息
@@ -137,7 +136,7 @@ func (cts *ConnectivityTestService) TestProvider(ctx context.Context, provider P
 		switch authTypeLower {
 		case "x-api-key":
 			req.Header.Set("x-api-key", provider.APIKey)
-			if upstreamProtocol == UpstreamProtocolAnthropic {
+			if strings.EqualFold(platform, "claude") {
 				req.Header.Set("anthropic-version", "2023-06-01")
 			}
 		case "bearer":
@@ -202,12 +201,6 @@ func (cts *ConnectivityTestService) TestProvider(ctx context.Context, provider P
 func (cts *ConnectivityTestService) getEffectiveEndpoint(provider *Provider, platform string) string {
 	endpoint := strings.TrimSpace(provider.ConnectivityTestEndpoint)
 	if endpoint != "" {
-		if strings.ToLower(platform) == "claude" &&
-			provider.GetUpstreamProtocol() == UpstreamProtocolOpenAIChat &&
-			strings.EqualFold(endpoint, "/v1/messages") &&
-			strings.TrimSpace(provider.APIEndpoint) == "" {
-			return "/v1/responses"
-		}
 		return endpoint
 	}
 
@@ -217,9 +210,6 @@ func (cts *ConnectivityTestService) getEffectiveEndpoint(provider *Provider, pla
 	// 平台默认端点
 	switch strings.ToLower(platform) {
 	case "claude":
-		if provider.GetUpstreamProtocol() == UpstreamProtocolOpenAIChat {
-			return "/v1/responses"
-		}
 		return "/v1/messages"
 	case "openai-responses":
 		return "/responses"
@@ -377,15 +367,6 @@ func (cts *ConnectivityTestService) getEffectiveModel(provider *Provider, platfo
 
 	switch strings.ToLower(platform) {
 	case "claude":
-		if provider.GetUpstreamProtocol() == UpstreamProtocolOpenAIChat {
-			if mapped := provider.GetEffectiveModel("claude-haiku-4-5-20251001"); mapped != "" && mapped != "claude-haiku-4-5-20251001" {
-				return mapped
-			}
-			if fallback := firstConfiguredProviderModel(provider); fallback != "" {
-				return fallback
-			}
-			return "gpt-4.1-mini"
-		}
 		return "claude-haiku-4-5-20251001"
 	default:
 		return ""

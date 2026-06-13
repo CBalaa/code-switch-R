@@ -40,8 +40,6 @@ export type AutomationCard = {
   connectivityTestEndpoint?: string
   /** @deprecated 已迁移到可用性配置中的认证方式 */
   connectivityAuthType?: string
-  // 上游协议类型（anthropic / openai）
-  upstreamProtocol?: string
 }
 
 export const automationCardGroups: Record<'claude' | 'openai-responses' | 'openai-chat', AutomationCard[]> = {

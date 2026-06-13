@@ -240,7 +240,6 @@
           "apiUrl": "API 地址",
           "apiKey": "API 密钥",
           "apiEndpoint": "API 端点（可选）",
-          "upstreamProtocol": "上游协议",
           "officialSite": "官网地址",
           "icon": "图标",
           "enabled": "启用状态",
@@ -260,7 +259,7 @@
           "name": "例如：AICoding.sh",
           "apiUrl": "https://api.aicoding.sh",
           "apiKey": "sk-xxxxx",
-          "apiEndpoint": "留空使用平台默认，如 Claude 兼容供应商常用 /v1/responses",
+          "apiEndpoint": "留空使用平台默认端点",
           "responsesEndpoint": "例如：/responses 或 /v1/responses",
           "chatEndpoint": "例如：/chat/completions",
           "officialSite": "https://vendor.com",
@@ -276,10 +275,9 @@
         "noIconResults": "未找到匹配的图标",
         "hints": {
           "level": "数字越小优先级越高，Level 1 会被优先尝试，失败后依次尝试 Level 2、Level 3 等",
-          "apiEndpoint": "覆盖平台默认端点。留空使用默认（Claude: Anthropic 为 /v1/messages，OpenAI Compatible 为 /v1/responses；OpenAI Chat: /chat/completions）。GLM 模型请使用 /chat/completions",
+          "apiEndpoint": "覆盖平台默认端点。留空使用默认（Claude: /v1/messages；OpenAI Responses: /responses；OpenAI Chat: /chat/completions）。GLM 模型请使用 /chat/completions",
           "responsesEndpoint": "客户端请求 /responses 或 /v1/responses 时使用此端点；留空则使用旧 API 端点或平台默认端点",
           "chatEndpoint": "客户端请求 /chat/completions 时使用此端点；留空则使用旧 API 端点或平台默认端点",
-          "upstreamProtocol": "指定上游 API 的协议类型。选择 auto 时根据端点自动检测；选择 OpenAI Compatible 时会把 Claude Messages 请求转换到 OpenAI Responses 或 Chat Completions",
           "availabilityMonitor": "启用后会定期进行健康检查，监控此供应商的可用性状态",
           "availabilityAdvancedConfig": "高级配置（测试模型、端点、超时）可在可用性页面中编辑",
           "availabilityTestModel": "用于健康检查的模型，留空则使用平台默认模型",
@@ -306,14 +304,6 @@
         "switch": {
           "on": "已启用",
           "off": "未启用"
-        },
-        "upstreamProtocol": {
-          "auto": "自动检测",
-          "autoDesc": "根据 API 端点自动判断协议类型",
-          "anthropic": "Anthropic",
-          "anthropicDesc": "使用 Anthropic Messages API（默认）",
-          "openaiChat": "OpenAI Compatible",
-          "openaiChatDesc": "使用 OpenAI Responses / Chat Completions，自动转换 Claude Messages 格式"
         },
         "confirmDeleteTitle": "删除供应商",
         "confirmDeleteMessage": "确认删除 {name} 吗？操作不可撤销",
