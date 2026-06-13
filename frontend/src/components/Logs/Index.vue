@@ -95,8 +95,16 @@
                 <span class="token-value">{{ formatTokenNumber(item.output_tokens) }}</span>
               </div>
               <div>
+                <span class="token-label">{{ t('components.logs.tokenLabels.cacheCreate') }}</span>
+                <span class="token-value">{{ formatTokenNumber(item.cache_create_tokens) }}</span>
+              </div>
+              <div>
                 <span class="token-label">{{ t('components.logs.tokenLabels.cacheRead') }}</span>
                 <span class="token-value">{{ formatTokenNumber(item.cache_read_tokens) }}</span>
+              </div>
+              <div>
+                <span class="token-label">{{ t('components.logs.tokenLabels.reasoning') }}</span>
+                <span class="token-value">{{ formatTokenNumber(item.reasoning_tokens) }}</span>
               </div>
             </td>
           </tr>
@@ -135,6 +143,18 @@
           <div class="token-detail-item">
             <span class="token-detail-item__name">{{ t('components.logs.tokenLabels.output') }}</span>
             <span class="token-detail-item__value">{{ formatTokenNumber(stats?.output_tokens) }}</span>
+          </div>
+          <div class="token-detail-item">
+            <span class="token-detail-item__name">{{ t('components.logs.tokenLabels.cacheCreate') }}</span>
+            <span class="token-detail-item__value">{{ formatTokenNumber(stats?.cache_create_tokens) }}</span>
+          </div>
+          <div class="token-detail-item">
+            <span class="token-detail-item__name">{{ t('components.logs.tokenLabels.cacheRead') }}</span>
+            <span class="token-detail-item__value">{{ formatTokenNumber(stats?.cache_read_tokens) }}</span>
+          </div>
+          <div class="token-detail-item">
+            <span class="token-detail-item__name">{{ t('components.logs.tokenLabels.reasoning') }}</span>
+            <span class="token-detail-item__value">{{ formatTokenNumber(stats?.reasoning_tokens) }}</span>
           </div>
         </div>
       </div>
@@ -251,10 +271,26 @@ const chartData = computed(() => {
         fill: true,
       },
       {
+        label: t('components.logs.tokenLabels.cacheCreate'),
+        data: series.map((item) => item.cache_create_tokens ?? 0),
+        borderColor: '#f59e0b',
+        backgroundColor: 'rgba(245, 158, 11, 0.12)',
+        tension: 0.35,
+        fill: false,
+      },
+      {
         label: t('components.logs.tokenLabels.cacheRead'),
         data: series.map((item) => item.cache_read_tokens ?? 0),
         borderColor: '#38bdf8',
         backgroundColor: 'rgba(56, 189, 248, 0.15)',
+        tension: 0.35,
+        fill: false,
+      },
+      {
+        label: t('components.logs.tokenLabels.reasoning'),
+        data: series.map((item) => item.reasoning_tokens ?? 0),
+        borderColor: '#a78bfa',
+        backgroundColor: 'rgba(167, 139, 250, 0.12)',
         tension: 0.35,
         fill: false,
       },
@@ -506,9 +542,22 @@ const formatCacheHitRate = (cacheRead?: number, totalTokens?: number) => {
   return `${rate.toFixed(1)}%`
 }
 
+const totalTokenTraffic = (data?: {
+  input_tokens?: number
+  output_tokens?: number
+  cache_create_tokens?: number
+  cache_read_tokens?: number
+  reasoning_tokens?: number
+} | null) =>
+  (data?.input_tokens ?? 0) +
+  (data?.output_tokens ?? 0) +
+  (data?.cache_create_tokens ?? 0) +
+  (data?.cache_read_tokens ?? 0) +
+  (data?.reasoning_tokens ?? 0)
+
 const statsCards = computed(() => {
   const data = stats.value
-  const totalTokens = (data?.input_tokens ?? 0) + (data?.output_tokens ?? 0)
+  const totalTokens = totalTokenTraffic(data)
   return [
     {
       key: 'requests',

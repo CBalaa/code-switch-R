@@ -330,7 +330,7 @@
                     type="text"
                     :placeholder="t('components.main.form.placeholders.apiUrl')"
                     required
-                    :class="{ 'has-error': !!modalState.errors.apiUrl }"
+                    :class="{ 'has-error': !!modalState.errors.apiUrl, 'shake-error': shakeFields.apiUrl }"
                   />
                 </label>
 
@@ -349,6 +349,7 @@
                     v-model="modalState.form.apiKey"
                     type="text"
                     :placeholder="t('components.main.form.placeholders.apiKey')"
+                    :class="{ 'has-error': !!modalState.errors.apiKey, 'shake-error': shakeFields.apiKey }"
                   />
                 </label>
 
@@ -359,6 +360,7 @@
                     v-model="modalState.form.apiEndpoint"
                     type="text"
                     :placeholder="t('components.main.form.placeholders.messagesEndpoint')"
+                    :class="{ 'has-error': !!modalState.errors.protocolEndpoint, 'shake-error': shakeFields.protocolEndpoint }"
                   />
                 </label>
 
@@ -368,6 +370,7 @@
                     v-model="modalState.form.responsesEndpoint"
                     type="text"
                     :placeholder="t('components.main.form.placeholders.responsesEndpoint')"
+                    :class="{ 'has-error': !!modalState.errors.protocolEndpoint, 'shake-error': shakeFields.protocolEndpoint }"
                   />
                 </label>
 
@@ -377,6 +380,17 @@
                     v-model="modalState.form.chatEndpoint"
                     type="text"
                     :placeholder="t('components.main.form.placeholders.chatEndpoint')"
+                    :class="{ 'has-error': !!modalState.errors.protocolEndpoint, 'shake-error': shakeFields.protocolEndpoint }"
+                  />
+                </label>
+
+                <label class="form-field">
+                  <div class="label-with-hint">{{ t('components.main.form.labels.modelsEndpoint') }} <HelpHint :text="t('components.main.form.hints.modelsEndpoint')" /></div>
+                  <BaseInput
+                    v-model="modalState.form.modelsEndpoint"
+                    type="text"
+                    :placeholder="t('components.main.form.placeholders.modelsEndpoint')"
+                    :class="{ 'has-error': !!modalState.errors.modelsEndpoint, 'shake-error': shakeFields.modelsEndpoint }"
                   />
                 </label>
 
@@ -441,6 +455,67 @@
 	                <!-- 高级配置提示 -->
                 <div v-if="modalState.form.availabilityMonitorEnabled" class="form-field">
                                   </div>
+
+                <section class="endpoint-test-panel">
+                  <label class="form-field">
+                    <span>{{ t('components.main.form.labels.testModel') }}</span>
+                    <div class="provider-model-combobox">
+                      <input
+                        v-model.trim="providerTestModel"
+                        class="base-input"
+                        :class="{ 'has-error': !!modalState.errors.testModel, 'shake-error': shakeFields.testModel }"
+                        :placeholder="providerModelsLoading ? t('components.main.form.connectivity.loadingModels') : t('components.main.form.placeholders.testModel')"
+                        @focus="providerModelDropdownOpen = true"
+                        @blur="providerModelDropdownOpen = false"
+                        @input="providerModelDropdownOpen = true"
+                      />
+                      <button
+                        class="provider-model-toggle"
+                        type="button"
+                        @mousedown.prevent
+                        @click="toggleProviderModelDropdown"
+                      >
+                        <svg viewBox="0 0 20 20" aria-hidden="true">
+                          <path d="M6 8l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                      </button>
+                      <div v-if="providerModelDropdownOpen" class="provider-model-options">
+                        <button
+                          v-for="model in filteredProviderModelOptions"
+                          :key="model"
+                          class="provider-model-option"
+                          type="button"
+                          @mousedown.prevent="selectProviderTestModel(model)"
+                        >
+                          {{ model }}
+                        </button>
+                        <div v-if="providerModelsLoading" class="provider-model-empty">
+                          {{ t('components.main.form.connectivity.loadingModels') }}
+                        </div>
+                        <div v-else-if="!providerModelOptions.length" class="provider-model-empty">
+                          {{ t('components.main.form.connectivity.noModelOptions') }}
+                        </div>
+                        <div v-else-if="!filteredProviderModelOptions.length" class="provider-model-empty">
+                          {{ t('components.main.form.connectivity.noModelMatches') }}
+                        </div>
+                      </div>
+                    </div>
+                  </label>
+                  <div class="endpoint-test-actions">
+                    <button class="field-test-btn" type="button" :disabled="testingProtocolEndpoint" @click="handleTestProtocolEndpoint">
+                      {{ testingProtocolEndpoint ? t('components.main.form.connectivity.testing') : t('components.main.form.connectivity.testService') }}
+                    </button>
+                    <button class="field-test-btn" type="button" :disabled="testingModelsEndpoint" @click="handleTestModelsEndpoint">
+                      {{ testingModelsEndpoint ? t('components.main.form.connectivity.testing') : t('components.main.form.connectivity.testModels') }}
+                    </button>
+                  </div>
+                  <p v-if="protocolEndpointTestResult" :class="['field-test-result', protocolEndpointTestResult.success ? 'success' : 'error']">
+                    {{ protocolEndpointTestResult.message }}
+                  </p>
+                  <p v-if="modelsEndpointTestResult" :class="['field-test-result', modelsEndpointTestResult.success ? 'success' : 'error']">
+                    {{ modelsEndpointTestResult.message }}
+                  </p>
+                </section>
 
                 <footer class="form-actions">
                   <BaseButton variant="outline" type="button" @click="closeModal">
@@ -1553,6 +1628,21 @@ const connectivityEndpointOptions = [
 // 可用性测试状态
 const testingConnectivity = ref(false)
 const connectivityTestResult = ref<{ success: boolean; message: string } | null>(null)
+const testingProtocolEndpoint = ref(false)
+const testingModelsEndpoint = ref(false)
+const protocolEndpointTestResult = ref<{ success: boolean; message: string } | null>(null)
+const modelsEndpointTestResult = ref<{ success: boolean; message: string } | null>(null)
+const providerTestModel = ref('')
+const providerModelOptions = ref<string[]>([])
+const providerModelsLoading = ref(false)
+const providerModelDropdownOpen = ref(false)
+const shakeFields = reactive({
+  apiUrl: false,
+  apiKey: false,
+  protocolEndpoint: false,
+  modelsEndpoint: false,
+  testModel: false,
+})
 
 // 获取平台默认端点
 const getDefaultEndpoint = (platform: string) => {
@@ -1564,8 +1654,212 @@ const getDefaultEndpoint = (platform: string) => {
   return defaults[platform] || '/chat/completions'
 }
 
+const getDefaultProtocolEndpoint = (platform: string) => {
+  const defaults: Record<string, string> = {
+    claude: '/messages',
+    'openai-responses': '/responses',
+    'openai-chat': '/chat/completions',
+  }
+  return defaults[platform] || '/chat/completions'
+}
+
+const currentProtocolEndpoint = () => {
+  if (modalState.tabId === 'claude') {
+    return modalState.form.apiEndpoint || ''
+  }
+  if (modalState.tabId === 'openai-responses') {
+    return modalState.form.responsesEndpoint || ''
+  }
+  return modalState.form.chatEndpoint || ''
+}
+
+const triggerFieldShake = (field: keyof typeof shakeFields) => {
+  shakeFields[field] = false
+  window.setTimeout(() => {
+    shakeFields[field] = true
+    window.setTimeout(() => {
+      shakeFields[field] = false
+    }, 450)
+  }, 0)
+}
+
+const clearEndpointTestErrors = () => {
+  modalState.errors.apiUrl = ''
+  modalState.errors.apiKey = ''
+  modalState.errors.protocolEndpoint = ''
+  modalState.errors.modelsEndpoint = ''
+  modalState.errors.testModel = ''
+}
+
+const localProviderModelOptions = computed(() => {
+  const models = new Set<string>()
+  Object.keys(modalState.form.supportedModels || {}).forEach((model) => {
+    if (!model.includes('*')) models.add(model)
+  })
+  Object.entries(modalState.form.modelMapping || {}).forEach(([source, target]) => {
+    if (source && !source.includes('*')) models.add(source)
+    if (target && !target.includes('*')) models.add(target)
+  })
+  connectivityTestModelOptions.value.forEach((model) => models.add(model))
+  return Array.from(models).sort((a, b) => a.localeCompare(b))
+})
+
+const combinedProviderModelOptions = computed(() => {
+  const models = new Set<string>()
+  providerModelOptions.value.forEach((model) => models.add(model))
+  localProviderModelOptions.value.forEach((model) => models.add(model))
+  return Array.from(models).sort((a, b) => a.localeCompare(b))
+})
+
+const filteredProviderModelOptions = computed(() => {
+  const prefix = providerTestModel.value.trim().toLowerCase()
+  const options = combinedProviderModelOptions.value
+  if (!prefix) return options.slice(0, 60)
+  return options.filter((model) => model.toLowerCase().startsWith(prefix)).slice(0, 60)
+})
+
+const loadProviderModelsForForm = async () => {
+  const apiUrl = ensureTestBaseURL()
+  if (!apiUrl) return
+  providerModelsLoading.value = true
+  try {
+    const result = await Call.ByName(
+      'codeswitch/services.ConnectivityTestService.ListModelsEndpointManual',
+      apiUrl,
+      modalState.form.apiKey.trim(),
+      modalState.form.modelsEndpoint || '/v1/models',
+      resolveEffectiveAuthType(),
+      modalState.tabId
+    )
+    providerModelOptions.value = result.models || []
+    if (!providerTestModel.value && combinedProviderModelOptions.value.length) {
+      providerTestModel.value = combinedProviderModelOptions.value[0]
+    }
+  } catch (error) {
+    console.warn('Failed to load provider models for form:', error)
+    providerModelOptions.value = []
+  } finally {
+    providerModelsLoading.value = false
+  }
+}
+
+const toggleProviderModelDropdown = async () => {
+  providerModelDropdownOpen.value = !providerModelDropdownOpen.value
+  if (providerModelDropdownOpen.value && !providerModelOptions.value.length) {
+    await loadProviderModelsForForm()
+  }
+}
+
+const selectProviderTestModel = (model: string) => {
+  providerTestModel.value = model
+  providerModelDropdownOpen.value = false
+}
+
+const ensureTestBaseURL = () => {
+  const apiUrl = modalState.form.apiUrl.trim()
+  if (!apiUrl) {
+    modalState.errors.apiUrl = t('components.main.form.errors.required')
+    triggerFieldShake('apiUrl')
+    return ''
+  }
+  try {
+    const parsed = new URL(apiUrl)
+    if (!/^https?:/.test(parsed.protocol)) throw new Error('protocol')
+  } catch {
+    modalState.errors.apiUrl = t('components.main.form.errors.invalidUrl')
+    triggerFieldShake('apiUrl')
+    return ''
+  }
+  modalState.errors.apiUrl = ''
+  return apiUrl
+}
+
 // 获取平台默认认证方式（默认 Bearer，与 v2.2.x 保持一致）
 const getDefaultAuthType = (_platform: string) => 'bearer'
+
+const handleTestProtocolEndpoint = async () => {
+  clearEndpointTestErrors()
+  protocolEndpointTestResult.value = null
+  const apiUrl = ensureTestBaseURL()
+  const apiKey = modalState.form.apiKey.trim()
+  const endpoint = currentProtocolEndpoint()
+  if (!apiUrl) return
+  if (!apiKey) {
+    modalState.errors.apiKey = t('components.main.form.errors.required')
+    triggerFieldShake('apiKey')
+    return
+  }
+  if (!endpoint.trim()) {
+    modalState.errors.protocolEndpoint = t('components.main.form.errors.required')
+    triggerFieldShake('protocolEndpoint')
+    return
+  }
+  if (!providerTestModel.value.trim()) {
+    modalState.errors.testModel = t('components.main.form.errors.required')
+    triggerFieldShake('testModel')
+    return
+  }
+
+  testingProtocolEndpoint.value = true
+  try {
+    const result = await Call.ByName(
+      'codeswitch/services.ConnectivityTestService.TestProviderManual',
+      modalState.tabId,
+      apiUrl,
+      apiKey,
+      providerTestModel.value.trim(),
+      endpoint,
+      resolveEffectiveAuthType()
+    )
+    protocolEndpointTestResult.value = {
+      success: !!result.success,
+      message: result.success
+        ? t('components.main.form.connectivity.serviceSuccess', { latency: result.latencyMs, code: result.httpCode || 200 })
+        : result.message || t('components.main.form.connectivity.failed'),
+    }
+  } catch (error) {
+    protocolEndpointTestResult.value = {
+      success: false,
+      message: t('components.main.form.connectivity.error', { error: extractErrorMessage(error) }),
+    }
+  } finally {
+    testingProtocolEndpoint.value = false
+  }
+}
+
+const handleTestModelsEndpoint = async () => {
+  clearEndpointTestErrors()
+  modelsEndpointTestResult.value = null
+  const apiUrl = ensureTestBaseURL()
+  if (!apiUrl) return
+
+  testingModelsEndpoint.value = true
+  try {
+    const result = await Call.ByName(
+      'codeswitch/services.ConnectivityTestService.ListModelsEndpointManual',
+      apiUrl,
+      modalState.form.apiKey.trim(),
+      modalState.form.modelsEndpoint || '/v1/models',
+      resolveEffectiveAuthType(),
+      modalState.tabId
+    )
+    providerModelOptions.value = result.models || []
+    if (!providerTestModel.value && providerModelOptions.value.length) {
+      providerTestModel.value = providerModelOptions.value[0]
+    }
+    modelsEndpointTestResult.value = {
+      success: true,
+      message: t('components.main.form.connectivity.modelsSuccess', { count: providerModelOptions.value.length }),
+    }
+  } catch (error) {
+    modelsEndpointTestResult.value = {
+      success: false,
+      message: t('components.main.form.connectivity.error', { error: extractErrorMessage(error) }),
+    }
+  } finally {
+    testingModelsEndpoint.value = false
+  }
+}
 
 // 手动测试可用性
 const handleTestConnectivity = async () => {
@@ -1659,6 +1953,7 @@ type VendorForm = {
   apiEndpoint?: string
   responsesEndpoint?: string
   chatEndpoint?: string
+  modelsEndpoint?: string
   // === 可用性监控配置（新） ===
   availabilityMonitorEnabled?: boolean
   availabilityConfig?: {
@@ -1703,9 +1998,10 @@ const defaultFormValues = (platform?: string): VendorForm => ({
   enabled: true,
   supportedModels: {},
   modelMapping: {},
-  apiEndpoint: '', // API 端点（可选）
-  responsesEndpoint: '',
-  chatEndpoint: '',
+  apiEndpoint: platform === 'claude' ? getDefaultProtocolEndpoint('claude') : '',
+  responsesEndpoint: platform === 'openai-responses' ? getDefaultProtocolEndpoint('openai-responses') : '',
+  chatEndpoint: platform === 'openai-chat' ? getDefaultProtocolEndpoint('openai-chat') : '',
+  modelsEndpoint: '',
   // 可用性监控配置（新）
   availabilityMonitorEnabled: false,
   availabilityConfig: {
@@ -1774,6 +2070,10 @@ const modalState = reactive({
   form: defaultFormValues(),
   errors: {
     apiUrl: '',
+    apiKey: '',
+    protocolEndpoint: '',
+    modelsEndpoint: '',
+    testModel: '',
   },
 })
 
@@ -1812,11 +2112,16 @@ const openCreateModal = () => {
   modalState.editingId = null
   editingCard.value = null
   Object.assign(modalState.form, defaultFormValues(activeTab.value))
+  providerTestModel.value = connectivityTestModelOptions.value[0] || ''
+  providerModelOptions.value = []
+  providerModelDropdownOpen.value = false
   // 初始化认证方式为平台默认
   selectedAuthType.value = getDefaultAuthType(activeTab.value)
   customAuthHeader.value = ''
   connectivityTestResult.value = null
-  modalState.errors.apiUrl = ''
+  protocolEndpointTestResult.value = null
+  modelsEndpointTestResult.value = null
+  clearEndpointTestErrors()
   modalState.open = true
 }
 
@@ -1837,6 +2142,7 @@ const openEditModal = (card: AutomationCard) => {
     apiEndpoint: card.apiEndpoint || '',
     responsesEndpoint: legacyResponsesEndpoint(card),
     chatEndpoint: legacyChatEndpoint(card),
+    modelsEndpoint: card.modelsEndpoint || '',
     // 可用性监控配置（新）- 兼容从旧字段迁移
     availabilityMonitorEnabled:
       card.availabilityMonitorEnabled ?? card.connectivityCheck ?? false,
@@ -1855,6 +2161,13 @@ const openEditModal = (card: AutomationCard) => {
     connectivityTestEndpoint: '',
     connectivityAuthType: card.connectivityAuthType || '',
   })
+  providerTestModel.value =
+    card.availabilityConfig?.testModel ||
+    card.connectivityTestModel ||
+    connectivityTestModelOptions.value[0] ||
+    ''
+  providerModelOptions.value = []
+  providerModelDropdownOpen.value = false
   // 初始化认证方式状态
   const storedAuth = (card.connectivityAuthType || '').trim()
   const lower = storedAuth.toLowerCase()
@@ -1870,7 +2183,9 @@ const openEditModal = (card: AutomationCard) => {
     customAuthHeader.value = storedAuth
   }
   connectivityTestResult.value = null
-  modalState.errors.apiUrl = ''
+  protocolEndpointTestResult.value = null
+  modelsEndpointTestResult.value = null
+  clearEndpointTestErrors()
   modalState.open = true
 }
 
@@ -1922,6 +2237,7 @@ const submitModal = async (): Promise<boolean> => {
       apiEndpoint: protocolEndpoints.apiEndpoint,
       responsesEndpoint: protocolEndpoints.responsesEndpoint,
       chatEndpoint: protocolEndpoints.chatEndpoint,
+      modelsEndpoint: modalState.form.modelsEndpoint || '',
       // 可用性监控配置（新）
       availabilityMonitorEnabled: !!modalState.form.availabilityMonitorEnabled,
       availabilityConfig: {
@@ -1958,6 +2274,7 @@ const submitModal = async (): Promise<boolean> => {
       apiEndpoint: protocolEndpoints.apiEndpoint,
       responsesEndpoint: protocolEndpoints.responsesEndpoint,
       chatEndpoint: protocolEndpoints.chatEndpoint,
+      modelsEndpoint: modalState.form.modelsEndpoint || '',
       // 可用性监控配置（新）
       availabilityMonitorEnabled: !!modalState.form.availabilityMonitorEnabled,
       availabilityConfig: {
@@ -2064,6 +2381,7 @@ const handleDuplicate = (card: AutomationCard) => {
     apiEndpoint: card.apiEndpoint || '',
     responsesEndpoint: legacyResponsesEndpoint(card),
     chatEndpoint: legacyChatEndpoint(card),
+    modelsEndpoint: card.modelsEndpoint || '',
     availabilityMonitorEnabled:
       card.availabilityMonitorEnabled ?? card.connectivityCheck ?? false,
     availabilityConfig: {
@@ -2080,6 +2398,13 @@ const handleDuplicate = (card: AutomationCard) => {
     connectivityTestEndpoint: '',
     connectivityAuthType: card.connectivityAuthType || '',
   })
+  providerTestModel.value =
+    card.availabilityConfig?.testModel ||
+    card.connectivityTestModel ||
+    connectivityTestModelOptions.value[0] ||
+    ''
+  providerModelOptions.value = []
+  providerModelDropdownOpen.value = false
 
   // 初始化认证方式状态
   const storedAuth = (card.connectivityAuthType || '').trim()
@@ -2096,7 +2421,9 @@ const handleDuplicate = (card: AutomationCard) => {
   }
 
   connectivityTestResult.value = null
-  modalState.errors.apiUrl = ''
+  protocolEndpointTestResult.value = null
+  modelsEndpointTestResult.value = null
+  clearEndpointTestErrors()
   modalState.open = true
 }
 
@@ -2816,6 +3143,160 @@ const confirmDeleteCliTool = async () => {
 .test-connectivity-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.field-with-action {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.field-test-btn {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--mac-border);
+  border-radius: 8px;
+  background: var(--mac-surface);
+  color: var(--mac-text);
+  cursor: pointer;
+  font-size: 0.86rem;
+  white-space: nowrap;
+}
+
+.field-test-btn:hover:not(:disabled) {
+  background: rgba(59, 130, 246, 0.1);
+  border-color: rgba(59, 130, 246, 0.45);
+}
+
+.field-test-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.field-test-result {
+  margin: -4px 0 4px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 0.82rem;
+}
+
+.field-test-result.success {
+  background: rgba(34, 197, 94, 0.1);
+  color: #15803d;
+}
+
+.field-test-result.error {
+  background: rgba(239, 68, 68, 0.1);
+  color: #dc2626;
+}
+
+.endpoint-test-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--mac-border);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.03);
+}
+
+:global(.dark) .endpoint-test-panel {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.endpoint-test-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.provider-model-combobox {
+  position: relative;
+}
+
+.provider-model-combobox .base-input {
+  width: 100%;
+  padding-right: 34px;
+}
+
+.provider-model-toggle {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-left: 1px solid var(--mac-border);
+  border-radius: 0 8px 8px 0;
+  background: transparent;
+  color: var(--mac-text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.provider-model-toggle svg {
+  width: 16px;
+  height: 16px;
+}
+
+.provider-model-options {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--mac-border);
+  border-radius: 8px;
+  background: var(--mac-surface);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.16);
+  padding: 4px;
+}
+
+.provider-model-option {
+  width: 100%;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--mac-text);
+  cursor: pointer;
+  display: block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82rem;
+  padding: 7px 8px;
+  text-align: left;
+}
+
+.provider-model-option:hover,
+.provider-model-option:focus {
+  background: rgba(59, 130, 246, 0.12);
+  outline: none;
+}
+
+.provider-model-empty {
+  color: var(--mac-text-secondary);
+  font-size: 0.82rem;
+  padding: 9px 8px;
+}
+
+:global(.base-input.has-error) {
+  border-color: rgba(255, 59, 48, 0.9);
+  box-shadow: 0 0 0 2px rgba(255, 59, 48, 0.14);
+}
+
+:global(.base-input.shake-error) {
+  animation: field-shake 0.42s ease;
+}
+
+@keyframes field-shake {
+  0%, 100% { transform: translateX(0); }
+  18% { transform: translateX(-5px); }
+  36% { transform: translateX(5px); }
+  54% { transform: translateX(-4px); }
+  72% { transform: translateX(4px); }
 }
 
 .btn-spinner {

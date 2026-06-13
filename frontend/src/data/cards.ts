@@ -20,6 +20,8 @@ export type AutomationCard = {
   responsesEndpoint?: string
   // Chat Completions 协议端点（可选）
   chatEndpoint?: string
+  // 模型列表端点（可选）
+  modelsEndpoint?: string
 
   // === 可用性监控配置（新） ===
   // 可用性监控开关：是否启用后台健康检查

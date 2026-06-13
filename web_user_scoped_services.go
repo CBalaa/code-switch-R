@@ -252,6 +252,66 @@ func (s *userScopedHealthCheckService) SetAutoAvailabilityPolling(ctx context.Co
 	s.base.SetAutoAvailabilityPolling(enabled)
 }
 
+type userScopedModelMonitorService struct {
+	base *services.ModelMonitorService
+}
+
+func (s *userScopedModelMonitorService) ListTargets(ctx context.Context) ([]services.ModelMonitorTarget, error) {
+	user, err := authenticatedUserFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.base.ListTargetsForUser(user.ID)
+}
+
+func (s *userScopedModelMonitorService) ListTimelines(ctx context.Context) ([]services.ModelMonitorTimeline, error) {
+	user, err := authenticatedUserFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.base.ListTimelinesForUser(user.ID)
+}
+
+func (s *userScopedModelMonitorService) SaveTarget(ctx context.Context, target services.ModelMonitorTarget) (*services.ModelMonitorTarget, error) {
+	user, err := authenticatedUserFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.base.SaveTargetForUser(user.ID, target)
+}
+
+func (s *userScopedModelMonitorService) DeleteTarget(ctx context.Context, targetID int64) error {
+	user, err := authenticatedUserFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	return s.base.DeleteTargetForUser(user.ID, targetID)
+}
+
+func (s *userScopedModelMonitorService) RunTargetCheck(ctx context.Context, targetID int64) (*services.ModelMonitorResult, error) {
+	user, err := authenticatedUserFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.base.RunTargetCheckForUser(user.ID, targetID)
+}
+
+func (s *userScopedModelMonitorService) RunAllChecks(ctx context.Context) ([]services.ModelMonitorResult, error) {
+	user, err := authenticatedUserFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.base.RunAllChecksForUser(user.ID)
+}
+
+func (s *userScopedModelMonitorService) ListProviderModels(ctx context.Context, platform string, providerID int64) (*services.ProviderModelList, error) {
+	user, err := authenticatedUserFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.base.ListProviderModelsForUser(user.ID, platform, providerID)
+}
+
 type userScopedProviderRelayService struct {
 	base        *services.ProviderRelayService
 	poolService *services.ProviderPoolService

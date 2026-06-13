@@ -42,6 +42,10 @@ type Provider struct {
 	// 当入站请求为 /chat/completions 时优先使用。
 	ChatEndpoint string `json:"chatEndpoint,omitempty"`
 
+	// 模型列表端点（可选）
+	// 用于模型监控页面拉取该供应商可用模型列表；留空默认使用 /v1/models。
+	ModelsEndpoint string `json:"modelsEndpoint,omitempty"`
+
 	// 模型白名单 - Provider 原生支持的模型名
 	// 使用 map 实现 O(1) 查找，向后兼容（omitempty）
 	SupportedModels map[string]bool `json:"supportedModels,omitempty"`

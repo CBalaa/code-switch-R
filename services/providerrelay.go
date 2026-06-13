@@ -1081,6 +1081,7 @@ func (prs *ProviderRelayService) forwardRequest(
 		if err != nil {
 			fmt.Printf("写入 request_log 失败: %v\n", err)
 		}
+		RecordModelMonitorTraffic(requestLog)
 	}()
 
 	resp, err := prs.doProviderRequest(c.Request.Context(), targetURL, headers, query, bodyBytes)

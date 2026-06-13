@@ -1235,6 +1235,12 @@ export class Provider {
     "chatEndpoint"?: string;
 
     /**
+     * 模型列表端点（可选）
+     * 用于模型监控页面拉取该供应商可用模型列表；留空默认使用 /v1/models。
+     */
+    "modelsEndpoint"?: string;
+
+    /**
      * 模型白名单 - Provider 原生支持的模型名
      * 使用 map 实现 O(1) 查找，向后兼容（omitempty）
      */

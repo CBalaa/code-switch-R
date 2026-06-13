@@ -368,6 +368,10 @@ func (cts *ConnectivityTestService) getEffectiveModel(provider *Provider, platfo
 	switch strings.ToLower(platform) {
 	case "claude":
 		return "claude-haiku-4-5-20251001"
+	case "openai-responses":
+		return "gpt-5.1"
+	case "openai-chat":
+		return "gpt-5.1-mini"
 	default:
 		return ""
 	}
@@ -677,6 +681,102 @@ func (cts *ConnectivityTestService) TestProviderManual(
 		HTTPCode:  result.HTTPCode,
 		Message:   result.Message,
 	}
+}
+
+func (cts *ConnectivityTestService) TestModelsEndpointManual(
+	apiURL string,
+	apiKey string,
+	modelsEndpoint string,
+	authType string,
+	platform string,
+) ManualTestResult {
+	provider := Provider{
+		APIURL:               apiURL,
+		APIKey:               apiKey,
+		ModelsEndpoint:       modelsEndpoint,
+		ConnectivityAuthType: authType,
+	}
+	endpoint := modelMonitorModelsEndpoint(&provider)
+	targetURL := strings.TrimSuffix(provider.APIURL, "/") + endpoint
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, targetURL, nil)
+	if err != nil {
+		return ManualTestResult{Success: false, Message: fmt.Sprintf("创建请求失败: %v", err)}
+	}
+	req.Header.Set("Accept", "application/json")
+	setModelMonitorAuthHeaders(req.Header, provider, platform)
+
+	start := time.Now()
+	resp, err := cts.client.Do(req)
+	latencyMs := int(time.Since(start).Milliseconds())
+	if err != nil {
+		return ManualTestResult{Success: false, LatencyMs: latencyMs, Message: cts.truncateMessage(fmt.Sprintf("网络错误: %v", err))}
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
+	if resp.StatusCode != http.StatusOK {
+		message := strings.TrimSpace(string(body))
+		if message == "" {
+			message = fmt.Sprintf("HTTP %d", resp.StatusCode)
+		}
+		return ManualTestResult{Success: false, LatencyMs: latencyMs, HTTPCode: resp.StatusCode, Message: cts.truncateMessage(message)}
+	}
+	models := parseProviderModels(body)
+	if len(models) == 0 {
+		return ManualTestResult{Success: false, LatencyMs: latencyMs, HTTPCode: resp.StatusCode, Message: "未解析到模型列表"}
+	}
+	return ManualTestResult{
+		Success:   true,
+		LatencyMs: latencyMs,
+		HTTPCode:  resp.StatusCode,
+		Message:   fmt.Sprintf("获取到 %d 个模型", len(models)),
+	}
+}
+
+func (cts *ConnectivityTestService) ListModelsEndpointManual(
+	apiURL string,
+	apiKey string,
+	modelsEndpoint string,
+	authType string,
+	platform string,
+) (*ProviderModelList, error) {
+	provider := Provider{
+		APIURL:               apiURL,
+		APIKey:               apiKey,
+		ModelsEndpoint:       modelsEndpoint,
+		ConnectivityAuthType: authType,
+	}
+	endpoint := modelMonitorModelsEndpoint(&provider)
+	targetURL := strings.TrimSuffix(provider.APIURL, "/") + endpoint
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, targetURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	setModelMonitorAuthHeaders(req.Header, provider, platform)
+
+	resp, err := cts.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("模型列表请求失败: HTTP %d", resp.StatusCode)
+	}
+	models := parseProviderModels(body)
+	if len(models) == 0 {
+		return nil, fmt.Errorf("未解析到模型列表")
+	}
+	return &ProviderModelList{Models: models, Source: "remote"}, nil
 }
 
 // maskAPIKey 隐藏 API Key 的中间部分，用于安全日志输出

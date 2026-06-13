@@ -27,6 +27,7 @@
   "sidebar": {
     "home": "Home",
     "logs": "Logs",
+    "modelMonitor": "Model Monitor",
     "console": "Console",
     "settings": "Settings",
     "keys": "Keys"
@@ -250,6 +251,8 @@
           "messagesEndpoint": "Messages endpoint",
           "responsesEndpoint": "Responses endpoint",
           "chatEndpoint": "Chat endpoint",
+          "modelsEndpoint": "Models endpoint (optional)",
+          "testModel": "Test model",
           "connectivityCheck": "Availability Monitoring (legacy, deprecated)",
           "connectivityTestModel": "Test Model",
           "connectivityTestEndpoint": "Test Endpoint",
@@ -263,6 +266,8 @@
           "messagesEndpoint": "For example: /v1/messages",
           "responsesEndpoint": "For example: /responses or /v1/responses",
           "chatEndpoint": "For example: /chat/completions",
+          "modelsEndpoint": "For example: /v1/models",
+          "testModel": "Select or enter a test model",
           "officialSite": "https://vendor.com",
           "icon": "e.g. aicoding, kimi",
           "availabilityTestModel": "Leave empty to use platform default",
@@ -280,6 +285,7 @@
           "messagesEndpoint": "Used for Claude Messages requests. Leave blank to use the platform default endpoint /v1/messages.",
           "responsesEndpoint": "Used when the client requests /responses or /v1/responses. Leave blank to fall back to the legacy API endpoint or platform default.",
           "chatEndpoint": "Used when the client requests /chat/completions. Leave blank to fall back to the legacy API endpoint or platform default.",
+          "modelsEndpoint": "Used by Model Monitor to load dropdown model options. Leave blank to request /v1/models.",
           "availabilityMonitor": "Enable background health checks for this provider. Checks are performed periodically to monitor availability.",
           "availabilityAdvancedConfig": "Advanced configuration (test model, endpoint, timeout) can be edited on the Availability page",
           "availabilityTestModel": "Model to use for health checks. Leave empty to use platform default.",
@@ -300,8 +306,16 @@
         },
         "connectivity": {
           "success": "Available (latency: {latency}ms)",
+          "serviceSuccess": "Service reachable (HTTP {code}, latency: {latency}ms)",
+          "modelsSuccess": "Model list reachable. Loaded {count} models.",
           "failed": "Availability check failed",
-          "error": "Test error: {error}"
+          "error": "Test error: {error}",
+          "testService": "Test service",
+          "testModels": "Test models",
+          "testing": "Testing...",
+          "loadingModels": "Loading model list...",
+          "noModelOptions": "No model list loaded. You can type a model name directly.",
+          "noModelMatches": "No matching models. You can keep typing manually."
         },
         "switch": {
           "on": "Active",
@@ -310,6 +324,7 @@
         "confirmDeleteTitle": "Remove vendor",
         "confirmDeleteMessage": "Are you sure you want to remove {name}? This action cannot be undone.",
         "errors": {
+          "required": "Required",
           "invalidUrl": "Please enter a valid API URL"
         },
         "saveFailed": "Failed to save provider configuration"
@@ -434,7 +449,7 @@
         "errors": "Failures",
         "errorHint": "Count & failure rate",
         "tokens": "Tokens moved",
-        "tokenHint": "Input + output tokens",
+        "tokenHint": "Input + output + cache + reasoning tokens",
         "cache": "Cache reads",
         "cacheHint": "Cache reads / total token traffic",
         "todayScope": "Today · {date}"
@@ -453,7 +468,9 @@
       "tokenLabels": {
         "input": "Input",
         "output": "Output",
-        "cacheRead": "Cache read"
+        "cacheCreate": "Cache create",
+        "cacheRead": "Cache read",
+        "reasoning": "Reasoning"
       },
       "streamOn": "Streaming",
       "streamOff": "Single response",
@@ -591,6 +608,54 @@
       "savePartialSuccess": "{success} saved, {fail} failed",
       "tabPreview": "Preview",
       "tabCurrent": "Current"
+    },
+    "modelMonitor": {
+      "title": "Model Monitor",
+      "subtitle": "Track availability and latency by protocol, provider, and model.",
+      "refresh": "Refresh",
+      "checkAll": "Check all now",
+      "checking": "Checking...",
+      "platform": "Protocol",
+      "provider": "Provider",
+      "model": "Model",
+      "modelPlaceholder": "For example: gpt-5-codex",
+      "loadingModels": "Loading model list...",
+      "selectProviderFirst": "Select a provider first",
+      "noModelOptions": "No model list loaded. You can type a model name directly.",
+      "noModelMatches": "No matching models. You can keep typing manually.",
+      "selectProvider": "Select provider",
+      "interval": "Interval (sec)",
+      "timeout": "Timeout (ms)",
+      "enabled": "Enable active monitoring",
+      "add": "Add monitor",
+      "edit": "Edit",
+      "delete": "Delete",
+      "deleteConfirm": "Delete this model monitor target?",
+      "checkNow": "Check now",
+      "empty": "No model monitor targets yet.",
+      "loading": "Loading model monitor...",
+      "noData": "No data",
+      "never": "Never checked",
+      "loadFailed": "Failed to load model monitor",
+      "saveSuccess": "Model monitor saved",
+      "saveFailed": "Failed to save model monitor",
+      "deleteSuccess": "Model monitor deleted",
+      "deleteFailed": "Failed to delete model monitor",
+      "checkFailed": "Model check failed",
+      "uptime": "{value}% uptime",
+      "avgLatency": "Avg {value}ms",
+      "intervalValue": "Every {value}s",
+      "status": {
+        "operational": "Available",
+        "degraded": "High latency",
+        "failed": "HTTP failed"
+      },
+      "legend": {
+        "green": "HTTP 200 within 2000ms",
+        "yellow": "HTTP 200 around 5000ms",
+        "red": "HTTP 200 at 10000ms or above",
+        "gray": "Non-HTTP 200 or no data"
+      }
     }
   },
   "keys": {

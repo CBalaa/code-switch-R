@@ -46,6 +46,7 @@ type appRuntime struct {
 	speedTestService   *services.SpeedTestService
 	connectivityTest   *services.ConnectivityTestService
 	healthCheckService *services.HealthCheckService
+	modelMonitor       *services.ModelMonitorService
 	versionService     *VersionService
 	consoleService     *services.ConsoleService
 	customCliService   *services.CustomCliService
@@ -98,6 +99,10 @@ func newAppRuntime() (*appRuntime, error) {
 	healthCheckService := services.NewHealthCheckService(providerService, settingsService)
 	if err := healthCheckService.Start(); err != nil {
 		return nil, fmt.Errorf("初始化健康检查服务失败: %w", err)
+	}
+	modelMonitor := services.NewModelMonitorService(providerService, adminAuth.UserStore())
+	if err := modelMonitor.Start(); err != nil {
+		return nil, fmt.Errorf("初始化模型监控服务失败: %w", err)
 	}
 	versionService := NewVersionService()
 	consoleService := services.NewConsoleService()
@@ -163,6 +168,7 @@ func newAppRuntime() (*appRuntime, error) {
 		speedTestService:   speedTestService,
 		connectivityTest:   connectivityTestService,
 		healthCheckService: healthCheckService,
+		modelMonitor:       modelMonitor,
 		versionService:     versionService,
 		consoleService:     consoleService,
 		customCliService:   customCliService,
@@ -175,6 +181,9 @@ func newAppRuntime() (*appRuntime, error) {
 func (rt *appRuntime) shutdown() {
 	if rt.healthCheckService != nil {
 		rt.healthCheckService.Stop()
+	}
+	if rt.modelMonitor != nil {
+		rt.modelMonitor.Stop()
 	}
 
 	if rt.providerRelay != nil {
@@ -206,6 +215,7 @@ func (rt *appRuntime) registerServices(registry *rpcRegistry) {
 	registry.Register("codeswitch/services.SpeedTestService", rt.speedTestService)
 	registry.Register("codeswitch/services.ConnectivityTestService", rt.connectivityTest)
 	registry.Register("codeswitch/services.HealthCheckService", &userScopedHealthCheckService{base: rt.healthCheckService})
+	registry.Register("codeswitch/services.ModelMonitorService", &userScopedModelMonitorService{base: rt.modelMonitor})
 	registry.Register("codeswitch/services.ConsoleService", &userScopedConsoleService{logService: rt.logService})
 	registry.Register("codeswitch/services.CustomCliService", rt.customCliService)
 	registry.Register("codeswitch/services.NetworkService", rt.networkService)
