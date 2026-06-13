@@ -26,6 +26,7 @@ import {
 } from '../../services/adminAuth'
 import { extractErrorMessage } from '../../utils/error'
 import { showToast } from '../../utils/toast'
+import { notifyRelayKeysUpdated } from '../../events/relayKeys'
 
 Chart.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend)
 
@@ -202,6 +203,7 @@ const handleCreateKey = async () => {
     createdKey.value = await createCodexRelayKey(createName.value.trim())
     createName.value = ''
     await loadKeys()
+    notifyRelayKeysUpdated()
     selectedKeyId.value = createdKey.value.id
     await loadUsage()
     showToast(t('auth.security.createSuccess'), 'success')
@@ -255,6 +257,7 @@ const handleRenameKey = async (key: CodexRelayKeyListItem) => {
     await renameCodexRelayKey(key.id, nextName)
     cancelRename()
     await loadKeys()
+    notifyRelayKeysUpdated()
     showToast(t('keys.renameSuccess'), 'success')
   } catch (error) {
     showToast(extractErrorMessage(error, t('keys.errors.rename')), 'error')
@@ -273,6 +276,7 @@ const handleDeleteKey = async (key: CodexRelayKeyListItem) => {
       createdKey.value = null
     }
     await loadKeys()
+    notifyRelayKeysUpdated()
     await loadUsage()
     showToast(t('auth.security.deleteSuccess'), 'success')
   } catch (error) {

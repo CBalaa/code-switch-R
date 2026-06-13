@@ -666,6 +666,7 @@ import ModelMappingEditor from '../common/ModelMappingEditor.vue'
 import CustomCliConfigEditor from '../common/CustomCliConfigEditor.vue'
 import PoolPanel from './PoolPanel.vue'
 import { ListRelayKeys, type RelayKeyItem } from '../../services/providerPool'
+import { RELAY_KEYS_UPDATED_EVENT } from '../../events/relayKeys'
 import { LoadProviders, SaveProviders } from '../../../bindings/codeswitch/services/providerservice'
 import { fetchProxyStatus, enableProxy, disableProxy } from '../../services/claudeSettings'
 import { fetchProviderDailyStats, type ProviderDailyStat } from '../../services/logs'
@@ -1519,6 +1520,8 @@ onMounted(async () => {
   window.addEventListener('providers-updated', handleProvidersUpdated)
   ;(window as any).__handleProvidersUpdated = handleProvidersUpdated
 
+  window.addEventListener(RELAY_KEYS_UPDATED_EVENT, loadRelayKeys)
+
   // 加载最后使用的供应商
   await loadLastUsedProviders()
 
@@ -1538,6 +1541,8 @@ onUnmounted(() => {
   if (highlightTimer) {
     clearTimeout(highlightTimer)
   }
+
+  window.removeEventListener(RELAY_KEYS_UPDATED_EVENT, loadRelayKeys)
 
   // 取消事件订阅
   if (unsubscribeSwitched) {
