@@ -450,9 +450,9 @@
         "errors": "失败次数",
         "errorHint": "数量与失败率",
         "tokens": "Token 流量",
-        "tokenHint": "输入 + 输出 + 缓存 + 推理 Tokens",
+        "tokenHint": "输入 + 输出 + 缓存写入 Tokens",
         "cache": "缓存命中",
-        "cacheHint": "缓存读取 / 总 Token 流量",
+        "cacheHint": "缓存读取 / 输入侧 Tokens",
         "todayScope": "今日 · {date}"
       },
       "table": {

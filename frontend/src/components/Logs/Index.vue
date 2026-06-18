@@ -528,13 +528,13 @@ const formatTokenNumber = (value?: number) => {
 /**
  * 计算缓存命中率
  * @param cacheRead 缓存读取 token 数
- * @param totalTokens 页面展示的总 token 流量
+ * @param inputSideTokens 输入侧 token 数
  * @returns 命中率百分比字符串
  * @author sm
  */
-const formatCacheHitRate = (cacheRead?: number, totalTokens?: number) => {
+const formatCacheHitRate = (cacheRead?: number, inputSideTokens?: number) => {
   const read = cacheRead ?? 0
-  const total = totalTokens ?? 0
+  const total = inputSideTokens ?? 0
 
   if (total === 0) return '0%'
 
@@ -542,22 +542,28 @@ const formatCacheHitRate = (cacheRead?: number, totalTokens?: number) => {
   return `${rate.toFixed(1)}%`
 }
 
+// OpenAI Responses/Chat 的 cached 和 reasoning token 是 input/output 的明细字段，
+// 不应作为额外流量再次加到总量里。
 const totalTokenTraffic = (data?: {
   input_tokens?: number
   output_tokens?: number
   cache_create_tokens?: number
-  cache_read_tokens?: number
-  reasoning_tokens?: number
 } | null) =>
   (data?.input_tokens ?? 0) +
   (data?.output_tokens ?? 0) +
-  (data?.cache_create_tokens ?? 0) +
-  (data?.cache_read_tokens ?? 0) +
-  (data?.reasoning_tokens ?? 0)
+  (data?.cache_create_tokens ?? 0)
+
+const inputSideTokenTraffic = (data?: {
+  input_tokens?: number
+  cache_create_tokens?: number
+} | null) =>
+  (data?.input_tokens ?? 0) +
+  (data?.cache_create_tokens ?? 0)
 
 const statsCards = computed(() => {
   const data = stats.value
   const totalTokens = totalTokenTraffic(data)
+  const inputSideTokens = inputSideTokenTraffic(data)
   return [
     {
       key: 'requests',
@@ -576,7 +582,7 @@ const statsCards = computed(() => {
       label: t('components.logs.summary.cache'),
       hint: t('components.logs.summary.cacheHint'),
       value: data ? formatTokenNumber(data.cache_read_tokens) : '—',
-      subValue: data ? formatCacheHitRate(data.cache_read_tokens, totalTokens) : '',
+      subValue: data ? formatCacheHitRate(data.cache_read_tokens, inputSideTokens) : '',
     },
   ]
 })

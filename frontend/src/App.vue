@@ -17,6 +17,7 @@ const applyTheme = () => {
 const authState = useAdminAuthState()
 const route = useRoute()
 const isTray = computed(() => route.path === '/tray')
+const isCheckingAuth = computed(() => !authState.ready)
 const canRenderApp = computed(() => authState.ready && authState.authenticated)
 
 let mediaQuery: MediaQueryList | null = null
@@ -54,7 +55,10 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <AdminAccessGate v-if="!canRenderApp" />
+  <div v-if="isCheckingAuth" class="app-auth-loading" aria-live="polite">
+    <span class="app-auth-spinner" aria-hidden="true"></span>
+  </div>
+  <AdminAccessGate v-else-if="!canRenderApp" />
   <div v-else-if="isTray" class="tray-layout">
     <RouterView v-slot="{ Component }">
       <component :is="Component" />
@@ -92,6 +96,29 @@ onBeforeUnmount(() => {
   overflow-y: auto;
   background: var(--mac-bg);
   min-width: 0;
+}
+
+.app-auth-loading {
+  width: 100vw;
+  height: 100vh;
+  display: grid;
+  place-items: center;
+  background: var(--app-background);
+}
+
+.app-auth-spinner {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 3px solid color-mix(in srgb, var(--mac-accent) 16%, transparent);
+  border-top-color: var(--mac-accent);
+  animation: app-auth-spin 0.9s linear infinite;
+}
+
+@keyframes app-auth-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @media (max-width: 760px) {

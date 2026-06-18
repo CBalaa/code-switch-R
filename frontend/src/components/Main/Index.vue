@@ -1029,15 +1029,52 @@ const saveTabOrder = (order: ProviderTab[]) => {
 }
 
 const cards = reactive<Record<ProviderTab, AutomationCard[]>>({
-  claude: createAutomationCards(automationCardGroups.claude),
-  'openai-responses': createAutomationCards(automationCardGroups['openai-responses']),
-  'openai-chat': createAutomationCards(automationCardGroups['openai-chat']),
+  claude: [],
+  'openai-responses': [],
+  'openai-chat': [],
   others: [],
 })
 const draggingId = ref<number | null>(null)
 const draggingTab = ref<ProviderTab | null>(null)
 const tabOrder = ref<ProviderTab[]>(loadTabOrder())
 const orderedTabs = computed(() => tabOrder.value.map((id) => tabById[id]))
+const providerCacheStorageKey = 'code-switch-provider-cache-v1'
+
+type ProviderCache = Partial<Record<ProviderTab, AutomationCard[]>>
+
+const loadProviderCache = (): ProviderCache => {
+  try {
+    const raw = window.localStorage.getItem(providerCacheStorageKey)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' ? parsed as ProviderCache : {}
+  } catch {
+    return {}
+  }
+}
+
+const saveProviderCache = (cache: ProviderCache) => {
+  try {
+    window.localStorage.setItem(providerCacheStorageKey, JSON.stringify(cache))
+  } catch (error) {
+    console.error('Failed to save provider cache', error)
+  }
+}
+
+const cacheProviders = (tabId: ProviderTab, providers: AutomationCard[]) => {
+  if (tabId === 'others') return
+  const cache = loadProviderCache()
+  cache[tabId] = serializeProviders(providers)
+  saveProviderCache(cache)
+}
+
+const loadInitialProviders = (tabId: Exclude<ProviderTab, 'others'>): AutomationCard[] => {
+  const cached = loadProviderCache()[tabId]
+  if (Array.isArray(cached)) {
+    return createAutomationCards(cached)
+  }
+  return []
+}
 
 const serializeProviders = (providers: AutomationCard[]) =>
   providers.map((provider) => ({
@@ -1059,6 +1096,10 @@ const serializeProviders = (providers: AutomationCard[]) =>
     connectivityAuthType: provider.connectivityAuthType || '',
   }))
 
+cards.claude.splice(0, cards.claude.length, ...loadInitialProviders('claude'))
+cards['openai-responses'].splice(0, cards['openai-responses'].length, ...loadInitialProviders('openai-responses'))
+cards['openai-chat'].splice(0, cards['openai-chat'].length, ...loadInitialProviders('openai-chat'))
+
 // 生成 custom CLI 工具的 provider kind（后端需要 "custom:{toolId}" 格式）
 const getCustomProviderKind = (toolId: string): string => `custom:${toolId}`
 
@@ -1074,6 +1115,7 @@ const persistProviders = async (tabId: ProviderTab): Promise<{ ok: boolean; erro
     } else {
       await SaveProviders(tabId, serializeProviders(cards[tabId]))
     }
+    cacheProviders(tabId, cards[tabId])
     return { ok: true }
   } catch (error) {
     console.error('Failed to save providers', error)
@@ -1098,6 +1140,7 @@ const loadProvidersFromDisk = async () => {
         if (Array.isArray(saved)) {
           replaceProviders(tab, saved as AutomationCard[])
           sortProvidersByLevel(cards[tab])  // 初始排序：启用优先，Level 升序
+          cacheProviders(tab, cards[tab])
         } else {
           await persistProviders(tab)
         }

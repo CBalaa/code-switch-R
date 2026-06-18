@@ -449,9 +449,9 @@
         "errors": "Failures",
         "errorHint": "Count & failure rate",
         "tokens": "Tokens moved",
-        "tokenHint": "Input + output + cache + reasoning tokens",
+        "tokenHint": "Input + output + cache write tokens",
         "cache": "Cache reads",
-        "cacheHint": "Cache reads / total token traffic",
+        "cacheHint": "Cache reads / input-side tokens",
         "todayScope": "Today · {date}"
       },
       "table": {
