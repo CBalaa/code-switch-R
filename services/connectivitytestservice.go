@@ -103,7 +103,7 @@ func (cts *ConnectivityTestService) TestProvider(ctx context.Context, provider P
 	}
 
 	// 构建测试请求
-	reqBody, contentField := cts.buildTestRequest(platform, &provider)
+	reqBody := cts.buildTestRequest(platform, &provider)
 	if reqBody == nil {
 		result.Status = StatusMissing
 		result.Message = "未配置测试模型，请在供应商设置中配置 ConnectivityTestModel"
@@ -184,13 +184,17 @@ func (cts *ConnectivityTestService) TestProvider(ctx context.Context, provider P
 	// 第一阶段：HTTP 状态码 + 延迟判定
 	result.Status, result.SubStatus = cts.determineStatus(resp.StatusCode, latencyMs, 5000)
 
-	// 第二阶段：内容校验（仅对成功响应）
-	if result.Status != StatusUnavailable && contentField != "" {
-		result.Status, result.SubStatus = cts.evaluateContent(result.Status, result.SubStatus, body, contentField)
+	// 第二阶段：协议结构校验（仅对成功响应）
+	if result.Status != StatusUnavailable {
+		if err := validateProviderResponseProtocol(platform, cts.getEffectiveEndpoint(&provider, platform), body); err != nil {
+			result.Status = StatusUnavailable
+			result.SubStatus = SubStatusContentMismatch
+			result.Message = cts.truncateMessage(err.Error())
+		}
 	}
 
 	// 设置错误消息
-	if result.Status == StatusUnavailable {
+	if result.Status == StatusUnavailable && result.Message == "" {
 		result.Message = cts.truncateMessage(string(body))
 	}
 
@@ -232,10 +236,10 @@ func (cts *ConnectivityTestService) getEffectiveAuthType(provider *Provider, pla
 }
 
 // buildTestRequest 根据端点构建测试请求体
-func (cts *ConnectivityTestService) buildTestRequest(platform string, provider *Provider) ([]byte, string) {
+func (cts *ConnectivityTestService) buildTestRequest(platform string, provider *Provider) []byte {
 	model := cts.getEffectiveModel(provider, platform)
 	if model == "" {
-		return nil, ""
+		return nil
 	}
 
 	// 获取有效端点（含平台默认值）
@@ -251,7 +255,7 @@ func (cts *ConnectivityTestService) buildTestRequest(platform string, provider *
 			},
 		}
 		data, _ := json.Marshal(reqBody)
-		return data, "content"
+		return data
 	}
 
 	// Codex 格式: /responses
@@ -269,7 +273,7 @@ func (cts *ConnectivityTestService) buildTestRequest(platform string, provider *
 			},
 		}
 		data, _ := json.Marshal(reqBody)
-		return data, "output"
+		return data
 	}
 
 	// 默认 OpenAI 格式: /chat/completions
@@ -281,7 +285,7 @@ func (cts *ConnectivityTestService) buildTestRequest(platform string, provider *
 		},
 	}
 	data, _ := json.Marshal(reqBody)
-	return data, "choices"
+	return data
 }
 
 // determineStatus 根据 HTTP 状态码和延迟判定状态
@@ -322,23 +326,6 @@ func (cts *ConnectivityTestService) determineStatus(statusCode, latencyMs, slowT
 
 	// 其他异常
 	return StatusUnavailable, SubStatusClientError
-}
-
-// evaluateContent 内容校验
-func (cts *ConnectivityTestService) evaluateContent(baseStatus int, subStatus string, body []byte, successContains string) (int, string) {
-	if successContains == "" {
-		return baseStatus, subStatus
-	}
-
-	if baseStatus == StatusUnavailable {
-		return baseStatus, subStatus
-	}
-
-	if !strings.Contains(string(body), successContains) {
-		return StatusUnavailable, SubStatusContentMismatch
-	}
-
-	return baseStatus, subStatus
 }
 
 // truncateMessage 截断消息（最多 512 字符）

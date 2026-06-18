@@ -307,7 +307,9 @@ ssh rn "
 "
 ```
 
-#### 3.3 重启服务
+#### 3.3 重启服务（由用户在 rn 上手动执行）
+
+Codex / 自动化发布只负责完成本地构建、上传产物和远端文件替换，不负责在 `rn` 上执行 `sudo systemctl restart`，也不要通过 `kill` 旧进程来触发重启。上传完成后，把下面的命令交给有 sudo 权限的用户在 `rn` 服务器上手动执行。
 
 `rn` 上只用 systemd 管理服务，不要手工长期运行：
 
@@ -317,7 +319,7 @@ ssh rn "
 
 手工运行只适合临时排查；排查结束后必须退出，避免占用 `8080` 或 `18100`，导致 systemd 启动失败。
 
-发布后让 root 或有 sudo 权限的用户执行：
+上传完成后，让 root 或有 sudo 权限的用户登录 `rn` 执行：
 
 ```bash
 sudo systemctl restart codeswitch.service
@@ -371,14 +373,14 @@ curl -i -sS -X POST https://api.wcisman.cc/chat/completions \
 sudo journalctl -u codeswitch.service -n 160 --no-pager
 ```
 
-如果日志里出现端口占用，例如 `bind: address already in use`，检查是谁占用了端口：
+如果日志里出现端口占用，例如 `bind: address already in use`，由用户在 `rn` 上检查是谁占用了端口：
 
 ```bash
 ss -ltnp | grep -E ':(8080|18100) '
 ps -eo pid,ppid,stat,lstart,cmd | grep -E '/home/chh/apps/code-switch/codeswitch-web|codeswitch.service' | grep -v grep
 ```
 
-只结束当前部署目录下的旧进程，不要用宽泛的 `pkill -x codeswitch-web`，因为同一台机器上可能还有其他目录里的同名服务：
+如确实需要结束旧进程，也由用户在 `rn` 上操作。只结束当前部署目录下的旧进程，不要用宽泛的 `pkill -x codeswitch-web`，因为同一台机器上可能还有其他目录里的同名服务：
 
 ```bash
 kill <旧进程PID>

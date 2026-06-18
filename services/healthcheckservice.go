@@ -670,6 +670,12 @@ func (hcs *HealthCheckService) checkProvider(ctx context.Context, provider Provi
 
 	// 判定状态
 	result.Status, result.ErrorMessage = hcs.determineStatus(resp.StatusCode, latencyMs, body)
+	if result.Status != HealthStatusFailed {
+		if err := validateProviderResponseProtocol(platform, endpoint, body); err != nil {
+			result.Status = HealthStatusValidationError
+			result.ErrorMessage = err.Error()
+		}
+	}
 
 	return result
 }
