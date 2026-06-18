@@ -1604,7 +1604,8 @@ onUnmounted(() => {
   }
 })
 
-const selectedTab = ref<ProviderTab>('claude')
+const firstOrderedTab = (): ProviderTab => tabOrder.value[0] ?? defaultTabOrder[0]
+const selectedTab = ref<ProviderTab>(firstOrderedTab())
 const activeTab = computed<ProviderTab>(() => selectedTab.value)
 const activeCards = computed(() => cards[activeTab.value] ?? [])
 

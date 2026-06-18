@@ -383,7 +383,6 @@ func (prs *ProviderRelayService) recordProviderFailureForUser(userID, platform, 
 
 	key := penaltyKey(userID, platform, poolID, provider.ID)
 	prs.poolPenaltyMu.Lock()
-	defer prs.poolPenaltyMu.Unlock()
 
 	p, ok := prs.poolPenalties[key]
 	if !ok {
@@ -395,14 +394,32 @@ func (prs *ProviderRelayService) recordProviderFailureForUser(userID, platform, 
 		}
 		prs.poolPenalties[key] = p
 	}
+	wasBlacklisted := !p.BlacklistedUntil.IsZero() && time.Now().Before(p.BlacklistedUntil)
 	p.FailureCount++
 	p.LastFailureAt = time.Now()
 	p.LastReason = reason
 
 	if p.FailureCount >= threshold {
 		p.BlacklistedUntil = time.Now().Add(time.Duration(durationMinutes) * time.Minute)
+		penalty := *p
+		prs.poolPenaltyMu.Unlock()
+		if !wasBlacklisted && prs.notificationService != nil {
+			prs.notificationService.NotifyProviderBlacklistChanged(ProviderBlacklistChangedNotification{
+				UserID:           penalty.UserID,
+				Platform:         penalty.Platform,
+				PoolID:           penalty.PoolID,
+				ProviderID:       penalty.ProviderID,
+				ProviderName:     provider.Name,
+				Action:           "blacklisted",
+				FailureCount:     penalty.FailureCount,
+				LastFailureAt:    penalty.LastFailureAt,
+				BlacklistedUntil: penalty.BlacklistedUntil,
+				LastReason:       penalty.LastReason,
+			})
+		}
 		return true
 	}
+	prs.poolPenaltyMu.Unlock()
 	return false
 }
 
@@ -416,8 +433,24 @@ func (prs *ProviderRelayService) recordProviderFailure(platform, poolID string, 
 // clearProviderBlacklistForUser manually removes the blacklist for a provider in a pool.
 func (prs *ProviderRelayService) clearProviderBlacklistForUser(userID, platform, poolID string, providerID int64) {
 	prs.poolPenaltyMu.Lock()
-	defer prs.poolPenaltyMu.Unlock()
-	delete(prs.poolPenalties, penaltyKey(userID, platform, poolID, providerID))
+	key := penaltyKey(userID, platform, poolID, providerID)
+	penalty, existed := prs.poolPenalties[key]
+	wasBlacklisted := existed && !penalty.BlacklistedUntil.IsZero() && time.Now().Before(penalty.BlacklistedUntil)
+	delete(prs.poolPenalties, key)
+	prs.poolPenaltyMu.Unlock()
+
+	if wasBlacklisted && prs.notificationService != nil {
+		prs.notificationService.NotifyProviderBlacklistChanged(ProviderBlacklistChangedNotification{
+			UserID:        strings.TrimSpace(userID),
+			Platform:      platform,
+			PoolID:        poolID,
+			ProviderID:    providerID,
+			Action:        "cleared",
+			FailureCount:  penalty.FailureCount,
+			LastFailureAt: penalty.LastFailureAt,
+			LastReason:    penalty.LastReason,
+		})
+	}
 }
 
 // clearProviderBlacklist manually removes the blacklist for a provider in a pool.

@@ -480,6 +480,53 @@ wire_api = "responses"
 	}
 }
 
+func TestProviderBlacklistChangedEvents(t *testing.T) {
+	hub := NewEventHub()
+	events, cancel := hub.Subscribe(4)
+	defer cancel()
+
+	notificationService := NewNotificationService(nil)
+	notificationService.SetEventEmitter(hub)
+	relay := NewProviderRelayService(NewProviderService(), NewProviderPoolService(), nil, notificationService, nil, DefaultRelayBindAddr)
+	pool := &ProviderPool{
+		ID:                           "pool-1",
+		Platform:                     "claude",
+		Mode:                         ProviderPoolModeManaged,
+		AutoBlacklistEnabled:         true,
+		AutoBlacklistThreshold:       1,
+		AutoBlacklistDurationMinutes: 10,
+	}
+	provider := Provider{ID: 7, Name: "provider-a", Enabled: true}
+
+	if !relay.recordProviderFailureForUser("user-1", "claude", pool.ID, pool, provider, "upstream 500") {
+		t.Fatal("expected provider to be blacklisted")
+	}
+	event := <-events
+	if event.Name != "provider:blacklist:changed" {
+		t.Fatalf("event name = %q, want provider:blacklist:changed", event.Name)
+	}
+	payload, ok := event.Data.(map[string]interface{})
+	if !ok {
+		t.Fatalf("event payload type = %T, want map", event.Data)
+	}
+	if payload["action"] != "blacklisted" || payload["platform"] != "claude" || payload["poolID"] != pool.ID || payload["providerName"] != provider.Name {
+		t.Fatalf("unexpected blacklist event payload: %#v", payload)
+	}
+
+	relay.clearProviderBlacklistForUser("user-1", "claude", pool.ID, provider.ID)
+	event = <-events
+	if event.Name != "provider:blacklist:changed" {
+		t.Fatalf("event name = %q, want provider:blacklist:changed", event.Name)
+	}
+	payload, ok = event.Data.(map[string]interface{})
+	if !ok {
+		t.Fatalf("event payload type = %T, want map", event.Data)
+	}
+	if payload["action"] != "cleared" || payload["platform"] != "claude" || payload["poolID"] != pool.ID {
+		t.Fatalf("unexpected cleared event payload: %#v", payload)
+	}
+}
+
 func TestSelectCodexEmptyStreamRetryProviderDoesNotFallbackToOtherProvider(t *testing.T) {
 	testHome := t.TempDir()
 	t.Setenv("HOME", testHome)

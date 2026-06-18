@@ -35,6 +35,19 @@ type SwitchNotification struct {
 	Platform     string // 平台
 }
 
+type ProviderBlacklistChangedNotification struct {
+	UserID           string
+	Platform         string
+	PoolID           string
+	ProviderID       int64
+	ProviderName     string
+	Action           string
+	FailureCount     int
+	LastFailureAt    time.Time
+	BlacklistedUntil time.Time
+	LastReason       string
+}
+
 // NewNotificationService 创建通知服务
 func NewNotificationService(appSettings *AppSettingsService) *NotificationService {
 	ns := &NotificationService{
@@ -165,5 +178,24 @@ func (ns *NotificationService) emitSwitchEvent(info SwitchNotification) {
 		"toProvider":   info.ToProvider,
 		"reason":       info.Reason,
 		"timestamp":    time.Now().UnixMilli(),
+	})
+}
+
+func (ns *NotificationService) NotifyProviderBlacklistChanged(info ProviderBlacklistChangedNotification) {
+	if ns == nil || ns.emitter == nil {
+		return
+	}
+	ns.emitter.Emit("provider:blacklist:changed", map[string]interface{}{
+		"userID":           info.UserID,
+		"platform":         info.Platform,
+		"poolID":           info.PoolID,
+		"providerID":       info.ProviderID,
+		"providerName":     info.ProviderName,
+		"action":           info.Action,
+		"failureCount":     info.FailureCount,
+		"lastFailureAt":    info.LastFailureAt,
+		"blacklistedUntil": info.BlacklistedUntil,
+		"lastReason":       info.LastReason,
+		"timestamp":        time.Now().UnixMilli(),
 	})
 }

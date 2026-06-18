@@ -445,11 +445,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseButton from '../common/BaseButton.vue'
 import BaseModal from '../common/BaseModal.vue'
 import BaseInput from '../common/BaseInput.vue'
+import { Events } from '../../wails-runtime'
 import { ListPools, SavePool, DeletePool, SetPoolBinding, ListProviderBlacklistStatus, ClearProviderBlacklist, type ProviderPool, type ProviderPoolMode, type ProviderPoolProviderPenalty } from '../../services/providerPool'
 import type { AutomationCard } from '../../data/cards'
 import { showToast } from '../../utils/toast'
@@ -479,6 +480,7 @@ const emit = defineEmits<{
 
 const subTab = ref<'providers' | 'pools'>('providers')
 const pools = ref<ProviderPool[]>([])
+let unsubscribeBlacklistChanged: (() => void) | undefined
 
 // favicon 缓存
 const faviconCache = new Map<string, string | undefined>()
@@ -519,6 +521,37 @@ const loadBlacklistStatus = async () => {
     }
   }
   blacklistStatus.value = statusMap
+}
+
+type ProviderBlacklistChangedEvent = {
+  platform?: string
+  poolID?: string
+}
+
+const loadBlacklistStatusForPool = async (poolID: string) => {
+  if (!pools.value.some((pool) => pool.id === poolID)) {
+    return
+  }
+  try {
+    const statuses = await ListProviderBlacklistStatus(props.platform, poolID)
+    const next = new Map(blacklistStatus.value)
+    next.set(poolID, statuses)
+    blacklistStatus.value = next
+  } catch (error) {
+    console.error('Failed to load blacklist status:', error)
+  }
+}
+
+const handleProviderBlacklistChanged = (event: { data: ProviderBlacklistChangedEvent }) => {
+  const { platform, poolID } = event.data || {}
+  if (platform !== props.platform) {
+    return
+  }
+  if (poolID) {
+    void loadBlacklistStatusForPool(poolID)
+    return
+  }
+  void loadBlacklistStatus()
 }
 
 const loadPools = async () => {
@@ -847,6 +880,14 @@ const confirmDeletePool = async () => {
 
 onMounted(() => {
   loadPools()
+  unsubscribeBlacklistChanged = Events.On('provider:blacklist:changed', handleProviderBlacklistChanged)
+})
+
+onUnmounted(() => {
+  if (unsubscribeBlacklistChanged) {
+    unsubscribeBlacklistChanged()
+    unsubscribeBlacklistChanged = undefined
+  }
 })
 
 watch(
