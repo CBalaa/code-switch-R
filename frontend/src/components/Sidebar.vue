@@ -328,13 +328,14 @@ html.dark .nav-item:hover {
     z-index: 1200;
     width: 100%;
     min-width: 0;
-    height: 64px;
+    height: calc(64px + env(safe-area-inset-bottom));
     border-right: none;
     border-top: 1px solid var(--mac-border);
     background: color-mix(in srgb, var(--mac-surface) 92%, transparent);
     backdrop-filter: blur(18px);
     flex-direction: row;
     align-items: stretch;
+    box-sizing: border-box;
     overflow: hidden;
   }
 
@@ -345,6 +346,7 @@ html.dark .nav-item:hover {
   .nav-list,
   .mac-sidebar.collapsed .nav-list {
     flex: 1;
+    height: 100%;
     min-width: 0;
     padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
     flex-direction: row;

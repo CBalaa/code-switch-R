@@ -77,15 +77,15 @@
         </thead>
         <tbody>
           <tr v-for="item in pagedLogs" :key="item.id">
-            <td>{{ formatTime(item.created_at) }}</td>
-            <td>{{ item.platform || '—' }}</td>
-            <td>{{ item.provider || '—' }}</td>
-            <td>{{ formatRelayKey(item) }}</td>
-            <td>{{ item.model || '—' }}</td>
-            <td :class="['code', httpCodeClass(item.http_code)]">{{ item.http_code }}</td>
-            <td><span :class="['stream-tag', item.is_stream ? 'on' : 'off']">{{ formatStream(item.is_stream) }}</span></td>
-            <td><span :class="['duration-tag', durationColor(item.duration_sec)]">{{ formatDuration(item.duration_sec) }}</span></td>
-            <td class="token-cell">
+            <td :data-label="t('components.logs.table.time')">{{ formatTime(item.created_at) }}</td>
+            <td :data-label="t('components.logs.table.platform')">{{ item.platform || '—' }}</td>
+            <td :data-label="t('components.logs.table.provider')">{{ item.provider || '—' }}</td>
+            <td :data-label="t('components.logs.table.relayKey')">{{ formatRelayKey(item) }}</td>
+            <td :data-label="t('components.logs.table.model')">{{ item.model || '—' }}</td>
+            <td :data-label="t('components.logs.table.httpCode')" :class="['code', httpCodeClass(item.http_code)]">{{ item.http_code }}</td>
+            <td :data-label="t('components.logs.table.stream')"><span :class="['stream-tag', item.is_stream ? 'on' : 'off']">{{ formatStream(item.is_stream) }}</span></td>
+            <td :data-label="t('components.logs.table.duration')"><span :class="['duration-tag', durationColor(item.duration_sec)]">{{ formatDuration(item.duration_sec) }}</span></td>
+            <td :data-label="t('components.logs.table.tokens')" class="token-cell">
               <div>
                 <span class="token-label">{{ t('components.logs.tokenLabels.input') }}</span>
                 <span class="token-value">{{ formatTokenNumber(item.input_tokens) }}</span>
@@ -692,7 +692,27 @@ html.dark .summary-card__sub-value {
 
 @media (max-width: 768px) {
   .logs-summary {
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  .summary-card {
+    padding: 0.85rem 1rem;
+    border-radius: 14px;
+  }
+
+  .summary-card__label {
+    font-size: 0.75rem;
+  }
+
+  .summary-card__value {
+    font-size: 1.35rem;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+  }
+
+  .summary-card__hint {
+    font-size: 0.78rem;
   }
 }
 

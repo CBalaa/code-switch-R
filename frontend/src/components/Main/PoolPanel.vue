@@ -1447,4 +1447,126 @@ watch(
 .pool-provider-card .card-actions {
   gap: 2px;
 }
+
+@media (max-width: 760px) {
+  .pool-sub-tabs {
+    align-items: stretch;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 10px;
+    scrollbar-width: none;
+  }
+
+  .pool-sub-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .sub-tab-pill,
+  .sub-tab-action-btn {
+    flex: 0 0 auto;
+    min-height: 36px;
+    white-space: nowrap;
+  }
+
+  .sub-tab-actions {
+    margin-left: 0;
+  }
+
+  .pool-container {
+    border-radius: 14px;
+  }
+
+  .pool-header {
+    display: grid;
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .pool-header-left,
+  .pool-header-right {
+    min-width: 0;
+  }
+
+  .pool-name {
+    overflow-wrap: anywhere;
+  }
+
+  .pool-header-right {
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .mode-switch-group {
+    flex: 1 1 auto;
+  }
+
+  .pool-members {
+    display: grid;
+    grid-template-columns: 1fr;
+    padding: 10px;
+  }
+
+  .pool-member-card {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    justify-content: space-between;
+  }
+
+  .pool-member-name,
+  .pool-key-name,
+  .unbound-key-name,
+  .blacklist-time {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .pool-keys-section,
+  .pool-blacklist-section {
+    padding: 10px 12px;
+  }
+
+  .pool-keys-list,
+  .unbound-keys-list {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .pool-key-card,
+  .unbound-key-card {
+    width: 100%;
+    box-sizing: border-box;
+    justify-content: space-between;
+  }
+
+  .pool-key-info,
+  .unbound-key-info {
+    min-width: 0;
+  }
+
+  .key-bind-select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .pool-mode-selector {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .pool-member-row {
+    grid-template-columns: 1fr;
+  }
+
+  .member-level-input {
+    justify-content: space-between;
+  }
+
+  .level-select-inline {
+    min-height: 30px;
+  }
+}
 </style>
