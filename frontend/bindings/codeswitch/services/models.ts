@@ -1108,6 +1108,8 @@ export class ManualTestResult {
     "latencyMs": number;
     "httpCode": number;
     "message": string;
+    "rawResult"?: string;
+    "httpResponse"?: string;
 
     /** Creates a new ManualTestResult instance. */
     constructor($$source: Partial<ManualTestResult> = {}) {

@@ -619,10 +619,12 @@ func (cts *ConnectivityTestService) Stop() error {
 
 // ManualTestResult 手动测试结果
 type ManualTestResult struct {
-	Success   bool   `json:"success"`
-	LatencyMs int    `json:"latencyMs"`
-	HTTPCode  int    `json:"httpCode"`
-	Message   string `json:"message"`
+	Success      bool   `json:"success"`
+	LatencyMs    int    `json:"latencyMs"`
+	HTTPCode     int    `json:"httpCode"`
+	Message      string `json:"message"`
+	RawResult    string `json:"rawResult,omitempty"`
+	HTTPResponse string `json:"httpResponse,omitempty"`
 }
 
 // TestProviderManual 手动测试供应商可用性（供前端测试按钮调用）
@@ -634,6 +636,19 @@ func (cts *ConnectivityTestService) TestProviderManual(
 	endpoint string,
 	authType string,
 ) ManualTestResult {
+	return cts.TestProviderManualWithMessage(platform, apiURL, apiKey, model, endpoint, authType, "hi")
+}
+
+// TestProviderManualWithMessage 手动发送自定义消息测试供应商，并返回原始响应信息。
+func (cts *ConnectivityTestService) TestProviderManualWithMessage(
+	platform string,
+	apiURL string,
+	apiKey string,
+	model string,
+	endpoint string,
+	authType string,
+	testMessage string,
+) ManualTestResult {
 	// 调试日志：打印前端传递的参数
 	fmt.Printf("[DEBUG] TestProviderManual 收到参数:\n")
 	fmt.Printf("  platform: %q\n", platform)
@@ -642,10 +657,14 @@ func (cts *ConnectivityTestService) TestProviderManual(
 	fmt.Printf("  model:    %q\n", model)
 	fmt.Printf("  endpoint: %q\n", endpoint)
 	fmt.Printf("  authType: %q\n", authType)
+	fmt.Printf("  message:  %q\n", testMessage)
 
 	// 平台参数校验
 	if platform == "" {
 		platform = "claude"
+	}
+	if strings.TrimSpace(testMessage) == "" {
+		testMessage = "hi"
 	}
 
 	// 构建临时 Provider
@@ -660,14 +679,141 @@ func (cts *ConnectivityTestService) TestProviderManual(
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	result := cts.TestProvider(ctx, provider, platform)
+	return cts.testProviderManual(ctx, provider, platform, testMessage)
+}
 
-	return ManualTestResult{
-		Success:   result.Status == StatusAvailable || result.Status == StatusDegraded,
-		LatencyMs: result.LatencyMs,
-		HTTPCode:  result.HTTPCode,
-		Message:   result.Message,
+func (cts *ConnectivityTestService) testProviderManual(
+	ctx context.Context,
+	provider Provider,
+	platform string,
+	testMessage string,
+) ManualTestResult {
+	reqBody := cts.buildTestRequestWithMessage(platform, &provider, testMessage)
+	if reqBody == nil {
+		return ManualTestResult{Success: false, Message: "未配置测试模型"}
 	}
+
+	targetURL := cts.buildTargetURL(&provider, platform)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bytes.NewReader(reqBody))
+	if err != nil {
+		return ManualTestResult{Success: false, Message: fmt.Sprintf("创建请求失败: %v", err)}
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if provider.APIKey != "" {
+		authType := cts.getEffectiveAuthType(&provider, platform)
+		switch strings.ToLower(authType) {
+		case "x-api-key":
+			req.Header.Set("x-api-key", provider.APIKey)
+			if strings.EqualFold(platform, "claude") {
+				req.Header.Set("anthropic-version", "2023-06-01")
+			}
+		case "bearer":
+			req.Header.Set("Authorization", "Bearer "+provider.APIKey)
+		default:
+			headerName := strings.TrimSpace(authType)
+			if headerName == "" || strings.EqualFold(headerName, "custom") {
+				headerName = "Authorization"
+			}
+			req.Header.Set(headerName, provider.APIKey)
+		}
+	}
+
+	start := time.Now()
+	resp, err := cts.client.Do(req)
+	latencyMs := int(time.Since(start).Milliseconds())
+	if err != nil {
+		message := cts.truncateMessage(fmt.Sprintf("网络错误: %v", err))
+		if isTimeoutError(err) {
+			message = fmt.Sprintf("响应超时 (>%ds)", int(cts.client.Timeout.Seconds()))
+		}
+		return ManualTestResult{
+			Success:   false,
+			LatencyMs: latencyMs,
+			Message:   message,
+			RawResult: message,
+		}
+	}
+	defer resp.Body.Close()
+
+	body, readErr := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
+	if readErr != nil {
+		body = []byte(fmt.Sprintf("读取响应失败: %v", readErr))
+	}
+
+	status, subStatus := cts.determineStatus(resp.StatusCode, latencyMs, 5000)
+	message := strings.TrimSpace(string(body))
+	if status == StatusUnavailable && strings.TrimSpace(message) == "" {
+		message = fmt.Sprintf("HTTP %d", resp.StatusCode)
+	}
+	if subStatus != "" && status == StatusUnavailable {
+		message = fmt.Sprintf("%s: %s", subStatus, message)
+	}
+
+	httpResponse := formatManualHTTPResponse(resp, body)
+	return ManualTestResult{
+		Success:      status == StatusAvailable || status == StatusDegraded,
+		LatencyMs:    latencyMs,
+		HTTPCode:     resp.StatusCode,
+		Message:      cts.truncateMessage(message),
+		RawResult:    string(body),
+		HTTPResponse: httpResponse,
+	}
+}
+
+func (cts *ConnectivityTestService) buildTestRequestWithMessage(platform string, provider *Provider, testMessage string) []byte {
+	model := cts.getEffectiveModel(provider, platform)
+	if model == "" {
+		return nil
+	}
+
+	endpoint := strings.ToLower(cts.getEffectiveEndpoint(provider, platform))
+	if strings.Contains(endpoint, "/messages") {
+		reqBody := map[string]interface{}{
+			"model":      model,
+			"max_tokens": 16,
+			"messages": []map[string]string{
+				{"role": "user", "content": testMessage},
+			},
+		}
+		data, _ := json.Marshal(reqBody)
+		return data
+	}
+
+	if strings.Contains(endpoint, "/responses") {
+		reqBody := map[string]interface{}{
+			"model":             model,
+			"max_output_tokens": 16,
+			"input": []map[string]interface{}{
+				{
+					"role": "user",
+					"content": []map[string]string{
+						{"type": "input_text", "text": testMessage},
+					},
+				},
+			},
+		}
+		data, _ := json.Marshal(reqBody)
+		return data
+	}
+
+	reqBody := map[string]interface{}{
+		"model":      model,
+		"max_tokens": 16,
+		"messages": []map[string]string{
+			{"role": "user", "content": testMessage},
+		},
+	}
+	data, _ := json.Marshal(reqBody)
+	return data
+}
+
+func formatManualHTTPResponse(resp *http.Response, body []byte) string {
+	if resp == nil {
+		return ""
+	}
+
+	return fmt.Sprintf("HTTP %d %s", resp.StatusCode, http.StatusText(resp.StatusCode))
 }
 
 func (cts *ConnectivityTestService) TestModelsEndpointManual(

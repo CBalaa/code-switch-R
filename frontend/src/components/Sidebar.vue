@@ -59,7 +59,6 @@ interface NavItem {
 const navItems: NavItem[] = [
   { path: '/', icon: 'home', labelKey: 'sidebar.home' },
   { path: '/logs', icon: 'bar-chart', labelKey: 'sidebar.logs' },
-  { path: '/model-monitor', icon: 'activity', labelKey: 'sidebar.modelMonitor' },
   { path: '/console', icon: 'terminal', labelKey: 'sidebar.console' },
   { path: '/keys', icon: 'key', labelKey: 'sidebar.keys' },
   { path: '/settings', icon: 'settings', labelKey: 'sidebar.settings' },

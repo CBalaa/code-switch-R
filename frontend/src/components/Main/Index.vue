@@ -459,59 +459,75 @@
                 <section class="endpoint-test-panel">
                   <label class="form-field">
                     <span>{{ t('components.main.form.labels.testModel') }}</span>
-                    <div class="provider-model-combobox">
-                      <input
-                        v-model.trim="providerTestModel"
-                        class="base-input"
-                        :class="{ 'has-error': !!modalState.errors.testModel, 'shake-error': shakeFields.testModel }"
-                        :placeholder="providerModelsLoading ? t('components.main.form.connectivity.loadingModels') : t('components.main.form.placeholders.testModel')"
-                        @focus="providerModelDropdownOpen = true"
-                        @blur="providerModelDropdownOpen = false"
-                        @input="providerModelDropdownOpen = true"
-                      />
-                      <button
-                        class="provider-model-toggle"
-                        type="button"
-                        @mousedown.prevent
-                        @click="toggleProviderModelDropdown"
-                      >
-                        <svg viewBox="0 0 20 20" aria-hidden="true">
-                          <path d="M6 8l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
-                        </svg>
-                      </button>
-                      <div v-if="providerModelDropdownOpen" class="provider-model-options">
+                    <div class="field-with-action field-with-dropdown-action">
+                      <div class="provider-model-combobox">
+                        <input
+                          v-model.trim="providerTestModel"
+                          class="base-input"
+                          :class="{ 'has-error': !!modalState.errors.testModel, 'shake-error': shakeFields.testModel }"
+                          :placeholder="providerModelsLoading ? t('components.main.form.connectivity.loadingModels') : t('components.main.form.placeholders.testModel')"
+                          @focus="providerModelDropdownOpen = true"
+                          @blur="providerModelDropdownOpen = false"
+                        />
                         <button
-                          v-for="model in filteredProviderModelOptions"
-                          :key="model"
-                          class="provider-model-option"
+                          class="provider-model-toggle"
                           type="button"
-                          @mousedown.prevent="selectProviderTestModel(model)"
+                          @mousedown.prevent
+                          @click="toggleProviderModelDropdown"
                         >
-                          {{ model }}
+                          <svg viewBox="0 0 20 20" aria-hidden="true">
+                            <path d="M6 8l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
+                          </svg>
                         </button>
-                        <div v-if="providerModelsLoading" class="provider-model-empty">
-                          {{ t('components.main.form.connectivity.loadingModels') }}
-                        </div>
-                        <div v-else-if="!providerModelOptions.length" class="provider-model-empty">
-                          {{ t('components.main.form.connectivity.noModelOptions') }}
-                        </div>
-                        <div v-else-if="!filteredProviderModelOptions.length" class="provider-model-empty">
-                          {{ t('components.main.form.connectivity.noModelMatches') }}
+                        <div v-if="providerModelDropdownOpen" class="provider-model-options">
+                          <button
+                            v-for="model in combinedProviderModelOptions"
+                            :key="model"
+                            class="provider-model-option"
+                            type="button"
+                            @mousedown.prevent="selectProviderTestModel(model)"
+                          >
+                            {{ model }}
+                          </button>
+                          <div v-if="providerModelsLoading" class="provider-model-empty">
+                            {{ t('components.main.form.connectivity.loadingModels') }}
+                          </div>
+                          <div v-else-if="!providerModelOptions.length" class="provider-model-empty">
+                            {{ t('components.main.form.connectivity.noModelOptions') }}
+                          </div>
                         </div>
                       </div>
+                      <button class="field-test-btn field-test-btn-tight" type="button" :disabled="testingModelsEndpoint" @click="handleTestModelsEndpoint">
+                        {{ testingModelsEndpoint ? t('components.main.form.connectivity.testing') : t('components.main.form.connectivity.testModels') }}
+                      </button>
                     </div>
                   </label>
-                  <div class="endpoint-test-actions">
-                    <button class="field-test-btn" type="button" :disabled="testingProtocolEndpoint" @click="handleTestProtocolEndpoint">
-                      {{ testingProtocolEndpoint ? t('components.main.form.connectivity.testing') : t('components.main.form.connectivity.testService') }}
-                    </button>
-                    <button class="field-test-btn" type="button" :disabled="testingModelsEndpoint" @click="handleTestModelsEndpoint">
-                      {{ testingModelsEndpoint ? t('components.main.form.connectivity.testing') : t('components.main.form.connectivity.testModels') }}
-                    </button>
+                  <label class="form-field">
+                    <span>{{ t('components.main.form.labels.testMessage') }}</span>
+                    <div class="field-with-action">
+                      <BaseInput
+                        v-model="providerTestMessage"
+                        type="text"
+                        :placeholder="t('components.main.form.placeholders.testMessage')"
+                      />
+                      <button class="field-test-btn" type="button" :disabled="testingProtocolEndpoint" @click="handleTestProtocolEndpoint">
+                        {{ testingProtocolEndpoint ? t('components.main.form.connectivity.testing') : t('components.main.form.connectivity.sendTestMessage') }}
+                      </button>
+                    </div>
+                  </label>
+                  <div v-if="protocolEndpointTestResult" class="field-test-output-group">
+                    <div class="field-test-output">
+                      <div class="field-test-output-title">{{ t('components.main.form.connectivity.httpResponse') }}</div>
+                      <pre>{{ protocolEndpointTestResult.httpResponse || protocolEndpointTestResult.message }}</pre>
+                    </div>
+                    <div class="field-test-output">
+                      <div class="field-test-output-title">{{ t('components.main.form.connectivity.rawResult') }}</div>
+                      <ReadOnlyJsonEditor
+                        :value="protocolEndpointTestResult.rawResult || protocolEndpointTestResult.message"
+                        height="260px"
+                      />
+                    </div>
                   </div>
-                  <p v-if="protocolEndpointTestResult" :class="['field-test-result', protocolEndpointTestResult.success ? 'success' : 'error']">
-                    {{ protocolEndpointTestResult.message }}
-                  </p>
                   <p v-if="modelsEndpointTestResult" :class="['field-test-result', modelsEndpointTestResult.success ? 'success' : 'error']">
                     {{ modelsEndpointTestResult.message }}
                   </p>
@@ -714,6 +730,7 @@ import { automationCardGroups, createAutomationCards, type AutomationCard } from
 import BaseButton from '../common/BaseButton.vue'
 import BaseModal from '../common/BaseModal.vue'
 import BaseInput from '../common/BaseInput.vue'
+import ReadOnlyJsonEditor from '../common/ReadOnlyJsonEditor.vue'
 import ModelWhitelistEditor from '../common/ModelWhitelistEditor.vue'
 import HelpHint from '../common/HelpHint.vue'
 import ModelMappingEditor from '../common/ModelMappingEditor.vue'
@@ -1674,7 +1691,17 @@ const testingConnectivity = ref(false)
 const connectivityTestResult = ref<{ success: boolean; message: string } | null>(null)
 const testingProtocolEndpoint = ref(false)
 const testingModelsEndpoint = ref(false)
-const protocolEndpointTestResult = ref<{ success: boolean; message: string } | null>(null)
+const defaultTestMessage = '这是一条测试消息，请回复"yes"'
+const defaultTestModel = 'gpt-5.5'
+const providerTestMessage = ref(defaultTestMessage)
+type ProtocolEndpointTestResult = {
+  success: boolean
+  message: string
+  rawResult: string
+  httpResponse: string
+  httpCode?: number
+}
+const protocolEndpointTestResult = ref<ProtocolEndpointTestResult | null>(null)
 const modelsEndpointTestResult = ref<{ success: boolean; message: string } | null>(null)
 const providerTestModel = ref('')
 const providerModelOptions = ref<string[]>([])
@@ -1735,8 +1762,9 @@ const clearEndpointTestErrors = () => {
   modalState.errors.testModel = ''
 }
 
-const localProviderModelOptions = computed(() => {
+const combinedProviderModelOptions = computed(() => {
   const models = new Set<string>()
+  providerModelOptions.value.forEach((model) => models.add(model))
   Object.keys(modalState.form.supportedModels || {}).forEach((model) => {
     if (!model.includes('*')) models.add(model)
   })
@@ -1744,22 +1772,7 @@ const localProviderModelOptions = computed(() => {
     if (source && !source.includes('*')) models.add(source)
     if (target && !target.includes('*')) models.add(target)
   })
-  connectivityTestModelOptions.value.forEach((model) => models.add(model))
   return Array.from(models).sort((a, b) => a.localeCompare(b))
-})
-
-const combinedProviderModelOptions = computed(() => {
-  const models = new Set<string>()
-  providerModelOptions.value.forEach((model) => models.add(model))
-  localProviderModelOptions.value.forEach((model) => models.add(model))
-  return Array.from(models).sort((a, b) => a.localeCompare(b))
-})
-
-const filteredProviderModelOptions = computed(() => {
-  const prefix = providerTestModel.value.trim().toLowerCase()
-  const options = combinedProviderModelOptions.value
-  if (!prefix) return options.slice(0, 60)
-  return options.filter((model) => model.toLowerCase().startsWith(prefix)).slice(0, 60)
 })
 
 const loadProviderModelsForForm = async () => {
@@ -1776,8 +1789,8 @@ const loadProviderModelsForForm = async () => {
       modalState.tabId
     )
     providerModelOptions.value = result.models || []
-    if (!providerTestModel.value && combinedProviderModelOptions.value.length) {
-      providerTestModel.value = combinedProviderModelOptions.value[0]
+    if (!providerTestModel.value) {
+      providerTestModel.value = defaultTestModel
     }
   } catch (error) {
     console.warn('Failed to load provider models for form:', error)
@@ -1827,6 +1840,7 @@ const handleTestProtocolEndpoint = async () => {
   const apiUrl = ensureTestBaseURL()
   const apiKey = modalState.form.apiKey.trim()
   const endpoint = currentProtocolEndpoint()
+  const testMessage = providerTestMessage.value.trim() || defaultTestMessage
   if (!apiUrl) return
   if (!apiKey) {
     modalState.errors.apiKey = t('components.main.form.errors.required')
@@ -1847,24 +1861,30 @@ const handleTestProtocolEndpoint = async () => {
   testingProtocolEndpoint.value = true
   try {
     const result = await Call.ByName(
-      'codeswitch/services.ConnectivityTestService.TestProviderManual',
+      'codeswitch/services.ConnectivityTestService.TestProviderManualWithMessage',
       modalState.tabId,
       apiUrl,
       apiKey,
       providerTestModel.value.trim(),
       endpoint,
-      resolveEffectiveAuthType()
+      resolveEffectiveAuthType(),
+      testMessage
     )
     protocolEndpointTestResult.value = {
       success: !!result.success,
       message: result.success
         ? t('components.main.form.connectivity.serviceSuccess', { latency: result.latencyMs, code: result.httpCode || 200 })
         : result.message || t('components.main.form.connectivity.failed'),
+      rawResult: result.rawResult || '',
+      httpResponse: result.httpResponse || '',
+      httpCode: result.httpCode || 0,
     }
   } catch (error) {
     protocolEndpointTestResult.value = {
       success: false,
       message: t('components.main.form.connectivity.error', { error: extractErrorMessage(error) }),
+      rawResult: '',
+      httpResponse: '',
     }
   } finally {
     testingProtocolEndpoint.value = false
@@ -2156,7 +2176,8 @@ const openCreateModal = () => {
   modalState.editingId = null
   editingCard.value = null
   Object.assign(modalState.form, defaultFormValues(activeTab.value))
-  providerTestModel.value = connectivityTestModelOptions.value[0] || ''
+  providerTestModel.value = defaultTestModel
+  providerTestMessage.value = defaultTestMessage
   providerModelOptions.value = []
   providerModelDropdownOpen.value = false
   // 初始化认证方式为平台默认
@@ -2208,8 +2229,8 @@ const openEditModal = (card: AutomationCard) => {
   providerTestModel.value =
     card.availabilityConfig?.testModel ||
     card.connectivityTestModel ||
-    connectivityTestModelOptions.value[0] ||
-    ''
+    defaultTestModel
+  providerTestMessage.value = defaultTestMessage
   providerModelOptions.value = []
   providerModelDropdownOpen.value = false
   // 初始化认证方式状态
@@ -2445,8 +2466,8 @@ const handleDuplicate = (card: AutomationCard) => {
   providerTestModel.value =
     card.availabilityConfig?.testModel ||
     card.connectivityTestModel ||
-    connectivityTestModelOptions.value[0] ||
-    ''
+    defaultTestModel
+  providerTestMessage.value = defaultTestMessage
   providerModelOptions.value = []
   providerModelDropdownOpen.value = false
 
@@ -3196,6 +3217,30 @@ const confirmDeleteCliTool = async () => {
   align-items: center;
 }
 
+.field-with-dropdown-action {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.field-with-dropdown-action .provider-model-combobox {
+  min-width: 0;
+}
+
+.field-test-output-group {
+  display: grid;
+  gap: 8px;
+}
+
+.field-test-output {
+  display: grid;
+  gap: 8px;
+}
+
+.field-test-output-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--mac-text-secondary);
+}
+
 .field-test-btn {
   min-height: 36px;
   padding: 0 12px;
@@ -3216,6 +3261,11 @@ const confirmDeleteCliTool = async () => {
 .field-test-btn:disabled {
   cursor: not-allowed;
   opacity: 0.55;
+}
+
+.field-test-btn-tight {
+  min-width: 112px;
+  flex-shrink: 0;
 }
 
 .field-test-result {
@@ -3246,12 +3296,6 @@ const confirmDeleteCliTool = async () => {
 
 :global(.dark) .endpoint-test-panel {
   background: rgba(255, 255, 255, 0.04);
-}
-
-.endpoint-test-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
 }
 
 .provider-model-combobox {

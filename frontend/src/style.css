@@ -1686,7 +1686,6 @@ html.dark .secondary-btn:active:not(:disabled) {
     max-width: none;
   }
 
-  .model-monitor-page,
   .keys-page,
   .console-page {
     padding-bottom: calc(96px + env(safe-area-inset-bottom));
