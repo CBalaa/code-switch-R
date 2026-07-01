@@ -274,3 +274,123 @@ func TestHTTPDifferentPoolsSelectDifferentProviders(t *testing.T) {
 		t.Fatalf("key2 should route to provider-b, got: %s", w2.Body.String())
 	}
 }
+
+func TestHTTPStickyPrimaryProviderUntilBlacklisted(t *testing.T) {
+	testHome := t.TempDir()
+	t.Setenv("HOME", testHome)
+
+	configDir := filepath.Join(testHome, ".code-switch")
+	_ = os.MkdirAll(configDir, 0o700)
+
+	providerAHits := 0
+	providerBHits := 0
+
+	upstreamA := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		providerAHits++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":{"message":"provider-a overloaded"}}`))
+	}))
+	defer upstreamA.Close()
+
+	upstreamB := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		providerBHits++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"provider":"provider-b","choices":[{"message":{"content":"from-b"}}]}`))
+	}))
+	defer upstreamB.Close()
+
+	providers := []Provider{
+		{ID: 1, Name: "provider-a", Enabled: true, APIURL: upstreamA.URL, APIKey: "key-a"},
+		{ID: 2, Name: "provider-b", Enabled: true, APIURL: upstreamB.URL, APIKey: "key-b"},
+	}
+	payload, _ := json.Marshal(providerEnvelope{Providers: providers})
+	_ = os.WriteFile(filepath.Join(configDir, "openai-chat.json"), payload, 0o600)
+
+	providerService := NewProviderService()
+	poolService := NewProviderPoolService()
+	keyService := NewCodexRelayKeyService()
+	poolService.SetBindingChecker(keyService)
+	appSettings := NewAppSettingsService(nil)
+	notificationService := NewNotificationService(appSettings)
+
+	relay := NewProviderRelayService(
+		providerService, poolService, keyService,
+		notificationService, appSettings,
+		DefaultRelayBindAddr,
+	)
+
+	pool := &ProviderPool{
+		Platform:                     "openai-chat",
+		Name:                         "Sticky Pool",
+		Mode:                         ProviderPoolModeManaged,
+		AutoBlacklistEnabled:         true,
+		AutoBlacklistThreshold:       2,
+		AutoBlacklistDurationMinutes: 10,
+		Members: []ProviderPoolMember{
+			{ProviderID: 1, Enabled: true, Level: 1},
+			{ProviderID: 2, Enabled: true, Level: 1},
+		},
+	}
+	poolID, _ := poolService.SavePool(pool)
+
+	key, _ := keyService.CreateKey("sticky-key")
+	_ = keyService.SetPoolBinding(key.ID, "openai-chat", poolID)
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	relay.registerRoutes(router)
+
+	keySecret, _ := keyService.GetKeySecret(key.ID)
+	newRequest := func() *http.Request {
+		req := httptest.NewRequest(http.MethodPost, "/chat/completions", strings.NewReader(`{"model":"gpt-4","messages":[]}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+keySecret)
+		return req
+	}
+
+	// 第一次失败：A 仍未拉黑，不能切到同级 B。
+	w1 := httptest.NewRecorder()
+	router.ServeHTTP(w1, newRequest())
+	if w1.Code != http.StatusBadGateway {
+		t.Fatalf("first request expected 502, got %d: %s", w1.Code, w1.Body.String())
+	}
+	if providerAHits != 1 {
+		t.Fatalf("after first request provider-a hits = %d, want 1", providerAHits)
+	}
+	if providerBHits != 0 {
+		t.Fatalf("after first request provider-b hits = %d, want 0", providerBHits)
+	}
+
+	// 第二次失败达到阈值：A 被拉黑，当次请求切到 B 并成功。
+	w2 := httptest.NewRecorder()
+	router.ServeHTTP(w2, newRequest())
+	if w2.Code != http.StatusOK {
+		t.Fatalf("second request expected 200, got %d: %s", w2.Code, w2.Body.String())
+	}
+	if providerAHits != 2 {
+		t.Fatalf("after second request provider-a hits = %d, want 2", providerAHits)
+	}
+	if providerBHits != 1 {
+		t.Fatalf("after second request provider-b hits = %d, want 1", providerBHits)
+	}
+	if !strings.Contains(w2.Body.String(), `"provider":"provider-b"`) {
+		t.Fatalf("second request should route to provider-b after blacklist, got: %s", w2.Body.String())
+	}
+
+	// 第三次请求：A 仍在拉黑期，应直接走 B。
+	w3 := httptest.NewRecorder()
+	router.ServeHTTP(w3, newRequest())
+	if w3.Code != http.StatusOK {
+		t.Fatalf("third request expected 200, got %d: %s", w3.Code, w3.Body.String())
+	}
+	if providerAHits != 2 {
+		t.Fatalf("after third request provider-a hits = %d, want still 2", providerAHits)
+	}
+	if providerBHits != 2 {
+		t.Fatalf("after third request provider-b hits = %d, want 2", providerBHits)
+	}
+	if !strings.Contains(w3.Body.String(), `"provider":"provider-b"`) {
+		t.Fatalf("third request should route directly to provider-b, got: %s", w3.Body.String())
+	}
+}

@@ -300,6 +300,21 @@ func getProviderLevelInPool(pool *ProviderPool, provider Provider) int {
 	return 1
 }
 
+func nextProviderNameAfterIndex(levels []int, levelGroups map[int][]Provider, currentLevel int, currentIndex int) string {
+	if providersInLevel, ok := levelGroups[currentLevel]; ok && currentIndex+1 < len(providersInLevel) {
+		return providersInLevel[currentIndex+1].Name
+	}
+	for _, nextLevel := range levels {
+		if nextLevel <= currentLevel {
+			continue
+		}
+		if providers := levelGroups[nextLevel]; len(providers) > 0 {
+			return providers[0].Name
+		}
+	}
+	return ""
+}
+
 // isProviderBlacklistedForUser checks whether a provider is currently blacklisted in the given user pool.
 func (prs *ProviderRelayService) isProviderBlacklistedForUser(userID, platform, poolID string, providerID int64) bool {
 	prs.poolPenaltyMu.Lock()
@@ -867,13 +882,15 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 		query := flattenQuery(c.Request.URL.Query())
 		clientHeaders := cloneHeaders(c.Request.Header)
 
-		// 【降级模式】：按 Level 顺序尝试，Level 小的先用，失败后尝试同 Level 下一个
-		fmt.Printf("[INFO] 🔄 降级模式（顺序降级 + 自动拉黑）\n")
+		// 【降级模式】：按 Level 顺序选择主 provider。
+		// 只要当前主 provider 没被拉黑，就持续使用它；只有触发拉黑后才切到同级/下一级的下一个 provider。
+		fmt.Printf("[INFO] 🔄 降级模式（主 provider 粘性 + 自动拉黑切换）\n")
 
 		var lastError error
 		var lastProvider string
 		var lastDuration time.Duration
 		totalAttempts := 0
+		stopOnStickyFailure := false
 
 		for _, level := range levels {
 			providersInLevel := levelGroups[level]
@@ -946,25 +963,22 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 				}
 
 				// 记录 provider 失败（自动拉黑逻辑）。空流重试路径已在内部计数，跳过。
+				blacklistedAfterFailure := false
 				if !failedFromEmptyStreamRetry {
-					prs.recordProviderFailureForUser(userID, kind, poolID, pool, provider, errorMsg)
+					blacklistedAfterFailure = prs.recordProviderFailureForUser(userID, kind, poolID, pool, provider, errorMsg)
+				} else {
+					blacklistedAfterFailure = prs.isProviderBlacklistedForUser(userID, kind, poolID, provider.ID)
 				}
 
-				// 发送切换通知：检查是否有下一个可用的 provider
+				if !blacklistedAfterFailure {
+					fmt.Printf("[WARN] Provider %s 本次失败但未进入拉黑，保持为主 provider，停止继续切换\n", provider.Name)
+					stopOnStickyFailure = true
+					break
+				}
+
+				// 发送切换通知：仅在 provider 进入拉黑后，才切到下一个可用 provider
 				if prs.notificationService != nil {
-					nextProvider := ""
-					// 先查找同级别的下一个
-					if i+1 < len(providersInLevel) {
-						nextProvider = providersInLevel[i+1].Name
-					} else {
-						// 查找下一个 level 的第一个 provider
-						for _, nextLevel := range levels {
-							if nextLevel > level && len(levelGroups[nextLevel]) > 0 {
-								nextProvider = levelGroups[nextLevel][0].Name
-								break
-							}
-						}
-					}
+					nextProvider := nextProviderNameAfterIndex(levels, levelGroups, level, i)
 					if nextProvider != "" {
 						prs.notificationService.NotifyProviderSwitch(SwitchNotification{
 							FromProvider: provider.Name,
@@ -976,6 +990,9 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 				}
 			}
 
+			if stopOnStickyFailure {
+				break
+			}
 			fmt.Printf("[WARN] Level %d 的所有 %d 个 provider 均失败，尝试下一 Level\n", level, len(providersInLevel))
 		}
 
