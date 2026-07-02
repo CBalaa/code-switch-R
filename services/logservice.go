@@ -35,6 +35,7 @@ func (ls *LogService) ListRequestLogsForUser(userID string, platform string, pro
 	if limit > 1000 {
 		limit = 1000
 	}
+	activeLogs := defaultActiveRequestTracker.List(platform, provider, userID)
 	model := xdb.New("request_log")
 	options := []xdb.Option{
 		xdb.OrderByDesc("id"),
@@ -54,34 +55,59 @@ func (ls *LogService) ListRequestLogsForUser(userID string, platform string, pro
 		return nil, err
 	}
 	keyNames := ls.relayKeyNameMapForUser(userID)
+	for i := range activeLogs {
+		relayKeyID := strings.TrimSpace(activeLogs[i].RelayKeyID)
+		activeLogs[i].RelayKeyID = relayKeyID
+		activeLogs[i].RelayKeyName = relayKeyDisplayName(relayKeyID, keyNames)
+	}
 	logs := make([]ReqeustLog, 0, len(records))
 	for _, record := range records {
 		relayKeyID := strings.TrimSpace(record.GetString("relay_key_id"))
+		firstTextSec := record.GetFloat64("first_text_sec")
+		firstTokenSec := record.GetFloat64("first_token_duration_sec")
+		if firstTokenSec == 0 {
+			firstTokenSec = firstTextSec
+		}
+		if firstTokenSec == 0 {
+			firstTokenSec = record.GetFloat64("first_event_sec")
+		}
 		logEntry := ReqeustLog{
-			ID:                record.GetInt64("id"),
-			UserID:            record.GetString("user_id"),
-			Platform:          record.GetString("platform"),
-			Model:             record.GetString("model"),
-			Provider:          record.GetString("provider"),
-			RelayKeyID:        relayKeyID,
-			RelayKeyName:      relayKeyDisplayName(relayKeyID, keyNames),
-			HttpCode:          record.GetInt("http_code"),
-			ErrorMessage:      record.GetString("error_message"),
-			InputTokens:       record.GetInt("input_tokens"),
-			OutputTokens:      record.GetInt("output_tokens"),
-			CacheCreateTokens: record.GetInt("cache_create_tokens"),
-			CacheReadTokens:   record.GetInt("cache_read_tokens"),
-			ReasoningTokens:   record.GetInt("reasoning_tokens"),
-			CreatedAt:         formatCreatedAtBeijing(record),
-			IsStream:          record.GetBool("is_stream"),
-			DurationSec:       record.GetFloat64("duration_sec"),
-			UpstreamHeaderSec: record.GetFloat64("upstream_header_sec"),
-			FirstEventSec:     record.GetFloat64("first_event_sec"),
-			FirstTextSec:      record.GetFloat64("first_text_sec"),
+			ID:                    record.GetInt64("id"),
+			UserID:                record.GetString("user_id"),
+			Platform:              record.GetString("platform"),
+			Model:                 record.GetString("model"),
+			Provider:              record.GetString("provider"),
+			RelayKeyID:            relayKeyID,
+			RelayKeyName:          relayKeyDisplayName(relayKeyID, keyNames),
+			HttpCode:              record.GetInt("http_code"),
+			ErrorMessage:          record.GetString("error_message"),
+			InputTokens:           record.GetInt("input_tokens"),
+			OutputTokens:          record.GetInt("output_tokens"),
+			CacheCreateTokens:     record.GetInt("cache_create_tokens"),
+			CacheReadTokens:       record.GetInt("cache_read_tokens"),
+			ReasoningTokens:       record.GetInt("reasoning_tokens"),
+			CreatedAt:             formatCreatedAtBeijing(record),
+			IsStream:              record.GetBool("is_stream"),
+			DurationSec:           record.GetFloat64("duration_sec"),
+			FirstTokenDurationSec: firstTokenSec,
+			ClientIP:              record.GetString("client_ip"),
+			UpstreamHeaderSec:     record.GetFloat64("upstream_header_sec"),
+			FirstEventSec:         record.GetFloat64("first_event_sec"),
+			FirstTextSec:          firstTextSec,
+			Status:                requestLogStatusCompleted,
 		}
 		logs = append(logs, logEntry)
 	}
-	return logs, nil
+	if len(activeLogs) == 0 {
+		return logs, nil
+	}
+	merged := make([]ReqeustLog, 0, len(activeLogs)+len(logs))
+	merged = append(merged, activeLogs...)
+	merged = append(merged, logs...)
+	if len(merged) > limit {
+		merged = merged[:limit]
+	}
+	return merged, nil
 }
 
 func (ls *LogService) relayKeyNameMap() map[string]string {

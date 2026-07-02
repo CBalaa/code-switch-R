@@ -17,10 +17,14 @@ export type RequestLog = {
   reasoning_tokens: number
   is_stream?: boolean | number
   duration_sec?: number
+  first_token_duration_sec?: number
+  client_ip?: string
   upstream_header_sec?: number
   first_event_sec?: number
   first_text_sec?: number
+  error_message?: string
   created_at: string
+  status?: 'processing' | 'completed' | string
 }
 
 type RequestLogQuery = {

@@ -465,10 +465,15 @@
         "provider": "供应商",
         "relayKey": "调用密钥",
         "model": "模型",
+        "clientIp": "客户端 IP",
         "httpCode": "HTTP",
         "stream": "传输",
+        "firstToken": "首 Token",
         "duration": "耗时",
         "tokens": "Token 汇总"
+      },
+      "status": {
+        "processing": "处理中"
       },
       "tokenLabels": {
         "input": "输入",

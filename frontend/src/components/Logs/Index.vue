@@ -61,55 +61,72 @@
     </form>
 
     <section class="logs-table-wrapper">
-      <table class="logs-table">
+      <table ref="logsTableRef" class="logs-table">
+        <colgroup>
+          <col
+            v-for="column in logTableColumns"
+            :key="column.id"
+            :style="{ width: `${logColumnWidths[column.id]}%` }"
+          />
+        </colgroup>
         <thead>
           <tr>
-            <th class="col-time">{{ t('components.logs.table.time') }}</th>
-            <th class="col-platform">{{ t('components.logs.table.platform') }}</th>
-            <th class="col-provider">{{ t('components.logs.table.provider') }}</th>
-            <th class="col-relay-key">{{ t('components.logs.table.relayKey') }}</th>
-            <th class="col-model">{{ t('components.logs.table.model') }}</th>
-            <th class="col-http">{{ t('components.logs.table.httpCode') }}</th>
-            <th class="col-stream">{{ t('components.logs.table.stream') }}</th>
-            <th class="col-duration">{{ t('components.logs.table.duration') }}</th>
-            <th class="col-tokens">{{ t('components.logs.table.tokens') }}</th>
+            <th
+              v-for="(column, index) in logTableColumns"
+              :key="column.id"
+              :class="[column.className, 'log-resizable-th', { 'is-resizing': resizingColumnId === column.id }]"
+            >
+              <span class="column-header-label">{{ t(column.labelKey) }}</span>
+              <span
+                v-if="index < logTableColumns.length - 1"
+                class="column-resize-handle"
+                role="separator"
+                aria-orientation="vertical"
+                @pointerdown="startLogColumnResize(index, $event)"
+              ></span>
+            </th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="item in pagedLogs" :key="item.id">
+          <tr v-for="item in pagedLogs" :key="item.id" :class="isProcessingLog(item) ? 'processing-row' : ''">
             <td :data-label="t('components.logs.table.time')">{{ formatTime(item.created_at) }}</td>
             <td :data-label="t('components.logs.table.platform')">{{ item.platform || '—' }}</td>
-            <td :data-label="t('components.logs.table.provider')">{{ item.provider || '—' }}</td>
-            <td :data-label="t('components.logs.table.relayKey')">{{ formatRelayKey(item) }}</td>
+            <td :data-label="t('components.logs.table.provider')" class="provider-cell">{{ item.provider || '—' }}</td>
+            <td :data-label="t('components.logs.table.relayKey')" class="relay-key-cell">{{ formatRelayKey(item) }}</td>
             <td :data-label="t('components.logs.table.model')">{{ item.model || '—' }}</td>
-            <td :data-label="t('components.logs.table.httpCode')" :class="['code', httpCodeClass(item.http_code)]">{{ item.http_code }}</td>
+            <td :data-label="t('components.logs.table.clientIp')" class="client-ip-cell">{{ item.client_ip || '—' }}</td>
+            <td :data-label="t('components.logs.table.httpCode')" :class="['code', httpCodeClassForLog(item)]">
+              <span v-if="isProcessingLog(item)" class="processing-tag">{{ t('components.logs.status.processing') }}</span>
+              <span v-else>{{ item.http_code || '—' }}</span>
+            </td>
             <td :data-label="t('components.logs.table.stream')"><span :class="['stream-tag', item.is_stream ? 'on' : 'off']">{{ formatStream(item.is_stream) }}</span></td>
+            <td :data-label="t('components.logs.table.firstToken')"><span :class="['duration-tag', durationColorForLog(item, item.first_token_duration_sec)]">{{ formatFirstTokenDuration(item) }}</span></td>
             <td :data-label="t('components.logs.table.duration')"><span :class="['duration-tag', durationColor(item.duration_sec)]">{{ formatDuration(item.duration_sec) }}</span></td>
             <td :data-label="t('components.logs.table.tokens')" class="token-cell">
               <div>
                 <span class="token-label">{{ t('components.logs.tokenLabels.input') }}</span>
-                <span class="token-value">{{ formatTokenNumber(item.input_tokens) }}</span>
+                <span class="token-value">{{ formatLogTokenNumber(item, item.input_tokens) }}</span>
               </div>
               <div>
                 <span class="token-label">{{ t('components.logs.tokenLabels.output') }}</span>
-                <span class="token-value">{{ formatTokenNumber(item.output_tokens) }}</span>
+                <span class="token-value">{{ formatLogTokenNumber(item, item.output_tokens) }}</span>
               </div>
               <div>
                 <span class="token-label">{{ t('components.logs.tokenLabels.cacheCreate') }}</span>
-                <span class="token-value">{{ formatTokenNumber(item.cache_create_tokens) }}</span>
+                <span class="token-value">{{ formatLogTokenNumber(item, item.cache_create_tokens) }}</span>
               </div>
               <div>
                 <span class="token-label">{{ t('components.logs.tokenLabels.cacheRead') }}</span>
-                <span class="token-value">{{ formatTokenNumber(item.cache_read_tokens) }}</span>
+                <span class="token-value">{{ formatLogTokenNumber(item, item.cache_read_tokens) }}</span>
               </div>
               <div>
                 <span class="token-label">{{ t('components.logs.tokenLabels.reasoning') }}</span>
-                <span class="token-value">{{ formatTokenNumber(item.reasoning_tokens) }}</span>
+                <span class="token-value">{{ formatLogTokenNumber(item, item.reasoning_tokens) }}</span>
               </div>
             </td>
           </tr>
           <tr v-if="!pagedLogs.length && !loading">
-            <td colspan="9" class="empty">{{ t('components.logs.empty') }}</td>
+            <td colspan="11" class="empty">{{ t('components.logs.empty') }}</td>
           </tr>
         </tbody>
       </table>
@@ -202,6 +219,128 @@ const page = ref(1)
 const PAGE_SIZE = 15
 const providerOptions = ref<string[]>([])
 const statsSeries = computed<LogStatsSeries[]>(() => stats.value?.series ?? [])
+const LOG_COLUMN_WIDTH_STORAGE_KEY = 'code-switch-r:logs-table-column-widths:v1'
+
+const logTableColumns = [
+  { id: 'time', className: 'col-time', labelKey: 'components.logs.table.time', defaultWidth: 11, minWidth: 120 },
+  { id: 'platform', className: 'col-platform', labelKey: 'components.logs.table.platform', defaultWidth: 7, minWidth: 78 },
+  { id: 'provider', className: 'col-provider', labelKey: 'components.logs.table.provider', defaultWidth: 12, minWidth: 96 },
+  { id: 'relayKey', className: 'col-relay-key', labelKey: 'components.logs.table.relayKey', defaultWidth: 12, minWidth: 96 },
+  { id: 'model', className: 'col-model', labelKey: 'components.logs.table.model', defaultWidth: 10, minWidth: 92 },
+  { id: 'clientIp', className: 'col-client-ip', labelKey: 'components.logs.table.clientIp', defaultWidth: 8, minWidth: 86 },
+  { id: 'http', className: 'col-http', labelKey: 'components.logs.table.httpCode', defaultWidth: 6, minWidth: 68 },
+  { id: 'stream', className: 'col-stream', labelKey: 'components.logs.table.stream', defaultWidth: 6, minWidth: 72 },
+  { id: 'firstToken', className: 'col-first-token', labelKey: 'components.logs.table.firstToken', defaultWidth: 7, minWidth: 82 },
+  { id: 'duration', className: 'col-duration', labelKey: 'components.logs.table.duration', defaultWidth: 7, minWidth: 82 },
+  { id: 'tokens', className: 'col-tokens', labelKey: 'components.logs.table.tokens', defaultWidth: 14, minWidth: 128 },
+] as const
+
+type LogTableColumnId = (typeof logTableColumns)[number]['id']
+type LogColumnWidths = Record<LogTableColumnId, number>
+
+const defaultLogColumnWidths = logTableColumns.reduce((acc, column) => {
+  acc[column.id] = column.defaultWidth
+  return acc
+}, {} as LogColumnWidths)
+
+const normalizeLogColumnWidths = (widths: LogColumnWidths): LogColumnWidths => {
+  const total = logTableColumns.reduce((sum, column) => sum + (widths[column.id] || 0), 0)
+  if (!Number.isFinite(total) || total <= 0) {
+    return { ...defaultLogColumnWidths }
+  }
+  return logTableColumns.reduce((acc, column) => {
+    acc[column.id] = (widths[column.id] / total) * 100
+    return acc
+  }, {} as LogColumnWidths)
+}
+
+const loadLogColumnWidths = (): LogColumnWidths => {
+  try {
+    const raw = window.localStorage.getItem(LOG_COLUMN_WIDTH_STORAGE_KEY)
+    if (!raw) return { ...defaultLogColumnWidths }
+    const parsed = JSON.parse(raw) as Partial<Record<LogTableColumnId, number>>
+    const widths = { ...defaultLogColumnWidths }
+    for (const column of logTableColumns) {
+      const value = parsed[column.id]
+      if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+        widths[column.id] = value
+      }
+    }
+    return normalizeLogColumnWidths(widths)
+  } catch (error) {
+    console.warn('failed to load log table column widths', error)
+    return { ...defaultLogColumnWidths }
+  }
+}
+
+const saveLogColumnWidths = () => {
+  window.localStorage.setItem(LOG_COLUMN_WIDTH_STORAGE_KEY, JSON.stringify(logColumnWidths.value))
+}
+
+const logsTableRef = ref<HTMLTableElement | null>(null)
+const logColumnWidths = ref<LogColumnWidths>(loadLogColumnWidths())
+const resizingColumnId = ref<LogTableColumnId | null>(null)
+
+let columnResizeState: {
+  index: number
+  startX: number
+  leftStart: number
+  rightStart: number
+  tableWidth: number
+} | null = null
+
+const clampColumnWidth = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max)
+
+const onLogColumnResizeMove = (event: PointerEvent) => {
+  if (!columnResizeState) return
+  const leftColumn = logTableColumns[columnResizeState.index]
+  const rightColumn = logTableColumns[columnResizeState.index + 1]
+  if (!leftColumn || !rightColumn) return
+
+  const pairTotal = columnResizeState.leftStart + columnResizeState.rightStart
+  const deltaPercent = ((event.clientX - columnResizeState.startX) / columnResizeState.tableWidth) * 100
+  const leftMin = Math.min((leftColumn.minWidth / columnResizeState.tableWidth) * 100, pairTotal * 0.45)
+  const rightMin = Math.min((rightColumn.minWidth / columnResizeState.tableWidth) * 100, pairTotal * 0.45)
+  const nextLeft = clampColumnWidth(columnResizeState.leftStart + deltaPercent, leftMin, pairTotal - rightMin)
+
+  logColumnWidths.value = {
+    ...logColumnWidths.value,
+    [leftColumn.id]: nextLeft,
+    [rightColumn.id]: pairTotal - nextLeft,
+  }
+}
+
+const stopLogColumnResize = () => {
+  if (!columnResizeState) return
+  columnResizeState = null
+  resizingColumnId.value = null
+  document.body.classList.remove('is-log-column-resizing')
+  window.removeEventListener('pointermove', onLogColumnResizeMove)
+  window.removeEventListener('pointerup', stopLogColumnResize)
+  window.removeEventListener('pointercancel', stopLogColumnResize)
+  saveLogColumnWidths()
+}
+
+const startLogColumnResize = (index: number, event: PointerEvent) => {
+  const leftColumn = logTableColumns[index]
+  const rightColumn = logTableColumns[index + 1]
+  const tableWidth = logsTableRef.value?.getBoundingClientRect().width ?? 0
+  if (!leftColumn || !rightColumn || tableWidth <= 0) return
+
+  event.preventDefault()
+  columnResizeState = {
+    index,
+    startX: event.clientX,
+    leftStart: logColumnWidths.value[leftColumn.id],
+    rightStart: logColumnWidths.value[rightColumn.id],
+    tableWidth,
+  }
+  resizingColumnId.value = leftColumn.id
+  document.body.classList.add('is-log-column-resizing')
+  window.addEventListener('pointermove', onLogColumnResizeMove)
+  window.addEventListener('pointerup', stopLogColumnResize)
+  window.addEventListener('pointercancel', stopLogColumnResize)
+}
 
 // Token 明细弹窗状态
 const tokenDetailModal = reactive<{
@@ -346,8 +485,12 @@ const formatSeriesLabel = (value?: string) => {
 }
 
 const REFRESH_INTERVAL = 30
+const LOG_AUTO_REFRESH_INTERVAL_MS = 2000
 const countdown = ref(REFRESH_INTERVAL)
 let timer: number | undefined
+let logAutoRefreshTimer: number | undefined
+let logAutoRefreshBusy = false
+let lastLogsSignature = ''
 
 const resetTimer = () => {
   countdown.value = REFRESH_INTERVAL
@@ -372,6 +515,20 @@ const stopCountdown = () => {
   }
 }
 
+const startLogAutoRefresh = () => {
+  stopLogAutoRefresh()
+  logAutoRefreshTimer = window.setInterval(() => {
+    void refreshLogsIfChanged()
+  }, LOG_AUTO_REFRESH_INTERVAL_MS)
+}
+
+const stopLogAutoRefresh = () => {
+  if (logAutoRefreshTimer) {
+    clearInterval(logAutoRefreshTimer)
+    logAutoRefreshTimer = undefined
+  }
+}
+
 const normalizeProviderName = (value: string) => value.trim()
 
 const syncProviderOptionsFromLogs = (items: RequestLog[]) => {
@@ -388,6 +545,30 @@ const syncProviderOptionsFromLogs = (items: RequestLog[]) => {
   providerOptions.value = next
 }
 
+const logSignature = (item: RequestLog) => [
+  item.status ?? '',
+  item.id,
+  item.created_at ?? '',
+  item.platform ?? '',
+  item.provider ?? '',
+  item.relay_key_id ?? '',
+  item.relay_key_name ?? '',
+  item.model ?? '',
+  item.client_ip ?? '',
+  item.http_code ?? '',
+  item.is_stream ?? '',
+  item.duration_sec ?? '',
+  item.first_token_duration_sec ?? '',
+  item.input_tokens ?? '',
+  item.output_tokens ?? '',
+  item.cache_create_tokens ?? '',
+  item.cache_read_tokens ?? '',
+  item.reasoning_tokens ?? '',
+  item.error_message ?? '',
+].join('|')
+
+const logsSignature = (items: RequestLog[]) => items.map(logSignature).join('\n')
+
 const loadLogs = async () => {
   loading.value = true
   try {
@@ -397,11 +578,37 @@ const loadLogs = async () => {
       limit: 200,
     })
     logs.value = data ?? []
+    lastLogsSignature = logsSignature(logs.value)
     page.value = Math.min(page.value, totalPages.value)
   } catch (error) {
     console.error('failed to load request logs', error)
   } finally {
     loading.value = false
+  }
+}
+
+const refreshLogsIfChanged = async () => {
+  if (logAutoRefreshBusy || loading.value) return
+  logAutoRefreshBusy = true
+  try {
+    const data = await fetchRequestLogs({
+      platform: filters.platform,
+      provider: filters.provider,
+      limit: 200,
+    })
+    const nextLogs = data ?? []
+    const nextSignature = logsSignature(nextLogs)
+    if (nextSignature !== lastLogsSignature) {
+      logs.value = nextLogs
+      lastLogsSignature = nextSignature
+      page.value = Math.min(page.value, totalPages.value)
+      syncProviderOptionsFromLogs(nextLogs)
+      void loadStats()
+    }
+  } catch (error) {
+    console.error('failed to auto refresh request logs', error)
+  } finally {
+    logAutoRefreshBusy = false
   }
 }
 
@@ -485,6 +692,13 @@ const formatDuration = (value?: number) => {
   return `${value.toFixed(2)}s`
 }
 
+const isProcessingLog = (item: RequestLog) => item.status === 'processing'
+
+const formatFirstTokenDuration = (item: RequestLog) => {
+  if (isProcessingLog(item)) return '—'
+  return formatDuration(item.first_token_duration_sec)
+}
+
 const httpCodeClass = (code: number) => {
   if (code >= 500) return 'http-server-error'
   if (code >= 400) return 'http-client-error'
@@ -493,11 +707,21 @@ const httpCodeClass = (code: number) => {
   return 'http-info'
 }
 
+const httpCodeClassForLog = (item: RequestLog) => {
+  if (isProcessingLog(item)) return 'http-processing'
+  return httpCodeClass(item.http_code)
+}
+
 const durationColor = (value?: number) => {
   if (!value || Number.isNaN(value)) return 'neutral'
   if (value < 2) return 'fast'
   if (value < 5) return 'medium'
   return 'slow'
+}
+
+const durationColorForLog = (item: RequestLog, value?: number) => {
+  if (isProcessingLog(item)) return 'neutral'
+  return durationColor(value)
 }
 
 const formatNumber = (value?: number) => {
@@ -523,6 +747,11 @@ const formatTokenNumber = (value?: number) => {
   }
 
   return value.toLocaleString()
+}
+
+const formatLogTokenNumber = (item: RequestLog, value?: number) => {
+  if (isProcessingLog(item)) return '—'
+  return formatTokenNumber(value)
 }
 
 /**
@@ -610,10 +839,13 @@ watch(
 onMounted(async () => {
   await loadDashboard()
   startCountdown()
+  startLogAutoRefresh()
 })
 
 onUnmounted(() => {
   stopCountdown()
+  stopLogAutoRefresh()
+  stopLogColumnResize()
 })
 </script>
 

@@ -464,10 +464,15 @@
         "provider": "Provider",
         "relayKey": "Relay key",
         "model": "Model",
+        "clientIp": "Client IP",
         "httpCode": "HTTP",
         "stream": "Stream",
+        "firstToken": "First token",
         "duration": "Duration",
         "tokens": "Tokens"
+      },
+      "status": {
+        "processing": "Processing"
       },
       "tokenLabels": {
         "input": "Input",

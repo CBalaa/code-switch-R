@@ -648,8 +648,10 @@ html.dark .mac-sidebar-item:hover {
   display: flex;
   flex-direction: column;
   gap: 24px;
-  max-width: 1280px;
+  width: 100%;
+  max-width: 1680px;
   margin: 0 auto;
+  box-sizing: border-box;
 }
 
 .logs-header {
@@ -729,7 +731,7 @@ html.dark .mac-sidebar-item:hover {
 .logs-table-wrapper {
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  overflow-x: auto;
+  overflow-x: hidden;
   background: transparent;
   box-shadow: none;
 }
@@ -738,25 +740,75 @@ html.dark .mac-sidebar-item:hover {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.92rem;
-  min-width: 100%;
+  min-width: 0;
+  table-layout: fixed;
 }
 
 .logs-table th,
 .logs-table td {
   padding: 14px 16px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  text-align: left;
-  white-space: nowrap;
+  text-align: center;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
-.logs-table .col-time { width: 180px; }
-.logs-table .col-platform { width: 120px; }
-.logs-table .col-provider { width: 170px; }
-.logs-table .col-model { width: 150px; }
-.logs-table .col-http { width: 90px; }
-.logs-table .col-stream { width: 120px; }
-.logs-table .col-duration { width: 120px; }
-.logs-table .col-tokens { width: 340px; white-space: normal; }
+.logs-table th {
+  position: relative;
+  overflow: visible;
+  text-align: center;
+}
+
+.logs-table th:not(:last-child),
+.logs-table thead th:not(:last-child) {
+  border-right: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.column-header-label {
+  display: block;
+  padding-right: 10px;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.column-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -5px;
+  z-index: 3;
+  width: 10px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.column-resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 9px;
+  bottom: 9px;
+  left: 4px;
+  width: 1px;
+  background: rgba(148, 163, 184, 0.26);
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.column-resize-handle:hover::after,
+.log-resizable-th.is-resizing .column-resize-handle::after {
+  background: rgba(59, 130, 246, 0.75);
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.18);
+}
+
+body.is-log-column-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
 
 .logs-table td.http-success {
   color: #4ade80;
@@ -778,15 +830,29 @@ html.dark .mac-sidebar-item:hover {
   color: #94a3b8;
 }
 
+.logs-table td.http-processing {
+  color: #0ea5e9;
+}
+
+.client-ip-cell {
+  font-family: 'SFMono-Regular', Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  color: var(--mac-text-secondary);
+}
+
 .token-cell {
   font-size: 0.82rem;
   line-height: 1.5;
   color: var(--mac-text);
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
 }
 
 .token-cell div {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
 }
 
@@ -829,6 +895,20 @@ html.dark .mac-sidebar-item:hover {
   color: #0f172a;
 }
 
+.processing-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(14, 165, 233, 0.35);
+  background: rgba(14, 165, 233, 0.12);
+  color: #0369a1;
+  font-family: var(--mac-font);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
 .duration-tag {
   display: inline-flex;
   align-items: center;
@@ -852,12 +932,21 @@ html.dark .mac-sidebar-item:hover {
   background: #fecaca;
 }
 
+.duration-tag.neutral {
+  background: rgba(148, 163, 184, 0.25);
+  color: var(--mac-text-secondary);
+}
+
 .logs-table tbody tr:nth-child(odd) {
   background-color: rgba(255, 255, 255, 0.02);
 }
 
 .logs-table tbody tr:nth-child(even) {
   background-color: transparent;
+}
+
+.logs-table tbody tr.processing-row {
+  background-color: rgba(14, 165, 233, 0.08);
 }
 
 .logs-table th {
@@ -1932,6 +2021,10 @@ html.dark .secondary-btn:active:not(:disabled) {
   .logs-table tbody tr:nth-child(odd),
   .logs-table tbody tr:nth-child(even) {
     background: var(--mac-surface);
+  }
+
+  .logs-table tbody tr.processing-row {
+    background: rgba(14, 165, 233, 0.08);
   }
 
   .logs-table td {

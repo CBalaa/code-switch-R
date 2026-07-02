@@ -11,7 +11,9 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -66,6 +68,7 @@ var errCodexEmptyStream = errors.New("codex upstream stream closed before useful
 var errProviderEmptyShell = errors.New("provider returned 200 but all token counts are zero")
 
 const codexEmptyStreamRetryDelay = time.Second
+const relayTrustedProxiesEnv = "CODE_SWITCH_TRUSTED_PROXIES"
 
 func NewProviderRelayService(providerService *ProviderService, poolService *ProviderPoolService, codexRelayKeys *CodexRelayKeyService, notificationService *NotificationService, appSettings *AppSettingsService, addr string) *ProviderRelayService {
 	if addr == "" {
@@ -114,6 +117,106 @@ func newRelayHTTPClient() *http.Client {
 	}
 
 	return &http.Client{Transport: transport}
+}
+
+func clientIPFromRequest(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+
+	directIP, fallback := directClientIPFromRequest(r)
+	if !directIP.IsValid() {
+		return fallback
+	}
+
+	if relayIsTrustedProxy(directIP) {
+		for _, part := range strings.Split(r.Header.Get("X-Forwarded-For"), ",") {
+			candidate := strings.TrimSpace(part)
+			if candidate == "" {
+				continue
+			}
+			if ip, err := netip.ParseAddr(candidate); err == nil {
+				return ip.String()
+			}
+		}
+
+		if candidate := strings.TrimSpace(r.Header.Get("X-Real-IP")); candidate != "" {
+			if ip, err := netip.ParseAddr(candidate); err == nil {
+				return ip.String()
+			}
+		}
+	}
+
+	return directIP.String()
+}
+
+func directClientIPFromRequest(r *http.Request) (netip.Addr, string) {
+	if r == nil {
+		return netip.Addr{}, ""
+	}
+
+	remoteAddr := strings.TrimSpace(r.RemoteAddr)
+	if remoteAddr == "" {
+		return netip.Addr{}, ""
+	}
+
+	host := remoteAddr
+	if parsedHost, _, err := net.SplitHostPort(remoteAddr); err == nil {
+		host = parsedHost
+	}
+
+	host = strings.Trim(host, "[]")
+	ip, err := netip.ParseAddr(host)
+	if err == nil {
+		return ip, ""
+	}
+
+	return netip.Addr{}, host
+}
+
+func relayIsTrustedProxy(addr netip.Addr) bool {
+	if !addr.IsValid() {
+		return false
+	}
+	prefixes := relayTrustedProxyPrefixes()
+	for _, prefix := range prefixes {
+		if prefix.Contains(addr) {
+			return true
+		}
+	}
+	return false
+}
+
+func relayTrustedProxyPrefixes() []netip.Prefix {
+	prefixes := []netip.Prefix{
+		netip.MustParsePrefix("127.0.0.0/8"),
+		netip.MustParsePrefix("::1/128"),
+	}
+
+	value := strings.TrimSpace(os.Getenv(relayTrustedProxiesEnv))
+	if value == "" {
+		return prefixes
+	}
+
+	for _, part := range strings.Split(value, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if strings.Contains(part, "/") {
+			prefix, err := netip.ParsePrefix(part)
+			if err == nil {
+				prefixes = append(prefixes, prefix)
+			}
+			continue
+		}
+		addr, err := netip.ParseAddr(part)
+		if err == nil {
+			prefixes = append(prefixes, netip.PrefixFrom(addr, addr.BitLen()))
+		}
+	}
+
+	return prefixes
 }
 
 func lastUsedKey(userID, platform, poolID string) string {
@@ -1084,11 +1187,15 @@ func (prs *ProviderRelayService) forwardRequest(
 		UserID:     relayUserIDFromContext(c),
 		IsStream:   isStream,
 		RelayKeyID: relayKeyIDFromContext(c),
+		ClientIP:   clientIPFromRequest(c.Request),
 	}
 	start := time.Now()
 	requestLog.startedAt = start
+	activeRequestID := defaultActiveRequestTracker.Start(requestLog, start)
+	requestLog.ActiveRequestID = activeRequestID
 	defer func() {
 		requestLog.DurationSec = time.Since(start).Seconds()
+		defaultActiveRequestTracker.Finish(activeRequestID)
 
 		// 【修复】判空保护：避免队列未初始化时 panic
 		if GlobalDBQueueLogs == nil {
@@ -1104,9 +1211,9 @@ func (prs *ProviderRelayService) forwardRequest(
 			INSERT INTO request_log (
 				user_id, platform, model, provider, relay_key_id, http_code,
 				input_tokens, output_tokens, cache_create_tokens, cache_read_tokens,
-				reasoning_tokens, is_stream, duration_sec,
+				reasoning_tokens, is_stream, duration_sec, first_token_duration_sec, client_ip,
 				upstream_header_sec, first_event_sec, first_text_sec, error_message, created_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`,
 			requestLog.UserID,
 			requestLog.Platform,
@@ -1121,6 +1228,8 @@ func (prs *ProviderRelayService) forwardRequest(
 			requestLog.ReasoningTokens,
 			boolToInt(requestLog.IsStream),
 			requestLog.DurationSec,
+			requestLog.FirstTokenDurationSec,
+			requestLog.ClientIP,
 			requestLog.UpstreamHeaderSec,
 			requestLog.FirstEventSec,
 			requestLog.FirstTextSec,
@@ -1133,9 +1242,11 @@ func (prs *ProviderRelayService) forwardRequest(
 		}
 		RecordModelMonitorTraffic(requestLog)
 	}()
+	defaultActiveRequestTracker.Update(requestLog.ActiveRequestID, requestLog)
 
 	resp, err := prs.doProviderRequest(c.Request.Context(), targetURL, headers, query, bodyBytes)
 	requestLog.markUpstreamHeaders()
+	defaultActiveRequestTracker.Update(requestLog.ActiveRequestID, requestLog)
 
 	// 无论成功失败，先尝试记录 HttpCode
 	if resp != nil {
@@ -1251,6 +1362,7 @@ func (prs *ProviderRelayService) forwardRequest(
 				fmt.Printf("[WARN] Provider %s 返回 200 空壳响应（无 tokens 且无内容），计为失败\n", provider.Name)
 				return false, fmt.Errorf("%w: provider %s returned 200 empty shell", errProviderEmptyShell, provider.Name)
 			}
+			requestLog.markFirstText()
 
 			// 非空壳：复制响应头并写给客户端
 			copyResponseHeaders(c.Writer, resp.RawResponse.Header)
@@ -2137,6 +2249,12 @@ func ensureRequestLogTableWithDB(db *sql.DB) error {
 	if err := ensureRequestLogColumn(db, "duration_sec", "REAL DEFAULT 0"); err != nil {
 		return err
 	}
+	if err := ensureRequestLogColumn(db, "first_token_duration_sec", "REAL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := ensureRequestLogColumn(db, "client_ip", "TEXT"); err != nil {
+		return err
+	}
 	if err := ensureRequestLogColumn(db, "upstream_header_sec", "REAL DEFAULT 0"); err != nil {
 		return err
 	}
@@ -2243,11 +2361,15 @@ type ReqeustLog struct {
 	ReasoningTokens             int     `json:"reasoning_tokens"`
 	IsStream                    bool    `json:"is_stream"`
 	DurationSec                 float64 `json:"duration_sec"`
+	FirstTokenDurationSec       float64 `json:"first_token_duration_sec"`
+	ClientIP                    string  `json:"client_ip"`
 	UpstreamHeaderSec           float64 `json:"upstream_header_sec"`
 	FirstEventSec               float64 `json:"first_event_sec"`
 	FirstTextSec                float64 `json:"first_text_sec"`
 	ErrorMessage                string  `json:"error_message"`
 	CreatedAt                   string  `json:"created_at"`
+	Status                      string  `json:"status,omitempty"`
+	ActiveRequestID             int64   `json:"-"`
 	startedAt                   time.Time
 	inputTokensIncludeCacheRead bool
 }
@@ -2409,14 +2531,24 @@ func hasContentInResponse(body []byte, kind string) bool {
 }
 
 func (r *ReqeustLog) markFirstEvent() {
-	if r != nil && r.FirstEventSec == 0 {
-		r.FirstEventSec = r.elapsedSinceStart()
+	if r != nil {
+		if r.FirstEventSec == 0 {
+			r.FirstEventSec = r.elapsedSinceStart()
+		}
+		if r.FirstTokenDurationSec == 0 {
+			r.FirstTokenDurationSec = r.elapsedSinceStart()
+		}
 	}
 }
 
 func (r *ReqeustLog) markFirstText() {
-	if r != nil && r.FirstTextSec == 0 {
-		r.FirstTextSec = r.elapsedSinceStart()
+	if r != nil {
+		if r.FirstTextSec == 0 {
+			r.FirstTextSec = r.elapsedSinceStart()
+		}
+		if r.FirstTokenDurationSec == 0 {
+			r.FirstTokenDurationSec = r.elapsedSinceStart()
+		}
 	}
 }
 
