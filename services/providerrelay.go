@@ -2284,6 +2284,7 @@ func ReqeustLogHook(c *gin.Context, kind string, usage *ReqeustLog) func(data []
 		}
 		parseEventPayload(payload, parserFn, usage)
 		markFirstTextFromSSEPayload(payload, usage)
+		usage.syncActiveRequest()
 
 		return true, data
 	}
@@ -2321,6 +2322,12 @@ func markFirstTextFromSSEPayload(payload string, usage *ReqeustLog) {
 }
 
 func ssePayloadHasText(data string) bool {
+	eventType := gjson.Get(data, "type").String()
+	switch eventType {
+	case "response.output_text.delta", "response.function_call_arguments.delta":
+		return strings.TrimSpace(gjson.Get(data, "delta").String()) != ""
+	}
+
 	textPaths := []string{
 		"delta.text",
 		"content_block.text",
@@ -2532,24 +2539,39 @@ func hasContentInResponse(body []byte, kind string) bool {
 
 func (r *ReqeustLog) markFirstEvent() {
 	if r != nil {
+		changed := false
 		if r.FirstEventSec == 0 {
 			r.FirstEventSec = r.elapsedSinceStart()
+			changed = true
 		}
-		if r.FirstTokenDurationSec == 0 {
-			r.FirstTokenDurationSec = r.elapsedSinceStart()
+		if changed {
+			r.syncActiveRequest()
 		}
 	}
 }
 
 func (r *ReqeustLog) markFirstText() {
 	if r != nil {
+		changed := false
 		if r.FirstTextSec == 0 {
 			r.FirstTextSec = r.elapsedSinceStart()
+			changed = true
 		}
 		if r.FirstTokenDurationSec == 0 {
 			r.FirstTokenDurationSec = r.elapsedSinceStart()
+			changed = true
+		}
+		if changed {
+			r.syncActiveRequest()
 		}
 	}
+}
+
+func (r *ReqeustLog) syncActiveRequest() {
+	if r == nil || r.ActiveRequestID == 0 {
+		return
+	}
+	defaultActiveRequestTracker.Update(r.ActiveRequestID, r)
 }
 
 // claude code usage parser

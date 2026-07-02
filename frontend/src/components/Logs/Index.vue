@@ -485,7 +485,7 @@ const formatSeriesLabel = (value?: string) => {
 }
 
 const REFRESH_INTERVAL = 30
-const LOG_AUTO_REFRESH_INTERVAL_MS = 2000
+const LOG_AUTO_REFRESH_INTERVAL_MS = 1000
 const countdown = ref(REFRESH_INTERVAL)
 let timer: number | undefined
 let logAutoRefreshTimer: number | undefined
@@ -695,7 +695,6 @@ const formatDuration = (value?: number) => {
 const isProcessingLog = (item: RequestLog) => item.status === 'processing'
 
 const formatFirstTokenDuration = (item: RequestLog) => {
-  if (isProcessingLog(item)) return '—'
   return formatDuration(item.first_token_duration_sec)
 }
 
@@ -720,7 +719,7 @@ const durationColor = (value?: number) => {
 }
 
 const durationColorForLog = (item: RequestLog, value?: number) => {
-  if (isProcessingLog(item)) return 'neutral'
+  if (isProcessingLog(item) && (!value || Number.isNaN(value))) return 'neutral'
   return durationColor(value)
 }
 

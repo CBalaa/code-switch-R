@@ -686,6 +686,34 @@ data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text
 	}
 }
 
+func TestMarkFirstTextFromOpenAIResponsesDelta(t *testing.T) {
+	requestLog := &ReqeustLog{startedAt: time.Now()}
+	payload := `event: response.output_text.delta
+data: {"type":"response.output_text.delta","delta":"你"}`
+
+	markFirstTextFromSSEPayload(payload, requestLog)
+
+	if requestLog.FirstTextSec <= 0 {
+		t.Fatalf("expected FirstTextSec to be recorded")
+	}
+	if requestLog.FirstTokenDurationSec <= 0 {
+		t.Fatalf("expected FirstTokenDurationSec to be recorded")
+	}
+}
+
+func TestMarkFirstEventDoesNotSetFirstToken(t *testing.T) {
+	requestLog := &ReqeustLog{startedAt: time.Now()}
+
+	requestLog.markFirstEvent()
+
+	if requestLog.FirstEventSec <= 0 {
+		t.Fatalf("expected FirstEventSec to be recorded")
+	}
+	if requestLog.FirstTokenDurationSec != 0 {
+		t.Fatalf("FirstTokenDurationSec = %f, want 0 before text", requestLog.FirstTokenDurationSec)
+	}
+}
+
 // ==================== 端到端场景测试 ====================
 
 func TestModelMappingEndToEnd(t *testing.T) {

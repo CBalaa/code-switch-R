@@ -105,6 +105,36 @@ func TestActiveRequestTrackerListFiltersAndFinishes(t *testing.T) {
 	}
 }
 
+func TestMarkFirstTextSyncsActiveRequest(t *testing.T) {
+	previousTracker := defaultActiveRequestTracker
+	defaultActiveRequestTracker = newActiveRequestTracker()
+	t.Cleanup(func() {
+		defaultActiveRequestTracker = previousTracker
+	})
+
+	now := time.Now().Add(-250 * time.Millisecond)
+	requestLog := &ReqeustLog{
+		Platform: "openai-responses",
+		Provider: "provider-a",
+		Model:    "gpt-5",
+	}
+	requestLog.startedAt = now
+	requestLog.ActiveRequestID = defaultActiveRequestTracker.Start(requestLog, now)
+
+	requestLog.markFirstText()
+
+	logs := defaultActiveRequestTracker.List("", "", "")
+	if len(logs) != 1 {
+		t.Fatalf("active logs count = %d, want 1", len(logs))
+	}
+	if logs[0].FirstTokenDurationSec <= 0 {
+		t.Fatalf("active first_token_duration_sec = %f, want positive", logs[0].FirstTokenDurationSec)
+	}
+	if logs[0].FirstTextSec <= 0 {
+		t.Fatalf("active first_text_sec = %f, want positive", logs[0].FirstTextSec)
+	}
+}
+
 func TestListRequestLogsPrependsActiveRequests(t *testing.T) {
 	setupRelayTestEnv(t)
 
