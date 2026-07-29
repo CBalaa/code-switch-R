@@ -3725,3 +3725,72 @@ func TestHTTPEmptyStreamReturns502UntilBlacklistThenFailsOver(t *testing.T) {
 		t.Fatalf("empty-stream blacklist status = %+v, want provider-a at 2 failures with reason %q", blacklisted, emptyStreamErrorCode)
 	}
 }
+
+func TestHTTPMissingCompletionDoesNotAppendFallbackAfterStreamStarts(t *testing.T) {
+	var providerAHits int32
+	var providerBHits int32
+
+	upstreamA := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&providerAHits, 1)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"partial-a\"}\n\n")
+	}))
+	defer upstreamA.Close()
+
+	upstreamB := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&providerBHits, 1)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"from-b\"}\n\n")
+		_, _ = io.WriteString(w, "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_b\"}}\n\n")
+	}))
+	defer upstreamB.Close()
+
+	providers := []Provider{
+		{ID: 1, Name: "provider-a", Enabled: true, APIURL: upstreamA.URL, APIKey: "key-a"},
+		{ID: 2, Name: "provider-b", Enabled: true, APIURL: upstreamB.URL, APIKey: "key-b"},
+	}
+	pool := &ProviderPool{
+		Platform:                     "openai-responses",
+		Name:                         "Missing Completion Pool",
+		Mode:                         ProviderPoolModeManaged,
+		AutoBlacklistEnabled:         true,
+		AutoBlacklistThreshold:       1,
+		AutoBlacklistDurationMinutes: 10,
+		Members: []ProviderPoolMember{
+			{ProviderID: 1, Enabled: true, Level: 1},
+			{ProviderID: 2, Enabled: true, Level: 2},
+		},
+	}
+	relay, router, keySecret, poolID := setupProviderPoolHTTPTest(t, "openai-responses", providers, pool)
+
+	request := func() *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/responses", strings.NewReader(`{"model":"gpt-5","input":"hello","stream":true}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+keySecret)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		return w
+	}
+
+	first := request()
+	if first.Code != http.StatusOK || !strings.Contains(first.Body.String(), "partial-a") {
+		t.Fatalf("first stream = %d %q, want partial provider-a stream", first.Code, first.Body.String())
+	}
+	if strings.Contains(first.Body.String(), "from-b") {
+		t.Fatalf("fallback data was appended after the client stream started: %q", first.Body.String())
+	}
+	if atomic.LoadInt32(&providerAHits) != 1 || atomic.LoadInt32(&providerBHits) != 0 {
+		t.Fatalf("first request hits = (%d,%d), want (1,0)", providerAHits, providerBHits)
+	}
+	if blacklisted := relay.ListProviderBlacklistStatus("openai-responses", poolID); len(blacklisted) != 1 || blacklisted[0].ProviderID != 1 || blacklisted[0].LastReason != missingCompletionErrorCode {
+		t.Fatalf("missing-completion stream was not recorded as a provider failure: %+v", blacklisted)
+	}
+
+	second := request()
+	if second.Code != http.StatusOK || !strings.Contains(second.Body.String(), "from-b") {
+		t.Fatalf("second stream = %d %q, want provider-b response", second.Code, second.Body.String())
+	}
+	if atomic.LoadInt32(&providerAHits) != 1 || atomic.LoadInt32(&providerBHits) != 1 {
+		t.Fatalf("second request hits = (%d,%d), want (1,1)", providerAHits, providerBHits)
+	}
+}

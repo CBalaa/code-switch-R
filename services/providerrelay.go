@@ -90,6 +90,7 @@ func (prs *ProviderRelayService) SetTrafficService(service *TrafficService) {
 // errClientAbort 表示客户端中断连接，不应计入 provider 失败次数
 var errClientAbort = errors.New("client aborted, skip failure count")
 var errCodexEmptyStream = errors.New("codex upstream stream closed before useful content")
+var errCodexMissingCompletion = errors.New("codex upstream stream closed before response.completed")
 var errCodexTerminalStreamFailure = errors.New("codex upstream stream ended failed or incomplete before useful content")
 var errCodexInitialBufferLimit = errors.New("codex upstream stream exceeded the preflight buffer before useful content")
 var errCodexFirstTextTimeout = errors.New("codex upstream stream timed out before useful content")
@@ -129,6 +130,7 @@ const firstTextTimeoutErrorBody = `{"error":{"type":"first_text_timeout","code":
 
 const (
 	emptyStreamErrorCode           = "empty_stream"
+	missingCompletionErrorCode     = "missing_completion"
 	terminalStreamFailureErrorCode = "terminal_stream_failure"
 	initialBufferLimitErrorCode    = "initial_buffer_limit"
 	streamPreflightErrorCode       = "stream_preflight_error"
@@ -178,6 +180,13 @@ func newCodexStreamPreflightProtocolError(upstreamStatus int, cause error) *upst
 	switch {
 	case errors.Is(cause, errCodexEmptyStream):
 		return newEmptyStreamProtocolError(upstreamStatus)
+	case errors.Is(cause, errCodexMissingCompletion):
+		return newUpstreamProtocolError(
+			upstreamStatus,
+			missingCompletionErrorCode,
+			errCodexMissingCompletion.Error(),
+			errCodexMissingCompletion,
+		)
 	case errors.Is(cause, errCodexTerminalStreamFailure):
 		return newUpstreamProtocolError(
 			upstreamStatus,
@@ -200,6 +209,18 @@ func newCodexStreamPreflightProtocolError(upstreamStatus int, cause error) *upst
 			cause,
 		)
 	}
+}
+
+func committedCodexStreamProtocolError(upstreamStatus int, responseWritten bool, copyErr error, requestLog *ReqeustLog) *upstreamProtocolError {
+	if !responseWritten || copyErr == nil {
+		return nil
+	}
+	if !errors.Is(copyErr, errCodexMissingCompletion) {
+		return nil
+	}
+	protocolErr := newCodexStreamPreflightProtocolError(upstreamStatus, copyErr)
+	setRequestLogProtocolError(requestLog, protocolErr)
+	return protocolErr
 }
 
 func newInvalidStreamContentTypeProtocolError(upstreamStatus int, cause error) *upstreamProtocolError {
@@ -2005,6 +2026,16 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 						releaseProviderSlot(true)
 						return
 					}
+					if protocolErr, protocolFailure := protocolErrorFromError(err); protocolFailure && responseWriterWritten(c.Writer) {
+						statusCode := currentLog.HttpCode
+						errorBody := currentLog.ErrorMessage
+						matchedRule := specialBlacklistRuleForFailure(pool, statusCode, errorBody)
+						prs.recordPoolAttemptError(userID, pool, provider, statusCode, matchedRule, errorBody)
+						prs.recordProviderFailureWithRuleForUser(userID, kind, poolID, pool, provider, protocolErr.code, matchedRule)
+						fmt.Printf("[WARN] Provider %s 在客户端流已开始后出现协议错误，停止当前请求重试: %s\n", provider.Name, protocolErr.code)
+						releaseProviderSlot(true)
+						return
+					}
 					if proxyErr, proxyFailure := isProxyRequestError(err); proxyFailure {
 						// A local Mihomo/listener failure says nothing about the
 						// provider credential. Do not poison the provider blacklist.
@@ -2749,6 +2780,9 @@ func (prs *ProviderRelayService) forwardRequestWithLog(
 					setRequestLogProtocolError(requestLog, protocolErr)
 					return false, protocolErr
 				}
+				if protocolErr := committedCodexStreamProtocolError(status, responseWritten, copyErr, requestLog); protocolErr != nil {
+					return false, protocolErr
+				}
 			} else {
 				_, copyErr = writeStreamingResponse(c.Writer, resp, requestLog, ReqeustLogHook(c, kind, requestLog))
 			}
@@ -2878,6 +2912,9 @@ func (prs *ProviderRelayService) forwardRequestWithLog(
 					}
 					protocolErr := newCodexStreamPreflightProtocolError(status, copyErr)
 					setRequestLogProtocolError(requestLog, protocolErr)
+					return false, protocolErr
+				}
+				if protocolErr := committedCodexStreamProtocolError(status, responseWritten, copyErr, requestLog); protocolErr != nil {
 					return false, protocolErr
 				}
 			} else {
@@ -3360,6 +3397,7 @@ type codexStreamGuardOptions struct {
 	deferInitialKeepAlive        bool
 	disableKeepAliveUntilRelease bool
 	firstUsefulContentTimeout    time.Duration
+	keepAliveInterval            time.Duration
 	onSuccessfulCompleted        func(responseID string)
 }
 
@@ -3392,8 +3430,10 @@ func writeCodexGuardedStreamingResponseWithOptions(w http.ResponseWriter, resp *
 	var writeMu sync.Mutex
 	clientStarted := responseWriterWritten(w)
 	released := false
+	eventBoundary := true
 	var preflightReleased atomic.Bool
 	var firstUsefulContentTimedOut atomic.Bool
+	var terminalEventSeen atomic.Bool
 	totalBytes := int64(0)
 	state := codexStreamGuardState{}
 	completionCommitted := false
@@ -3420,7 +3460,7 @@ func writeCodexGuardedStreamingResponseWithOptions(w http.ResponseWriter, resp *
 	}
 
 	sendKeepAliveLocked := func() error {
-		if released {
+		if terminalEventSeen.Load() || (!released && options.disableKeepAliveUntilRelease) || (released && !eventBoundary) {
 			return nil
 		}
 		writeHeaderLocked()
@@ -3444,6 +3484,11 @@ func writeCodexGuardedStreamingResponseWithOptions(w http.ResponseWriter, resp *
 		}
 		n, err := writeStreamingBuffer(w, initialBuffer.Bytes(), requestLog, hooks...)
 		totalBytes += n
+		// The initial buffer is released immediately after a useful data line,
+		// before that SSE event's blank-line delimiter is read.
+		if err == nil {
+			eventBoundary = false
+		}
 		initialBuffer.Reset()
 		return err
 	}
@@ -3470,6 +3515,9 @@ func writeCodexGuardedStreamingResponseWithOptions(w http.ResponseWriter, resp *
 		defer writeMu.Unlock()
 		n, err := writeStreamingLine(w, line, requestLog, hooks...)
 		totalBytes += n
+		if err == nil {
+			eventBoundary = len(bytes.TrimSpace(line)) == 0
+		}
 		return err
 	}
 
@@ -3483,33 +3531,35 @@ func writeCodexGuardedStreamingResponseWithOptions(w http.ResponseWriter, resp *
 		}
 	}
 
-	if !options.disableKeepAliveUntilRelease {
-		stopKeepAlive := make(chan struct{})
-		keepAliveStopped := make(chan struct{})
-		go func() {
-			defer close(keepAliveStopped)
-			ticker := time.NewTicker(codexStreamGuardKeepAliveInterval)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-ticker.C:
-					writeMu.Lock()
-					err := sendKeepAliveLocked()
-					writeMu.Unlock()
-					if err != nil {
-						fmt.Printf("[WARN] Codex 空流保护: SSE 保活写入失败: %v\n", err)
-						return
-					}
-				case <-stopKeepAlive:
+	stopKeepAlive := make(chan struct{})
+	keepAliveStopped := make(chan struct{})
+	keepAliveInterval := options.keepAliveInterval
+	if keepAliveInterval <= 0 {
+		keepAliveInterval = codexStreamGuardKeepAliveInterval
+	}
+	go func() {
+		defer close(keepAliveStopped)
+		ticker := time.NewTicker(keepAliveInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				writeMu.Lock()
+				err := sendKeepAliveLocked()
+				writeMu.Unlock()
+				if err != nil {
+					fmt.Printf("[WARN] Codex SSE 保活写入失败: %v\n", err)
 					return
 				}
+			case <-stopKeepAlive:
+				return
 			}
-		}()
-		defer func() {
-			close(stopKeepAlive)
-			<-keepAliveStopped
-		}()
-	}
+		}
+	}()
+	defer func() {
+		close(stopKeepAlive)
+		<-keepAliveStopped
+	}()
 
 	reader := bufio.NewReader(raw.Body)
 	for {
@@ -3519,6 +3569,9 @@ func writeCodexGuardedStreamingResponseWithOptions(w http.ResponseWriter, resp *
 		}
 		if len(line) > 0 {
 			state.observeLine(line)
+			if state.sawCompleted || state.sawFailed || state.sawIncomplete {
+				terminalEventSeen.Store(true)
+			}
 			if !completionCommitted && state.completedSuccessfully() && options.onSuccessfulCompleted != nil {
 				// response.completed is the protocol's terminal success event. Commit
 				// its alias immediately so a continuation can arrive while the
@@ -3560,19 +3613,32 @@ func writeCodexGuardedStreamingResponseWithOptions(w http.ResponseWriter, resp *
 			if firstUsefulContentTimedOut.Load() && !preflightReleased.Load() {
 				return totalBytes, clientStarted, errCodexFirstTextTimeout
 			}
-			if err == io.EOF {
-				if !released {
-					if state.sawFailed || state.sawIncomplete {
-						return totalBytes, clientStarted, errCodexTerminalStreamFailure
-					}
+			if !released {
+				if err == io.EOF && (state.sawFailed || state.sawIncomplete) {
+					return totalBytes, clientStarted, errCodexTerminalStreamFailure
+				}
+				if err == io.EOF {
 					return totalBytes, clientStarted, errCodexEmptyStream
 				}
-				return totalBytes, clientStarted, nil
-			}
-			if !released {
 				return totalBytes, clientStarted, fmt.Errorf("error streaming response before useful content: %w", err)
 			}
-			return totalBytes, clientStarted, fmt.Errorf("error streaming response: %w", err)
+			if state.sawFailed || state.sawIncomplete {
+				// response.failed and response.incomplete are terminal Responses
+				// events. They have already been forwarded to the client and are
+				// distinct from a disconnected stream that omitted every terminal
+				// event, so do not append a fallback stream or blacklist the provider.
+				return totalBytes, clientStarted, nil
+			}
+			if !state.sawCompleted {
+				// Chunked HTTP streams can surface an abrupt upstream disconnect as
+				// io.ErrUnexpectedEOF rather than io.EOF. Once useful content reached
+				// the client, both forms mean the required response.completed event
+				// never arrived and must be treated as a provider failure.
+				return totalBytes, clientStarted, errCodexMissingCompletion
+			}
+			// response.completed is sufficient to establish a successful Responses
+			// result. Ignore a trailing transport error after that terminal event.
+			return totalBytes, clientStarted, nil
 		}
 	}
 }
@@ -3656,9 +3722,7 @@ func copyStreamingResponseHeaders(dst, src http.Header) {
 		}
 	}
 	dst.Set("X-Accel-Buffering", "no")
-	if dst.Get("Cache-Control") == "" {
-		dst.Set("Cache-Control", "no-cache")
-	}
+	dst.Set("Cache-Control", appendCacheControlDirective(dst.Get("Cache-Control"), "no-cache"))
 }
 
 func normalizeStreamingResponseHeaders(header http.Header) {

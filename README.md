@@ -266,8 +266,10 @@ $ADMIN_DOMAIN {
 }
 
 $API_DOMAIN {
-    encode zstd gzip
-    reverse_proxy 127.0.0.1:18100
+    # Responses/Chat streaming uses SSE; leave event bytes uncompressed.
+    reverse_proxy 127.0.0.1:18100 {
+        flush_interval -1
+    }
 }
 EOF
 
@@ -275,6 +277,41 @@ sudo caddy validate --config /etc/caddy/Caddyfile
 sudo systemctl enable --now caddy
 sudo systemctl reload caddy
 ```
+
+### Nginx 反向代理（SSE）
+
+`/responses`、`/v1/responses` 和流式 `/chat/completions` 会持续返回 SSE。API 域名应单独反代到 Provider Relay 的本机端口，并保持长空闲窗口：
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name <API_DOMAIN>;
+
+    # ssl_certificate / ssl_certificate_key 由服务器部署配置提供。
+    location / {
+        proxy_pass http://127.0.0.1:18100;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header Connection "";
+
+        proxy_buffering off;
+        proxy_cache off;
+        gzip off;
+
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 3600s;
+        proxy_read_timeout 3600s;
+        send_timeout 3600s;
+    }
+}
+```
+
+保持 Nginx 默认的 chunked transfer 行为；不要配置 `chunked_transfer_encoding off`。Relay 会在 SSE 响应中设置 `X-Accel-Buffering: no`、`Cache-Control: no-cache, no-transform`，并在已开始输出后发送保活注释，避免静默流被中间代理提前关闭。
 
 如果服务器使用 nftables 且默认 `policy drop`，需要放行 `80/443`。下面示例保留 SSH、HTTP、HTTPS、ICMP：
 
