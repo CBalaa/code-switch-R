@@ -90,6 +90,7 @@ func (prs *ProviderRelayService) SetTrafficService(service *TrafficService) {
 // errClientAbort 表示客户端中断连接，不应计入 provider 失败次数
 var errClientAbort = errors.New("client aborted, skip failure count")
 var errCodexEmptyStream = errors.New("codex upstream stream closed before useful content")
+var errCodexMissingCompletion = errors.New("codex upstream stream closed before response.completed")
 var errCodexTerminalStreamFailure = errors.New("codex upstream stream ended failed or incomplete before useful content")
 var errCodexInitialBufferLimit = errors.New("codex upstream stream exceeded the preflight buffer before useful content")
 var errCodexFirstTextTimeout = errors.New("codex upstream stream timed out before useful content")
@@ -129,10 +130,13 @@ const firstTextTimeoutErrorBody = `{"error":{"type":"first_text_timeout","code":
 
 const (
 	emptyStreamErrorCode           = "empty_stream"
+	missingCompletionErrorCode     = "missing_completion"
 	terminalStreamFailureErrorCode = "terminal_stream_failure"
 	initialBufferLimitErrorCode    = "initial_buffer_limit"
 	streamPreflightErrorCode       = "stream_preflight_error"
 	invalidStreamContentTypeCode   = "invalid_stream_content_type"
+	maxResponsesPreflightAttempts  = 2
+	responsesPreflightRetryDelay   = 100 * time.Millisecond
 )
 
 // upstreamProtocolError represents a syntactically successful HTTP response
@@ -178,6 +182,13 @@ func newCodexStreamPreflightProtocolError(upstreamStatus int, cause error) *upst
 	switch {
 	case errors.Is(cause, errCodexEmptyStream):
 		return newEmptyStreamProtocolError(upstreamStatus)
+	case errors.Is(cause, errCodexMissingCompletion):
+		return newUpstreamProtocolError(
+			upstreamStatus,
+			missingCompletionErrorCode,
+			errCodexMissingCompletion.Error(),
+			errCodexMissingCompletion,
+		)
 	case errors.Is(cause, errCodexTerminalStreamFailure):
 		return newUpstreamProtocolError(
 			upstreamStatus,
@@ -200,6 +211,21 @@ func newCodexStreamPreflightProtocolError(upstreamStatus int, cause error) *upst
 			cause,
 		)
 	}
+}
+
+// committedCodexStreamProtocolError preserves the provider failure after an
+// SSE response has started. The response cannot be replayed at that point,
+// because doing so would append a second model output to the same client stream.
+func committedCodexStreamProtocolError(upstreamStatus int, responseWritten bool, copyErr error, requestLog *ReqeustLog) *upstreamProtocolError {
+	if !responseWritten || copyErr == nil {
+		return nil
+	}
+	if !errors.Is(copyErr, errCodexMissingCompletion) && !errors.Is(copyErr, errCodexTerminalStreamFailure) {
+		return nil
+	}
+	protocolErr := newCodexStreamPreflightProtocolError(upstreamStatus, copyErr)
+	setRequestLogProtocolError(requestLog, protocolErr)
+	return protocolErr
 }
 
 func newInvalidStreamContentTypeProtocolError(upstreamStatus int, cause error) *upstreamProtocolError {
@@ -254,6 +280,34 @@ func emptyStreamProtocolError(err error) (*upstreamProtocolError, bool) {
 		return nil, false
 	}
 	return protocolErr, true
+}
+
+func shouldRetryResponsesPreflightFailure(kind string, isStream bool, accountPool bool, responseWriter http.ResponseWriter, err error) bool {
+	if accountPool || kind != "openai-responses" || !isStream || responseWriterWritten(responseWriter) {
+		return false
+	}
+	protocolErr, ok := protocolErrorFromError(err)
+	if !ok {
+		return false
+	}
+	switch protocolErr.code {
+	case terminalStreamFailureErrorCode, streamPreflightErrorCode:
+		return true
+	default:
+		return false
+	}
+}
+
+func waitBeforeResponsesPreflightRetry(ctx context.Context) error {
+	timer := time.NewTimer(responsesPreflightRetryDelay)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 // upstreamClientRequestError preserves a request-scoped upstream 4xx response
@@ -1959,7 +2013,17 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 					// actually starts. It must survive queueing and config reloads.
 					retrySelectingPoolPriority = false
 					startTime := time.Now()
-					ok, err := prs.forwardRequestWithLog(c, kind, provider, effectiveEndpoint, query, clientHeaders, currentBodyBytes, isStream, effectiveModel, currentLog)
+					ok, err := false, error(nil)
+					for preflightAttempt := 0; preflightAttempt < maxResponsesPreflightAttempts; preflightAttempt++ {
+						ok, err = prs.forwardRequestWithLog(c, kind, provider, effectiveEndpoint, query, clientHeaders, currentBodyBytes, isStream, effectiveModel, currentLog)
+						if ok || !shouldRetryResponsesPreflightFailure(kind, isStream, accountPool, c.Writer, err) || preflightAttempt+1 == maxResponsesPreflightAttempts {
+							break
+						}
+						fmt.Printf("[WARN] Provider %s 在首个有效输出前结束 Responses 流，正在重试同一 provider\n", provider.Name)
+						if waitBeforeResponsesPreflightRetry(c.Request.Context()) != nil {
+							break
+						}
+					}
 					duration := time.Since(startTime)
 					if errors.Is(err, errActiveRequestRetryRequested) {
 						fmt.Printf("[INFO] 用户触发重试，按当前池优先级重新选择 provider: Provider=%s | Model=%s\n", provider.Name, effectiveModel)
@@ -2002,6 +2066,16 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 
 					if errors.Is(err, errClientAbort) {
 						fmt.Printf("[INFO] 客户端中断，停止重试: %s\n", provider.Name)
+						releaseProviderSlot(true)
+						return
+					}
+					if protocolErr, protocolFailure := protocolErrorFromError(err); protocolFailure && responseWriterWritten(c.Writer) {
+						statusCode := currentLog.HttpCode
+						errorBody := currentLog.ErrorMessage
+						matchedRule := specialBlacklistRuleForFailure(pool, statusCode, errorBody)
+						prs.recordPoolAttemptError(userID, pool, provider, statusCode, matchedRule, errorBody)
+						prs.recordProviderFailureWithRuleForUser(userID, kind, poolID, pool, provider, protocolErr.code, matchedRule)
+						fmt.Printf("[WARN] Provider %s 在客户端流已开始后出现协议错误，停止当前请求重试: %s\n", provider.Name, protocolErr.code)
 						releaseProviderSlot(true)
 						return
 					}
@@ -2749,6 +2823,9 @@ func (prs *ProviderRelayService) forwardRequestWithLog(
 					setRequestLogProtocolError(requestLog, protocolErr)
 					return false, protocolErr
 				}
+				if protocolErr := committedCodexStreamProtocolError(status, responseWritten, copyErr, requestLog); protocolErr != nil {
+					return false, protocolErr
+				}
 			} else {
 				_, copyErr = writeStreamingResponse(c.Writer, resp, requestLog, ReqeustLogHook(c, kind, requestLog))
 			}
@@ -2878,6 +2955,9 @@ func (prs *ProviderRelayService) forwardRequestWithLog(
 					}
 					protocolErr := newCodexStreamPreflightProtocolError(status, copyErr)
 					setRequestLogProtocolError(requestLog, protocolErr)
+					return false, protocolErr
+				}
+				if protocolErr := committedCodexStreamProtocolError(status, responseWritten, copyErr, requestLog); protocolErr != nil {
 					return false, protocolErr
 				}
 			} else {
@@ -3360,6 +3440,7 @@ type codexStreamGuardOptions struct {
 	deferInitialKeepAlive        bool
 	disableKeepAliveUntilRelease bool
 	firstUsefulContentTimeout    time.Duration
+	keepAliveInterval            time.Duration
 	onSuccessfulCompleted        func(responseID string)
 }
 
@@ -3392,8 +3473,10 @@ func writeCodexGuardedStreamingResponseWithOptions(w http.ResponseWriter, resp *
 	var writeMu sync.Mutex
 	clientStarted := responseWriterWritten(w)
 	released := false
+	eventBoundary := true
 	var preflightReleased atomic.Bool
 	var firstUsefulContentTimedOut atomic.Bool
+	var terminalEventSeen atomic.Bool
 	totalBytes := int64(0)
 	state := codexStreamGuardState{}
 	completionCommitted := false
@@ -3420,7 +3503,7 @@ func writeCodexGuardedStreamingResponseWithOptions(w http.ResponseWriter, resp *
 	}
 
 	sendKeepAliveLocked := func() error {
-		if released {
+		if terminalEventSeen.Load() || (!released && options.disableKeepAliveUntilRelease) || (released && !eventBoundary) {
 			return nil
 		}
 		writeHeaderLocked()
@@ -3444,6 +3527,11 @@ func writeCodexGuardedStreamingResponseWithOptions(w http.ResponseWriter, resp *
 		}
 		n, err := writeStreamingBuffer(w, initialBuffer.Bytes(), requestLog, hooks...)
 		totalBytes += n
+		// The useful data line is released before its blank-line delimiter is
+		// read, so do not inject a keepalive in the middle of that SSE event.
+		if err == nil {
+			eventBoundary = false
+		}
 		initialBuffer.Reset()
 		return err
 	}
@@ -3470,6 +3558,9 @@ func writeCodexGuardedStreamingResponseWithOptions(w http.ResponseWriter, resp *
 		defer writeMu.Unlock()
 		n, err := writeStreamingLine(w, line, requestLog, hooks...)
 		totalBytes += n
+		if err == nil {
+			eventBoundary = len(bytes.TrimSpace(line)) == 0
+		}
 		return err
 	}
 
@@ -3483,33 +3574,35 @@ func writeCodexGuardedStreamingResponseWithOptions(w http.ResponseWriter, resp *
 		}
 	}
 
-	if !options.disableKeepAliveUntilRelease {
-		stopKeepAlive := make(chan struct{})
-		keepAliveStopped := make(chan struct{})
-		go func() {
-			defer close(keepAliveStopped)
-			ticker := time.NewTicker(codexStreamGuardKeepAliveInterval)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-ticker.C:
-					writeMu.Lock()
-					err := sendKeepAliveLocked()
-					writeMu.Unlock()
-					if err != nil {
-						fmt.Printf("[WARN] Codex 空流保护: SSE 保活写入失败: %v\n", err)
-						return
-					}
-				case <-stopKeepAlive:
+	stopKeepAlive := make(chan struct{})
+	keepAliveStopped := make(chan struct{})
+	keepAliveInterval := options.keepAliveInterval
+	if keepAliveInterval <= 0 {
+		keepAliveInterval = codexStreamGuardKeepAliveInterval
+	}
+	go func() {
+		defer close(keepAliveStopped)
+		ticker := time.NewTicker(keepAliveInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				writeMu.Lock()
+				err := sendKeepAliveLocked()
+				writeMu.Unlock()
+				if err != nil {
+					fmt.Printf("[WARN] Codex SSE 保活写入失败: %v\n", err)
 					return
 				}
+			case <-stopKeepAlive:
+				return
 			}
-		}()
-		defer func() {
-			close(stopKeepAlive)
-			<-keepAliveStopped
-		}()
-	}
+		}
+	}()
+	defer func() {
+		close(stopKeepAlive)
+		<-keepAliveStopped
+	}()
 
 	reader := bufio.NewReader(raw.Body)
 	for {
@@ -3519,6 +3612,9 @@ func writeCodexGuardedStreamingResponseWithOptions(w http.ResponseWriter, resp *
 		}
 		if len(line) > 0 {
 			state.observeLine(line)
+			if state.sawCompleted || state.sawFailed || state.sawIncomplete {
+				terminalEventSeen.Store(true)
+			}
 			if !completionCommitted && state.completedSuccessfully() && options.onSuccessfulCompleted != nil {
 				// response.completed is the protocol's terminal success event. Commit
 				// its alias immediately so a continuation can arrive while the
@@ -3529,6 +3625,9 @@ func writeCodexGuardedStreamingResponseWithOptions(w http.ResponseWriter, resp *
 			if released {
 				if writeErr := writeStreamingLineLocked(line); writeErr != nil {
 					return totalBytes, clientStarted, writeErr
+				}
+				if (state.sawFailed || state.sawIncomplete) && len(bytes.TrimSpace(line)) == 0 {
+					return totalBytes, clientStarted, errCodexTerminalStreamFailure
 				}
 			} else {
 				initialBuffer.Write(line)
@@ -3560,19 +3659,27 @@ func writeCodexGuardedStreamingResponseWithOptions(w http.ResponseWriter, resp *
 			if firstUsefulContentTimedOut.Load() && !preflightReleased.Load() {
 				return totalBytes, clientStarted, errCodexFirstTextTimeout
 			}
-			if err == io.EOF {
-				if !released {
-					if state.sawFailed || state.sawIncomplete {
-						return totalBytes, clientStarted, errCodexTerminalStreamFailure
-					}
+			if !released {
+				if err == io.EOF && (state.sawFailed || state.sawIncomplete) {
+					return totalBytes, clientStarted, errCodexTerminalStreamFailure
+				}
+				if err == io.EOF {
 					return totalBytes, clientStarted, errCodexEmptyStream
 				}
-				return totalBytes, clientStarted, nil
-			}
-			if !released {
 				return totalBytes, clientStarted, fmt.Errorf("error streaming response before useful content: %w", err)
 			}
-			return totalBytes, clientStarted, fmt.Errorf("error streaming response: %w", err)
+			if state.sawFailed || state.sawIncomplete {
+				return totalBytes, clientStarted, errCodexTerminalStreamFailure
+			}
+			if !state.sawCompleted {
+				// An abrupt HTTP/1.1 chunked-stream close can be surfaced as either
+				// io.EOF or io.ErrUnexpectedEOF. In both cases the required terminal
+				// response.completed event was never delivered.
+				return totalBytes, clientStarted, errCodexMissingCompletion
+			}
+			// response.completed establishes a successful Responses result. A late
+			// transport close after that terminal event is harmless.
+			return totalBytes, clientStarted, nil
 		}
 	}
 }
@@ -3656,9 +3763,7 @@ func copyStreamingResponseHeaders(dst, src http.Header) {
 		}
 	}
 	dst.Set("X-Accel-Buffering", "no")
-	if dst.Get("Cache-Control") == "" {
-		dst.Set("Cache-Control", "no-cache")
-	}
+	dst.Set("Cache-Control", appendCacheControlDirective(dst.Get("Cache-Control"), "no-cache"))
 }
 
 func normalizeStreamingResponseHeaders(header http.Header) {

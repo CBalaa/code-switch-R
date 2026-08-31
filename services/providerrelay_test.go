@@ -262,6 +262,20 @@ type cancelAfterFirstTextRecorder struct {
 	writes int
 }
 
+type errorAfterReader struct {
+	data []byte
+	err  error
+}
+
+func (r *errorAfterReader) Read(p []byte) (int, error) {
+	if len(r.data) == 0 {
+		return 0, r.err
+	}
+	n := copy(p, r.data)
+	r.data = r.data[n:]
+	return n, nil
+}
+
 func (r *cancelAfterFirstTextRecorder) Header() http.Header {
 	return r.header
 }
@@ -342,7 +356,7 @@ func TestWriteStreamingResponseNormalizesSSEHeaders(t *testing.T) {
 			"Content-Type":     []string{"text/html; charset=utf-8"},
 			"Content-Encoding": []string{"gzip"},
 			"Content-Length":   []string{"999"},
-			"Cache-Control":    []string{"no-cache"},
+			"Cache-Control":    []string{"private"},
 		},
 		Body: io.NopCloser(strings.NewReader("data: {\"choices\":[{\"delta\":{\"content\":\"你\"}}]}\n\ndata: [DONE]\n\n")),
 	})
@@ -362,8 +376,8 @@ func TestWriteStreamingResponseNormalizesSSEHeaders(t *testing.T) {
 	if got := recorder.header.Get("Content-Length"); got != "" {
 		t.Fatalf("Content-Length = %q, want empty", got)
 	}
-	if got := recorder.header.Get("Cache-Control"); !strings.Contains(got, "no-transform") {
-		t.Fatalf("Cache-Control = %q, want no-transform", got)
+	if got := recorder.header.Get("Cache-Control"); !strings.Contains(got, "private") || !strings.Contains(got, "no-cache") || !strings.Contains(got, "no-transform") {
+		t.Fatalf("Cache-Control = %q, want private, no-cache, and no-transform", got)
 	}
 	if got := recorder.BodyString(); !strings.Contains(got, "data: [DONE]") {
 		t.Fatalf("expected streamed body, got %q", got)
@@ -772,6 +786,10 @@ func TestWriteCodexGuardedStreamingResponseReleasesOnUsefulContent(t *testing.T)
 		t.Fatalf("guard did not release on useful content")
 	}
 
+	if _, err := pw.Write([]byte("data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_complete\"}}\n\n")); err != nil {
+		t.Fatalf("write completed event: %v", err)
+	}
+
 	if err := pw.Close(); err != nil {
 		t.Fatalf("close pipe writer: %v", err)
 	}
@@ -790,6 +808,195 @@ func TestWriteCodexGuardedStreamingResponseReleasesOnUsefulContent(t *testing.T)
 	}
 	if requestLog.FirstEventSec <= 0 {
 		t.Fatalf("expected FirstEventSec to be recorded")
+	}
+}
+
+func TestWriteCodexGuardedStreamingResponseRejectsMissingCompletionAfterUsefulContent(t *testing.T) {
+	resp := xrequest.NewResponse(&http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body: io.NopCloser(strings.NewReader(
+			"data: {\"type\":\"response.created\"}\n\n" +
+				"data: {\"type\":\"response.output_text.delta\",\"delta\":\"partial\"}\n\n",
+		)),
+	})
+
+	recorder := newStreamingRecorder()
+	written, responseWritten, err := writeCodexGuardedStreamingResponse(recorder, resp, &ReqeustLog{startedAt: time.Now()})
+	if !errors.Is(err, errCodexMissingCompletion) {
+		t.Fatalf("err = %v, want %v", err, errCodexMissingCompletion)
+	}
+	if !responseWritten || written == 0 {
+		t.Fatalf("partial stream was not forwarded before terminal check: written=%d responseWritten=%v", written, responseWritten)
+	}
+	if body := recorder.BodyString(); !strings.Contains(body, "partial") {
+		t.Fatalf("forwarded stream missing partial event: %q", body)
+	}
+}
+
+func TestWriteCodexGuardedStreamingResponseRejectsTruncatedReadWithoutCompletion(t *testing.T) {
+	resp := xrequest.NewResponse(&http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body: io.NopCloser(&errorAfterReader{
+			data: []byte(
+				"data: {\"type\":\"response.created\"}\n\n" +
+					"data: {\"type\":\"response.output_text.delta\",\"delta\":\"partial\"}\n\n",
+			),
+			err: io.ErrUnexpectedEOF,
+		}),
+	})
+
+	recorder := newStreamingRecorder()
+	_, responseWritten, err := writeCodexGuardedStreamingResponse(recorder, resp, &ReqeustLog{startedAt: time.Now()})
+	if !errors.Is(err, errCodexMissingCompletion) {
+		t.Fatalf("err = %v, want %v", err, errCodexMissingCompletion)
+	}
+	if !responseWritten || !strings.Contains(recorder.BodyString(), "partial") {
+		t.Fatalf("truncated stream was not forwarded before terminal check: written=%v body=%q", responseWritten, recorder.BodyString())
+	}
+}
+
+func TestWriteCodexGuardedStreamingResponseForwardsTerminalFailureAfterUsefulContent(t *testing.T) {
+	for _, eventType := range []string{"response.failed", "response.incomplete"} {
+		t.Run(eventType, func(t *testing.T) {
+			resp := xrequest.NewResponse(&http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+				Body: io.NopCloser(strings.NewReader(
+					"data: {\"type\":\"response.output_text.delta\",\"delta\":\"partial\"}\n\n" +
+						fmt.Sprintf("data: {\"type\":%q,\"response\":{\"id\":\"resp_terminal\"}}\n\n", eventType),
+				)),
+			})
+
+			recorder := newStreamingRecorder()
+			_, responseWritten, err := writeCodexGuardedStreamingResponse(recorder, resp, &ReqeustLog{startedAt: time.Now()})
+			if !errors.Is(err, errCodexTerminalStreamFailure) {
+				t.Fatalf("err = %v, want %v", err, errCodexTerminalStreamFailure)
+			}
+			if !responseWritten || !strings.Contains(recorder.BodyString(), eventType) {
+				t.Fatalf("terminal event was not forwarded: written=%v body=%q", responseWritten, recorder.BodyString())
+			}
+		})
+	}
+}
+
+func TestWriteCodexGuardedStreamingResponseSendsKeepAliveAfterRelease(t *testing.T) {
+	pr, pw := io.Pipe()
+	defer pr.Close()
+	defer pw.Close()
+
+	resp := xrequest.NewResponse(&http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       pr,
+	})
+	recorder := newStreamingRecorder()
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := writeCodexGuardedStreamingResponseWithOptions(
+			recorder,
+			resp,
+			&ReqeustLog{startedAt: time.Now()},
+			codexStreamGuardOptions{
+				deferInitialKeepAlive:        true,
+				disableKeepAliveUntilRelease: true,
+				keepAliveInterval:            10 * time.Millisecond,
+			},
+		)
+		done <- err
+	}()
+
+	if _, err := pw.Write([]byte("data: {\"type\":\"response.output_text.delta\",\"delta\":\"ready\"}\n\n")); err != nil {
+		t.Fatalf("write useful event: %v", err)
+	}
+
+	deadline := time.After(500 * time.Millisecond)
+	for !strings.Contains(recorder.BodyString(), codexStreamGuardKeepAliveComment) {
+		select {
+		case <-deadline:
+			t.Fatalf("expected a post-release keepalive, body=%q", recorder.BodyString())
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+
+	if _, err := pw.Write([]byte("data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_keepalive\"}}\n\n")); err != nil {
+		t.Fatalf("write completed event: %v", err)
+	}
+	if err := pw.Close(); err != nil {
+		t.Fatalf("close pipe writer: %v", err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("guard returned error: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("guard did not return after completed stream EOF")
+	}
+}
+
+func TestWriteCodexGuardedStreamingResponseKeepsEventsIntactAcrossKeepAlive(t *testing.T) {
+	pr, pw := io.Pipe()
+	defer pr.Close()
+	defer pw.Close()
+
+	resp := xrequest.NewResponse(&http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       pr,
+	})
+	recorder := newStreamingRecorder()
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := writeCodexGuardedStreamingResponseWithOptions(
+			recorder,
+			resp,
+			&ReqeustLog{startedAt: time.Now()},
+			codexStreamGuardOptions{
+				deferInitialKeepAlive:        true,
+				disableKeepAliveUntilRelease: true,
+				keepAliveInterval:            10 * time.Millisecond,
+			},
+		)
+		done <- err
+	}()
+
+	if _, err := pw.Write([]byte("data: {\"type\":\"response.output_text.delta\",\"delta\":\"ready\"}\n\n")); err != nil {
+		t.Fatalf("write useful event: %v", err)
+	}
+	if _, err := pw.Write([]byte("event: response.completed\n")); err != nil {
+		t.Fatalf("write completed event name: %v", err)
+	}
+
+	deadline := time.After(500 * time.Millisecond)
+	for !strings.Contains(recorder.BodyString(), "event: response.completed\n") {
+		select {
+		case <-deadline:
+			t.Fatalf("event name was not forwarded: %q", recorder.BodyString())
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+	time.Sleep(50 * time.Millisecond)
+	body := recorder.BodyString()
+	eventOffset := strings.LastIndex(body, "event: response.completed\n")
+	if strings.Contains(body[eventOffset:], codexStreamGuardKeepAliveComment) {
+		t.Fatalf("keepalive split an SSE event: %q", body[eventOffset:])
+	}
+
+	if _, err := pw.Write([]byte("data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_boundary\"}}\n\n")); err != nil {
+		t.Fatalf("write completed data: %v", err)
+	}
+	if err := pw.Close(); err != nil {
+		t.Fatalf("close pipe writer: %v", err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("guard returned error: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("guard did not return after a completed stream")
 	}
 }
 
@@ -932,6 +1139,48 @@ func TestLateClientCloseAfterFirstTextKeepsSuccessfulResponseLog(t *testing.T) {
 	}
 }
 
+func TestForwardRequestWithLogReportsMissingCompletionAfterResponseStarted(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"partial\"}\n\n")
+	}))
+	defer upstream.Close()
+
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodPost, "/responses", strings.NewReader(`{"model":"gpt-5","stream":true}`))
+
+	relay := NewProviderRelayService(NewProviderService(), NewProviderPoolService(), nil, nil, nil, DefaultRelayBindAddr)
+	requestLog := &ReqeustLog{startedAt: time.Now()}
+	ok, err := relay.forwardRequestWithLog(
+		context,
+		"openai-responses",
+		Provider{ID: 1, Name: "truncated-provider", APIURL: upstream.URL, APIKey: "test-key"},
+		"/responses",
+		nil,
+		http.Header{},
+		[]byte(`{"model":"gpt-5","stream":true}`),
+		true,
+		"gpt-5",
+		requestLog,
+	)
+	if ok {
+		t.Fatal("truncated stream was reported as a successful provider response")
+	}
+	if !errors.Is(err, errCodexMissingCompletion) {
+		t.Fatalf("err = %v, want %v", err, errCodexMissingCompletion)
+	}
+	if requestLog.HttpCode != http.StatusBadGateway {
+		t.Fatalf("request log HTTP status = %d, want %d", requestLog.HttpCode, http.StatusBadGateway)
+	}
+	if !strings.Contains(requestLog.ErrorMessage, `"code":"missing_completion"`) {
+		t.Fatalf("request log error = %q, want missing_completion protocol error", requestLog.ErrorMessage)
+	}
+	if body := recorder.Body.String(); !strings.Contains(body, "partial") {
+		t.Fatalf("client did not receive the partial stream before it closed: %q", body)
+	}
+}
+
 func TestLocalRelayDoesNotForwardPublicClientAddressHeaders(t *testing.T) {
 	receivedHeaders := make(chan http.Header, 1)
 	localRelay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1053,6 +1302,7 @@ func TestPoolFirstTextTimeoutResetsForEachProviderAttempt(t *testing.T) {
 		requestReachedUpstream <- struct{}{}
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = w.Write([]byte("data: {\"type\":\"response.output_text.delta\",\"delta\":\"ready\"}\n\n"))
+		_, _ = w.Write([]byte("data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_ready\"}}\n\n"))
 	}))
 	defer upstream.Close()
 
@@ -1261,6 +1511,9 @@ func TestWriteCodexGuardedStreamingResponseDoesNotTimeoutAfterUsefulContent(t *t
 	}
 	if _, err := pw.Write([]byte("data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hello\"}\n\n")); err != nil {
 		t.Fatalf("write useful content: %v", err)
+	}
+	if _, err := pw.Write([]byte("data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_useful\"}}\n\n")); err != nil {
+		t.Fatalf("write completed event: %v", err)
 	}
 	if err := pw.Close(); err != nil {
 		t.Fatalf("close upstream stream: %v", err)

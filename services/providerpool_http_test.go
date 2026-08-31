@@ -3604,14 +3604,124 @@ func TestHTTPResponsesPreflightFailuresRemainGuardedWhenLegacyGuardDisabled(t *t
 			if got := gjson.Get(w.Body.String(), "error.code").String(); got != test.wantCode {
 				t.Fatalf("error.code = %q, want %q: %s", got, test.wantCode, w.Body.String())
 			}
-			if got := atomic.LoadInt32(&hits); got != 1 {
-				t.Fatalf("upstream hits = %d, want 1", got)
+			wantHits := int32(1)
+			if test.wantCode == terminalStreamFailureErrorCode {
+				wantHits = 2
+			}
+			if got := atomic.LoadInt32(&hits); got != wantHits {
+				t.Fatalf("upstream hits = %d, want %d", got, wantHits)
 			}
 			statuses := relay.ListProviderBlacklistStatus("openai-responses", poolID)
 			if len(statuses) != 1 || statuses[0].LastReason != rule.Name || statuses[0].RuleFailureCounts[rule.ID] != 1 {
 				t.Fatalf("preflight protocol error did not match advanced blacklist rule: %+v", statuses)
 			}
 		})
+	}
+}
+
+func TestHTTPResponsesRetriesTransientPreflightTerminalFailure(t *testing.T) {
+	var hits int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		if atomic.AddInt32(&hits, 1) == 1 {
+			_, _ = io.WriteString(w, "data: {\"type\":\"response.incomplete\",\"response\":{\"id\":\"resp_retry\"}}\n\n")
+			return
+		}
+		_, _ = io.WriteString(w, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"recovered\"}\n\n")
+		_, _ = io.WriteString(w, "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_recovered\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer upstream.Close()
+
+	providers := []Provider{{ID: 1, Name: "transient-provider", Enabled: true, APIURL: upstream.URL, APIKey: "provider-key"}}
+	pool := &ProviderPool{
+		Platform: "openai-responses",
+		Name:     "Transient Preflight Retry Pool",
+		Mode:     ProviderPoolModeManaged,
+		Members:  []ProviderPoolMember{{ProviderID: 1, Enabled: true, Level: 1}},
+	}
+	_, router, relayKey, _ := setupProviderPoolHTTPTest(t, "openai-responses", providers, pool)
+
+	req := httptest.NewRequest(http.MethodPost, "/responses", strings.NewReader(`{"model":"gpt-5","input":"hello","stream":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+relayKey)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "recovered") {
+		t.Fatalf("transient preflight failure should retry and recover, got %d: %s", w.Code, w.Body.String())
+	}
+	if got := atomic.LoadInt32(&hits); got != 2 {
+		t.Fatalf("upstream hits = %d, want 2", got)
+	}
+}
+
+func TestHTTPMissingCompletionDoesNotAppendFallbackAfterStreamStarts(t *testing.T) {
+	var providerAHits int32
+	var providerBHits int32
+
+	upstreamA := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&providerAHits, 1)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"partial-a\"}\n\n")
+	}))
+	defer upstreamA.Close()
+
+	upstreamB := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&providerBHits, 1)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"from-b\"}\n\n")
+		_, _ = io.WriteString(w, "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_b\"}}\n\n")
+	}))
+	defer upstreamB.Close()
+
+	providers := []Provider{
+		{ID: 1, Name: "provider-a", Enabled: true, APIURL: upstreamA.URL, APIKey: "key-a"},
+		{ID: 2, Name: "provider-b", Enabled: true, APIURL: upstreamB.URL, APIKey: "key-b"},
+	}
+	pool := &ProviderPool{
+		Platform:                     "openai-responses",
+		Name:                         "Missing Completion Pool",
+		Mode:                         ProviderPoolModeManaged,
+		AutoBlacklistEnabled:         true,
+		AutoBlacklistThreshold:       1,
+		AutoBlacklistDurationMinutes: 10,
+		Members: []ProviderPoolMember{
+			{ProviderID: 1, Enabled: true, Level: 1},
+			{ProviderID: 2, Enabled: true, Level: 2},
+		},
+	}
+	relay, router, keySecret, poolID := setupProviderPoolHTTPTest(t, "openai-responses", providers, pool)
+
+	request := func() *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/responses", strings.NewReader(`{"model":"gpt-5","input":"hello","stream":true}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+keySecret)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		return w
+	}
+
+	first := request()
+	if first.Code != http.StatusOK || !strings.Contains(first.Body.String(), "partial-a") {
+		t.Fatalf("first stream = %d %q, want partial provider-a stream", first.Code, first.Body.String())
+	}
+	if strings.Contains(first.Body.String(), "from-b") {
+		t.Fatalf("fallback data was appended after the client stream started: %q", first.Body.String())
+	}
+	if atomic.LoadInt32(&providerAHits) != 1 || atomic.LoadInt32(&providerBHits) != 0 {
+		t.Fatalf("first request hits = (%d,%d), want (1,0)", providerAHits, providerBHits)
+	}
+	if blacklisted := relay.ListProviderBlacklistStatus("openai-responses", poolID); len(blacklisted) != 1 || blacklisted[0].ProviderID != 1 || blacklisted[0].LastReason != missingCompletionErrorCode {
+		t.Fatalf("missing-completion stream was not recorded as a provider failure: %+v", blacklisted)
+	}
+
+	second := request()
+	if second.Code != http.StatusOK || !strings.Contains(second.Body.String(), "from-b") {
+		t.Fatalf("second stream = %d %q, want provider-b response", second.Code, second.Body.String())
+	}
+	if atomic.LoadInt32(&providerAHits) != 1 || atomic.LoadInt32(&providerBHits) != 1 {
+		t.Fatalf("second request hits = (%d,%d), want (1,1)", providerAHits, providerBHits)
 	}
 }
 
