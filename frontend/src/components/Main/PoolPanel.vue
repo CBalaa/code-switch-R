@@ -821,7 +821,22 @@
               <label class="form-field"><span>{{ t('components.main.pool.specialRuleJsonPath') }}</span><input v-model="rule.jsonPath" class="mac-input" type="text" placeholder="error.code" /></label>
               <label class="form-field"><span>{{ t('components.main.pool.specialRuleJsonValue') }}</span><input v-model="rule.expectedJsonValue" class="mac-input" type="text" placeholder='"rate_limit"' /></label>
               <label class="form-field"><span>{{ t('components.main.pool.blacklistThreshold') }}</span><input v-model.number="rule.threshold" class="mac-input" type="number" min="1" max="100" required /></label>
-              <label class="form-field"><span>{{ t('components.main.pool.blacklistDuration') }}</span><input v-model.number="rule.durationMinutes" class="mac-input" type="number" min="1" max="144000" required /></label>
+              <label class="form-field">
+                <span>{{ t('components.main.pool.specialRuleDurationType') }}</span>
+                <select
+                  class="mac-select"
+                  :value="rule.durationType"
+                  @change="rule.durationType = (($event.target as HTMLSelectElement).value as SpecialBlacklistDurationType)"
+                >
+                  <option value="duration">{{ t('components.main.pool.specialRuleDurationMode') }}</option>
+                  <option value="until">{{ t('components.main.pool.specialRuleUntilMode') }}</option>
+                </select>
+              </label>
+              <label v-if="rule.durationType !== 'until'" class="form-field"><span>{{ t('components.main.pool.blacklistDuration') }}</span><input v-model.number="rule.durationMinutes" class="mac-input" type="number" min="1" max="144000" required /></label>
+              <template v-else>
+                <label class="form-field"><span>{{ t('components.main.pool.specialRuleUntilDayOffset') }}</span><input v-model.number="rule.untilDayOffset" class="mac-input" type="number" min="0" max="99" required /></label>
+                <label class="form-field"><span>{{ t('components.main.pool.specialRuleUntilTime') }}</span><input v-model="rule.untilTime" class="mac-input" type="time" required /></label>
+              </template>
               <div class="special-rule-actions">
                 <button class="ghost-icon" type="button" :disabled="index === 0" :data-tooltip="t('components.main.pool.moveRuleUp')" @click="moveSpecialBlacklistRule(index, -1)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 14 6-6 6 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg></button>
                 <button class="ghost-icon" type="button" :disabled="index === poolModalState.form.specialBlacklistRules.length - 1" :data-tooltip="t('components.main.pool.moveRuleDown')" @click="moveSpecialBlacklistRule(index, 1)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 10 6 6 6-6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg></button>
@@ -962,8 +977,15 @@ import {
   type ProviderPoolMode,
   type ProviderPoolProviderPenalty,
   type ProviderPoolType,
+  type SpecialBlacklistDurationType,
   type SpecialBlacklistRule,
 } from '../../services/providerPool'
+import {
+  buildSpecialBlacklistRulesPayload,
+  canonicalSpecialRuleDurationType,
+  normalizeSpecialRuleForm,
+  type SpecialBlacklistRuleError,
+} from '../../utils/specialBlacklistRules'
 import { fetchAppSettings } from '../../services/appSettings'
 import type { AutomationCard } from '../../data/cards'
 import { showToast } from '../../utils/toast'
@@ -1813,7 +1835,7 @@ const openEditPool = (pool: ProviderPool) => {
     autoBlacklistEnabled: pool.autoBlacklistEnabled ?? false,
     autoBlacklistThreshold: pool.autoBlacklistThreshold || 3,
     autoBlacklistDurationMinutes: pool.autoBlacklistDurationMinutes || 10,
-    specialBlacklistRules: (pool.specialBlacklistRules ?? []).map((rule) => ({ ...rule })),
+    specialBlacklistRules: (pool.specialBlacklistRules ?? []).map((rule) => normalizeSpecialRuleForm({ ...rule })),
     firstTextRetryEnabled: pool.firstTextRetryEnabled ?? false,
     firstTextRetryTimeoutSeconds: pool.firstTextRetryTimeoutSeconds || 100,
     excludeFromTotalTraffic: pool.excludeFromTotalTraffic ?? false,
@@ -1881,7 +1903,17 @@ const addSpecialBlacklistRule = () => {
     expectedJsonValue: '',
     threshold: 1,
     durationMinutes: 10,
+    durationType: 'duration',
+    untilDayOffset: 1,
+    untilTime: '00:00',
   })
+}
+
+// 兼容旧数据与手工配置的模式归一化、保存校验、载荷清理在 utils/specialBlacklistRules 中
+const SPECIAL_RULE_ERROR_KEYS: Record<SpecialBlacklistRuleError, string> = {
+  durationType: 'components.main.pool.specialRuleDurationTypeInvalid',
+  untilDayOffset: 'components.main.pool.specialRuleUntilDayOffsetInvalid',
+  untilTime: 'components.main.pool.specialRuleUntilTimeInvalid',
 }
 
 const removeSpecialBlacklistRule = (index: number) => {
@@ -1905,15 +1937,21 @@ const poolConfigSignature = (pool: Partial<ProviderPool>) => {
       level: member.level ?? 1,
     }))
     .sort((left, right) => left.providerId - right.providerId)
-  const specialBlacklistRules = (pool.specialBlacklistRules ?? []).map((rule) => ({
-    id: rule.id,
-    name: rule.name.trim(),
-    httpStatus: rule.httpStatus,
-    jsonPath: rule.jsonPath ?? '',
-    expectedJsonValue: rule.expectedJsonValue ?? '',
-    threshold: rule.threshold,
-    durationMinutes: rule.durationMinutes,
-  }))
+  const specialBlacklistRules = (pool.specialBlacklistRules ?? []).map((rule) => {
+    const durationType = canonicalSpecialRuleDurationType(rule.durationType)
+    return {
+      id: rule.id,
+      name: rule.name.trim(),
+      httpStatus: rule.httpStatus,
+      jsonPath: rule.jsonPath ?? '',
+      expectedJsonValue: rule.expectedJsonValue ?? '',
+      threshold: rule.threshold,
+      durationMinutes: rule.durationMinutes,
+      durationType,
+      untilDayOffset: durationType === 'until' ? (typeof rule.untilDayOffset === 'number' ? rule.untilDayOffset : 0) : 0,
+      untilTime: durationType === 'until' ? rule.untilTime ?? '' : '',
+    }
+  })
   const accountPoolConfig = pool.accountPoolConfig
 
   return JSON.stringify({
@@ -1977,13 +2015,20 @@ const submitPoolModal = async (closeAfterSave = true): Promise<boolean> => {
     return false
   }
 
+  const payload = buildSpecialBlacklistRulesPayload(poolModalState.form.specialBlacklistRules)
+  if (payload.error) {
+    showToast(t(SPECIAL_RULE_ERROR_KEYS[payload.error]), 'error')
+    return false
+  }
+  const specialBlacklistRules = payload.rules
+
   const poolData: any = {
     platform: props.platform,
     name,
     poolType,
     autoBlacklistThreshold: poolModalState.form.autoBlacklistThreshold,
     autoBlacklistDurationMinutes: poolModalState.form.autoBlacklistDurationMinutes,
-    specialBlacklistRules: poolModalState.form.specialBlacklistRules.map((rule) => ({ ...rule })),
+    specialBlacklistRules,
     firstTextRetryEnabled: poolModalState.form.firstTextRetryEnabled,
     firstTextRetryTimeoutSeconds: Math.min(240, Math.max(5, Math.trunc(poolModalState.form.firstTextRetryTimeoutSeconds || 100))),
   }

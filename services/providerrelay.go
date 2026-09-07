@@ -1150,6 +1150,33 @@ func (prs *ProviderRelayService) recordProviderSuccess(platform, poolID string, 
 	prs.recordProviderSuccessForUser("", platform, poolID, provider)
 }
 
+// specialBlacklistDeadline derives the blacklist deadline for a triggered rule.
+// Fixed-duration rules block from now; "until" rules block until UntilTime on
+// the day UntilDayOffset days from now, on the server's local clock. The type
+// comparison is lenient (trimmed, case-insensitive) so stale hand-edited rules
+// still behave as configured. A target at or before the trigger moment still
+// blacklists briefly (one minute) so the trigger keeps taking effect instead
+// of silently no-oping; future targets are honored exactly.
+func specialBlacklistDeadline(now time.Time, rule *SpecialBlacklistRule, durationMinutes int) time.Time {
+	if rule == nil || !strings.EqualFold(strings.TrimSpace(rule.DurationType), SpecialBlacklistDurationTypeUntil) {
+		return now.Add(time.Duration(durationMinutes) * time.Minute)
+	}
+	var hour, minute int
+	if parsed, err := time.Parse("15:04", rule.UntilTime); err == nil {
+		hour, minute = parsed.Hour(), parsed.Minute()
+	} // SavePool validates the format; stale data degrades to 00:00.
+	// SavePool requires the offset; stale data degrades to today.
+	dayOffset := 0
+	if rule.UntilDayOffset != nil {
+		dayOffset = *rule.UntilDayOffset
+	}
+	target := time.Date(now.Year(), now.Month(), now.Day(), hour, minute, 0, 0, now.Location()).AddDate(0, 0, dayOffset)
+	if !target.After(now) {
+		target = now.Add(time.Minute)
+	}
+	return target
+}
+
 // recordProviderFailureForUser increments the consecutive failure count and, if the threshold
 // is reached, blacklists the provider. Returns true when this failure resulted in a new
 // blacklist.
@@ -1218,7 +1245,7 @@ func (prs *ProviderRelayService) recordProviderFailureWithRuleForUser(userID, pl
 	}
 
 	if count >= threshold {
-		p.BlacklistedUntil = time.Now().Add(time.Duration(durationMinutes) * time.Minute)
+		p.BlacklistedUntil = specialBlacklistDeadline(time.Now(), rule, durationMinutes)
 		penalty := *p
 		prs.poolPenaltyMu.Unlock()
 		if isAccountPool {

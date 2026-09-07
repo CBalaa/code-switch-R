@@ -598,7 +598,7 @@
         "clearAllBlacklistsConfirm": "Clear all blacklisted keys in this account pool?",
         "allBlacklistsCleared": "All blacklists cleared",
         "specialBlacklistRules": "Advanced Rules",
-        "specialBlacklistRulesHint": "Rules are matched in order. JSON paths use dot notation and values must be valid JSON.",
+        "specialBlacklistRulesHint": "Rules are matched in order. JSON paths use dot notation and values must be valid JSON. 'Until date & time' uses the server's local clock (day 0 = today).",
         "addSpecialBlacklistRule": "Add rule",
         "deleteSpecialBlacklistRule": "Delete rule",
         "moveRuleUp": "Move up",
@@ -606,7 +606,15 @@
         "specialRuleName": "Rule name",
         "specialRuleHttpStatus": "HTTP status",
         "specialRuleJsonPath": "JSON path (optional)",
-        "specialRuleJsonValue": "Expected JSON value"
+        "specialRuleJsonValue": "Expected JSON value",
+        "specialRuleDurationType": "Blacklist mode",
+        "specialRuleDurationMode": "Fixed duration",
+        "specialRuleUntilMode": "Until date & time",
+        "specialRuleDurationTypeInvalid": "Invalid blacklist mode",
+        "specialRuleUntilDayOffset": "Day offset (0 = today)",
+        "specialRuleUntilTime": "Time of day",
+        "specialRuleUntilDayOffsetInvalid": "Day offset must be between 0 and 99",
+        "specialRuleUntilTimeInvalid": "Invalid target time"
       }
     },
     "logs": {

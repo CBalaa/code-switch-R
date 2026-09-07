@@ -599,7 +599,7 @@
         "clearAllBlacklistsConfirm": "确认清除该号池所有已拉黑的密钥吗？",
         "allBlacklistsCleared": "已清除所有拉黑",
         "specialBlacklistRules": "高级规则",
-        "specialBlacklistRulesHint": "规则按顺序匹配。JSON 路径使用点路径，预期值必须是合法 JSON。",
+        "specialBlacklistRulesHint": "规则按顺序匹配。JSON 路径使用点路径，预期值必须是合法 JSON。选择“到指定时间”时按服务器本地时间计算，第 0 天 = 当天。",
         "addSpecialBlacklistRule": "新增规则",
         "deleteSpecialBlacklistRule": "删除规则",
         "moveRuleUp": "上移",
@@ -607,7 +607,15 @@
         "specialRuleName": "规则名称",
         "specialRuleHttpStatus": "HTTP 状态码",
         "specialRuleJsonPath": "JSON 路径（可选）",
-        "specialRuleJsonValue": "预期 JSON 值"
+        "specialRuleJsonValue": "预期 JSON 值",
+        "specialRuleDurationType": "拉黑方式",
+        "specialRuleDurationMode": "按时长",
+        "specialRuleUntilMode": "到指定时间",
+        "specialRuleDurationTypeInvalid": "高级拉黑规则的拉黑方式无效",
+        "specialRuleUntilDayOffset": "拉黑到第几天（0=当天）",
+        "specialRuleUntilTime": "具体时间",
+        "specialRuleUntilDayOffsetInvalid": "高级拉黑规则的目标天数必须在 0 到 99 之间",
+        "specialRuleUntilTimeInvalid": "高级拉黑规则的目标时间无效"
       }
     },
     "logs": {

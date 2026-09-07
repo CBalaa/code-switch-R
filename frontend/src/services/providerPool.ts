@@ -86,6 +86,8 @@ export interface ProviderPoolMember {
   weight?: number
 }
 
+export type SpecialBlacklistDurationType = 'duration' | 'until'
+
 export interface SpecialBlacklistRule {
   id: string
   name: string
@@ -94,6 +96,12 @@ export interface SpecialBlacklistRule {
   expectedJsonValue?: string
   threshold: number
   durationMinutes: number
+  /** 'duration' = 按时长拉黑（缺省行为）；'until' = 拉黑到指定日期时间 */
+  durationType?: SpecialBlacklistDurationType
+  /** durationType = 'until' 时生效：0 = 当天，1 = 次日，以此类推 */
+  untilDayOffset?: number | null
+  /** durationType = 'until' 时生效：HH:MM（服务器本地时间） */
+  untilTime?: string
 }
 
 export interface ProviderPool {

@@ -1517,6 +1517,91 @@ func TestHTTPAccountPoolEmptyStreamMatchesSpecialBlacklistRule(t *testing.T) {
 	}
 }
 
+func TestHTTPAccountPoolSpecialUntilRuleBlacklistsUntilTargetDay(t *testing.T) {
+	const (
+		firstKey  = "sk-until-rule-first"
+		secondKey = "sk-until-rule-second"
+	)
+
+	var firstHits, secondHits int
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Header.Get("Authorization") {
+		case "Bearer " + firstKey:
+			firstHits++
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"error":{"code":"daily_quota"}}`))
+		case "Bearer " + secondKey:
+			secondHits++
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte("data: {\"type\":\"response.output_text.delta\",\"delta\":\"from-second-key\"}\n\n"))
+			_, _ = w.Write([]byte("data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp-until-second\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n"))
+			_, _ = w.Write([]byte("data: [DONE]\n\n"))
+		}
+	}))
+	defer upstream.Close()
+
+	rule := SpecialBlacklistRule{
+		ID:                "until-rule",
+		Name:              "Daily quota",
+		HTTPStatus:        http.StatusTooManyRequests,
+		JSONPath:          "error.code",
+		ExpectedJSONValue: `"daily_quota"`,
+		Threshold:         1,
+		DurationType:      SpecialBlacklistDurationTypeUntil,
+		UntilDayOffset:    intPtr(1),
+		UntilTime:         "00:00",
+	}
+	pool := &ProviderPool{
+		Platform:                     "openai-responses",
+		Name:                         "Until Rule Account Pool",
+		PoolType:                     ProviderPoolTypeAccount,
+		Mode:                         ProviderPoolModeManaged,
+		AutoBlacklistEnabled:         true,
+		AutoBlacklistThreshold:       10,
+		AutoBlacklistDurationMinutes: 10,
+		SpecialBlacklistRules:        []SpecialBlacklistRule{rule},
+		AccountPoolConfig: &AccountPoolConfig{
+			APIURL:            upstream.URL,
+			ResponsesEndpoint: "/responses",
+			Keys:              []AccountPoolKey{{APIKey: firstKey}, {APIKey: secondKey}},
+		},
+	}
+	relay, router, relayKey, poolID := setupProviderPoolHTTPTest(t, "openai-responses", nil, pool)
+
+	// Capture the baseline before the request: the relay derives the deadline
+	// from its own clock, and if the trigger races across midnight the deadline
+	// lands on the following day, so accept either expected midnight. An
+	// already-expired deadline would additionally be pruned from the status
+	// listing below, so the candidate set must be complete.
+	baseline := time.Now()
+	req := httptest.NewRequest(http.MethodPost, "/responses", strings.NewReader(`{"model":"gpt-5","input":"hello","stream":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+relayKey)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "from-second-key") {
+		t.Fatalf("until rule should blacklist first key and switch, got %d: %s", w.Code, w.Body.String())
+	}
+	if firstHits != 1 || secondHits != 1 {
+		t.Fatalf("until rule hits = (%d,%d), want (1,1)", firstHits, secondHits)
+	}
+	statuses := relay.ListProviderBlacklistStatus("openai-responses", poolID)
+	if len(statuses) != 1 || statuses[0].LastReason != rule.Name || statuses[0].RuleFailureCounts[rule.ID] != 1 {
+		t.Fatalf("until rule blacklist status = %+v", statuses)
+	}
+	// The full HTTP path must honor the until deadline: the next midnight (or
+	// the one after when the test races midnight), not a fixed duration.
+	midnights := []time.Time{
+		time.Date(baseline.Year(), baseline.Month(), baseline.Day(), 0, 0, 0, 0, time.Local).AddDate(0, 0, 1),
+		time.Date(baseline.Year(), baseline.Month(), baseline.Day(), 0, 0, 0, 0, time.Local).AddDate(0, 0, 2),
+	}
+	if !nearTime(statuses[0].BlacklistedUntil, midnights, 2*time.Second) {
+		t.Fatalf("until rule deadline = %v, want one of %v", statuses[0].BlacklistedUntil, midnights)
+	}
+}
+
 func TestHTTPAccountPoolFailedStreamFallsBackWhenNormalGuardDisabled(t *testing.T) {
 	const (
 		firstKey  = "sk-failed-stream-first"

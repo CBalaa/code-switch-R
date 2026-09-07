@@ -82,6 +82,14 @@ type SpecialBlacklistRule struct {
 	ExpectedJSONValue string `json:"expectedJsonValue,omitempty"`
 	Threshold         int    `json:"threshold"`
 	DurationMinutes   int    `json:"durationMinutes"`
+	// DurationType selects how the blacklist deadline is derived from the
+	// trigger moment. "" and "duration" keep the legacy fixed-length block;
+	// "until" blacklists until UntilTime on the day UntilDayOffset days from
+	// now, using the server's local clock. UntilDayOffset is a pointer so a
+	// legitimate 0 (= today) survives JSON round trips; nil means unset.
+	DurationType   string `json:"durationType,omitempty"`
+	UntilDayOffset *int   `json:"untilDayOffset,omitempty"`
+	UntilTime      string `json:"untilTime,omitempty"`
 }
 
 // AccountPoolConfig 号池共享的上游配置及密钥列表。
@@ -129,13 +137,27 @@ const (
 	maxAccountPoolBlacklistThreshold           = 100
 	maxAccountPoolBlacklistDurationMinutes     = 1440
 	maxSpecialBlacklistDurationMinutes         = 144000
+	maxSpecialBlacklistUntilDayOffset          = 99
 	maxAccountPoolKeyID                        = int64(1<<52 - 1)
 	defaultFirstTextRetryTimeoutSeconds        = 100
 	minFirstTextRetryTimeoutSeconds            = 5
 	maxFirstTextRetryTimeoutSeconds            = 240
 )
 
-var specialBlacklistJSONPathSegment = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_-]*$`)
+var (
+	specialBlacklistJSONPathSegment = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_-]*$`)
+	specialBlacklistUntilTimeFormat = regexp.MustCompile(`^([01]\d|2[0-3]):[0-5]\d$`)
+)
+
+const (
+	// SpecialBlacklistDurationTypeDuration blacklists for a fixed number of
+	// minutes. It is also the behavior of legacy rules whose DurationType is
+	// empty.
+	SpecialBlacklistDurationTypeDuration = "duration"
+	// SpecialBlacklistDurationTypeUntil blacklists until a wall-clock time on
+	// a day offset from the trigger moment (server local time).
+	SpecialBlacklistDurationTypeUntil = "until"
+)
 
 // ========== ProviderPoolService ==========
 
@@ -571,8 +593,27 @@ func normalizeAndValidateSpecialBlacklistRules(pool *ProviderPool) error {
 		if rule.Threshold < 1 || rule.Threshold > 100 {
 			return fmt.Errorf("高级拉黑规则 %s 的次数阈值必须在 1 到 100 之间", rule.Name)
 		}
-		if rule.DurationMinutes < 1 || rule.DurationMinutes > maxSpecialBlacklistDurationMinutes {
-			return fmt.Errorf("高级拉黑规则 %s 的拉黑时长必须在 1 到 %d 分钟之间", rule.Name, maxSpecialBlacklistDurationMinutes)
+		switch strings.TrimSpace(strings.ToLower(rule.DurationType)) {
+		case "", SpecialBlacklistDurationTypeDuration:
+			// Legacy rules persist without an explicit type; clear any stale
+			// "until" fields so stored rules stay canonical.
+			rule.DurationType = SpecialBlacklistDurationTypeDuration
+			rule.UntilDayOffset = nil
+			rule.UntilTime = ""
+			if rule.DurationMinutes < 1 || rule.DurationMinutes > maxSpecialBlacklistDurationMinutes {
+				return fmt.Errorf("高级拉黑规则 %s 的拉黑时长必须在 1 到 %d 分钟之间", rule.Name, maxSpecialBlacklistDurationMinutes)
+			}
+		case SpecialBlacklistDurationTypeUntil:
+			rule.DurationType = SpecialBlacklistDurationTypeUntil
+			if rule.UntilDayOffset == nil || *rule.UntilDayOffset < 0 || *rule.UntilDayOffset > maxSpecialBlacklistUntilDayOffset {
+				return fmt.Errorf("高级拉黑规则 %s 的目标天数必须在 0 到 %d 之间", rule.Name, maxSpecialBlacklistUntilDayOffset)
+			}
+			rule.UntilTime = strings.TrimSpace(rule.UntilTime)
+			if !specialBlacklistUntilTimeFormat.MatchString(rule.UntilTime) {
+				return fmt.Errorf("高级拉黑规则 %s 的目标时间必须是 HH:MM 格式", rule.Name)
+			}
+		default:
+			return fmt.Errorf("高级拉黑规则 %s 的拉黑方式无效: %s", rule.Name, rule.DurationType)
 		}
 		normalized = append(normalized, rule)
 	}

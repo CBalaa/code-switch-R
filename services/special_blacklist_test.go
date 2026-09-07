@@ -1,6 +1,7 @@
 package services
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -120,6 +121,272 @@ func TestSpecialBlacklistRuleValidation(t *testing.T) {
 	pool.SpecialBlacklistRules[0].DurationMinutes = maxSpecialBlacklistDurationMinutes + 1
 	if err := normalizeAndValidateSpecialBlacklistRules(pool); err == nil {
 		t.Fatal("special blacklist duration above maximum was accepted")
+	}
+}
+
+func intPtr(v int) *int { return &v }
+
+func TestSpecialBlacklistRuleUntilModeValidation(t *testing.T) {
+	valid := SpecialBlacklistRule{Name: "until", HTTPStatus: 429, Threshold: 1, DurationType: SpecialBlacklistDurationTypeUntil, UntilDayOffset: intPtr(1), UntilTime: "00:00"}
+
+	pool := &ProviderPool{SpecialBlacklistRules: []SpecialBlacklistRule{valid}}
+	if err := normalizeAndValidateSpecialBlacklistRules(pool); err != nil {
+		t.Fatalf("valid until rule rejected: %v", err)
+	}
+	if got := pool.SpecialBlacklistRules[0].DurationType; got != SpecialBlacklistDurationTypeUntil {
+		t.Fatalf("until rule type = %q, want %q", got, SpecialBlacklistDurationTypeUntil)
+	}
+
+	// A missing offset is as invalid as an out-of-range one.
+	for _, offset := range []*int{nil, intPtr(-1), intPtr(maxSpecialBlacklistUntilDayOffset + 1)} {
+		rule := valid
+		rule.UntilDayOffset = offset
+		pool := &ProviderPool{SpecialBlacklistRules: []SpecialBlacklistRule{rule}}
+		if err := normalizeAndValidateSpecialBlacklistRules(pool); err == nil {
+			t.Fatalf("until day offset %v was accepted", offset)
+		}
+	}
+
+	// Offset 0 (= today) is a legitimate value and must survive validation.
+	rule := valid
+	rule.UntilDayOffset = intPtr(0)
+	pool = &ProviderPool{SpecialBlacklistRules: []SpecialBlacklistRule{rule}}
+	if err := normalizeAndValidateSpecialBlacklistRules(pool); err != nil {
+		t.Fatalf("until day offset 0 rejected: %v", err)
+	}
+
+	for _, badTime := range []string{"", "24:00", "12:60", "9:30", "0900", "abc"} {
+		rule := valid
+		rule.UntilTime = badTime
+		pool := &ProviderPool{SpecialBlacklistRules: []SpecialBlacklistRule{rule}}
+		if err := normalizeAndValidateSpecialBlacklistRules(pool); err == nil {
+			t.Fatalf("until time %q was accepted", badTime)
+		}
+	}
+
+	rule = valid
+	rule.DurationType = "weekly"
+	pool = &ProviderPool{SpecialBlacklistRules: []SpecialBlacklistRule{rule}}
+	if err := normalizeAndValidateSpecialBlacklistRules(pool); err == nil {
+		t.Fatal("unknown duration type was accepted")
+	}
+
+	// Duration-mode rules (including legacy empty type) keep working and lose
+	// any stale until fields. Type matching is case-insensitive and trimmed.
+	rule = valid
+	rule.DurationType = "  "
+	rule.DurationMinutes = 5
+	pool = &ProviderPool{SpecialBlacklistRules: []SpecialBlacklistRule{rule}}
+	if err := normalizeAndValidateSpecialBlacklistRules(pool); err != nil {
+		t.Fatalf("legacy duration rule rejected: %v", err)
+	}
+	normalized := pool.SpecialBlacklistRules[0]
+	if normalized.DurationType != SpecialBlacklistDurationTypeDuration || normalized.UntilDayOffset != nil || normalized.UntilTime != "" {
+		t.Fatalf("duration rule kept stale until fields: %+v", normalized)
+	}
+
+	rule = valid
+	rule.DurationType = " UNTIL "
+	pool = &ProviderPool{SpecialBlacklistRules: []SpecialBlacklistRule{rule}}
+	if err := normalizeAndValidateSpecialBlacklistRules(pool); err != nil {
+		t.Fatalf("case-insensitive until type rejected: %v", err)
+	}
+}
+
+func TestSpecialBlacklistUntilDayOffsetZeroRoundTrip(t *testing.T) {
+	rule := SpecialBlacklistRule{
+		Name:           "same-day",
+		HTTPStatus:     429,
+		Threshold:      1,
+		DurationType:   SpecialBlacklistDurationTypeUntil,
+		UntilDayOffset: intPtr(0),
+		UntilTime:      "23:59",
+	}
+	if err := normalizeAndValidateSpecialBlacklistRules(&ProviderPool{SpecialBlacklistRules: []SpecialBlacklistRule{rule}}); err != nil {
+		t.Fatalf("valid until rule rejected: %v", err)
+	}
+
+	data, err := json.Marshal(rule)
+	if err != nil {
+		t.Fatalf("marshal rule: %v", err)
+	}
+	if !strings.Contains(string(data), `"untilDayOffset":0`) {
+		t.Fatalf("day offset 0 was omitted from JSON: %s", data)
+	}
+	var back SpecialBlacklistRule
+	if err := json.Unmarshal(data, &back); err != nil {
+		t.Fatalf("unmarshal rule: %v", err)
+	}
+	if back.UntilDayOffset == nil || *back.UntilDayOffset != 0 {
+		t.Fatalf("day offset 0 did not survive the JSON round trip: %+v", back)
+	}
+}
+
+func TestSpecialBlacklistDeadline(t *testing.T) {
+	now := time.Date(2026, 8, 31, 10, 30, 15, 0, time.Local)
+
+	if got := specialBlacklistDeadline(now, nil, 5); !got.Equal(now.Add(5 * time.Minute)) {
+		t.Fatalf("nil rule deadline = %v, want %v", got, now.Add(5*time.Minute))
+	}
+	durationRule := &SpecialBlacklistRule{Name: "fixed", Threshold: 1, DurationMinutes: 7}
+	if got := specialBlacklistDeadline(now, durationRule, 7); !got.Equal(now.Add(7 * time.Minute)) {
+		t.Fatalf("duration rule deadline = %v, want %v", got, now.Add(7*time.Minute))
+	}
+
+	untilRule := &SpecialBlacklistRule{Name: "until", Threshold: 1, DurationType: SpecialBlacklistDurationTypeUntil}
+	untilRule.UntilDayOffset, untilRule.UntilTime = intPtr(0), "23:59"
+	want := time.Date(2026, 8, 31, 23, 59, 0, 0, time.Local)
+	if got := specialBlacklistDeadline(now, untilRule, 7); !got.Equal(want) {
+		t.Fatalf("same-day until deadline = %v, want %v", got, want)
+	}
+
+	untilRule.UntilDayOffset, untilRule.UntilTime = intPtr(1), "00:00"
+	want = time.Date(2026, 9, 1, 0, 0, 0, 0, time.Local)
+	if got := specialBlacklistDeadline(now, untilRule, 7); !got.Equal(want) {
+		t.Fatalf("next-day until deadline = %v, want %v", got, want)
+	}
+
+	// A future target inside the next minute is still honored exactly; only
+	// targets at or before the trigger moment fall back to one minute.
+	lateTrigger := time.Date(2026, 8, 31, 23, 59, 30, 0, time.Local)
+	if got := specialBlacklistDeadline(lateTrigger, untilRule, 7); !got.Equal(want) {
+		t.Fatalf("near-future until deadline = %v, want %v", got, want)
+	}
+
+	// A target that already passed still blacklists briefly instead of no-oping.
+	untilRule.UntilDayOffset, untilRule.UntilTime = intPtr(0), "00:00"
+	if got := specialBlacklistDeadline(now, untilRule, 7); !got.Equal(now.Add(time.Minute)) {
+		t.Fatalf("past until deadline = %v, want %v", got, now.Add(time.Minute))
+	}
+
+	// Stale unparseable times degrade to 00:00 and clamp the same way.
+	untilRule.UntilDayOffset, untilRule.UntilTime = intPtr(0), "stale"
+	if got := specialBlacklistDeadline(now, untilRule, 7); !got.Equal(now.Add(time.Minute)) {
+		t.Fatalf("stale until time deadline = %v, want %v", got, now.Add(time.Minute))
+	}
+
+	// Stale nil offsets degrade to today; type matching stays lenient, so a
+	// hand-edited " UNTIL " type still computes an until deadline (now+7m would
+	// mean it fell back to the duration branch).
+	staleType := &SpecialBlacklistRule{Name: "stale-type", Threshold: 1, DurationType: " UNTIL ", UntilTime: "23:59"}
+	want = time.Date(2026, 8, 31, 23, 59, 0, 0, time.Local)
+	if got := specialBlacklistDeadline(now, staleType, 7); !got.Equal(want) {
+		t.Fatalf("stale-type until deadline = %v, want %v", got, want)
+	}
+	if got := specialBlacklistDeadline(now, nil, 7); !got.Equal(now.Add(7 * time.Minute)) {
+		t.Fatalf("duration fallback changed: %v", got)
+	}
+}
+
+func TestSpecialBlacklistUntilRuleRecordsTargetDeadline(t *testing.T) {
+	relay := NewProviderRelayService(NewProviderService(), NewProviderPoolService(), nil, nil, nil, DefaultRelayBindAddr)
+	pool := &ProviderPool{
+		ID:                           "pool-until",
+		Platform:                     "openai-chat",
+		Mode:                         ProviderPoolModeManaged,
+		AutoBlacklistEnabled:         true,
+		AutoBlacklistDurationMinutes: 10,
+		SpecialBlacklistRules:        []SpecialBlacklistRule{},
+	}
+	provider := Provider{ID: 4, Name: "provider-until"}
+
+	// Capture the baseline before triggering: the relay derives the deadline
+	// from its own clock, and if the trigger races across midnight the deadline
+	// lands on the following day, so accept either expected midnight.
+	baseline := time.Now()
+	nextMidnight := &SpecialBlacklistRule{ID: "daily-quota", Name: "Daily quota", HTTPStatus: 429, Threshold: 1, DurationType: SpecialBlacklistDurationTypeUntil, UntilDayOffset: intPtr(1), UntilTime: "00:00"}
+	if !relay.recordProviderFailureWithRuleForUser("user-a", pool.Platform, pool.ID, pool, provider, "HTTP 429", nextMidnight) {
+		t.Fatal("until-mode rule did not blacklist provider")
+	}
+	penalty := relay.poolPenalties[penaltyKey("user-a", pool.Platform, pool.ID, provider.ID)]
+	if penalty == nil || time.Until(penalty.BlacklistedUntil) <= 0 {
+		t.Fatalf("unexpected until-mode penalty: %#v", penalty)
+	}
+	midnights := []time.Time{
+		time.Date(baseline.Year(), baseline.Month(), baseline.Day(), 0, 0, 0, 0, time.Local).AddDate(0, 0, 1),
+		time.Date(baseline.Year(), baseline.Month(), baseline.Day(), 0, 0, 0, 0, time.Local).AddDate(0, 0, 2),
+	}
+	if !nearTime(penalty.BlacklistedUntil, midnights, 2*time.Second) {
+		t.Fatalf("until-mode deadline = %v, want one of %v", penalty.BlacklistedUntil, midnights)
+	}
+
+	pastTarget := &SpecialBlacklistRule{ID: "already-passed", Name: "Already passed", HTTPStatus: 429, Threshold: 1, DurationType: SpecialBlacklistDurationTypeUntil, UntilDayOffset: intPtr(0), UntilTime: "00:00"}
+	if !relay.recordProviderFailureWithRuleForUser("user-b", pool.Platform, pool.ID, pool, provider, "HTTP 429", pastTarget) {
+		t.Fatal("past-target until rule did not blacklist provider")
+	}
+	penalty = relay.poolPenalties[penaltyKey("user-b", pool.Platform, pool.ID, provider.ID)]
+	if penalty == nil {
+		t.Fatal("past-target penalty missing")
+	}
+	if remaining := time.Until(penalty.BlacklistedUntil); remaining < 55*time.Second || remaining > 65*time.Second {
+		t.Fatalf("past-target deadline = %v, want ~1 minute from now", penalty.BlacklistedUntil)
+	}
+}
+
+func nearTime(got time.Time, candidates []time.Time, tolerance time.Duration) bool {
+	for _, candidate := range candidates {
+		diff := got.Sub(candidate)
+		if diff < 0 {
+			diff = -diff
+		}
+		if diff <= tolerance {
+			return true
+		}
+	}
+	return false
+}
+
+// TestSpecialBlacklistRuleUntilModePersistsThroughSavePool exercises the real
+// SavePool validation plus the on-disk JSON round trip through a fresh service
+// instance, covering what plain json.Marshal tests cannot see.
+func TestSpecialBlacklistRuleUntilModePersistsThroughSavePool(t *testing.T) {
+	testHome := t.TempDir()
+	t.Setenv("HOME", testHome)
+
+	service := NewProviderPoolService()
+	pool := &ProviderPool{
+		Platform:                     "openai-chat",
+		Name:                         "Until Round Trip",
+		PoolType:                     ProviderPoolTypeNormal,
+		Mode:                         ProviderPoolModeManaged,
+		Members:                      []ProviderPoolMember{},
+		AutoBlacklistEnabled:         true,
+		AutoBlacklistThreshold:       3,
+		AutoBlacklistDurationMinutes: 10,
+		SpecialBlacklistRules: []SpecialBlacklistRule{
+			// Hand-edited style: lenient type variant, legitimate offset 0.
+			{Name: "same-day", HTTPStatus: 429, Threshold: 1, DurationType: " UNTIL ", UntilDayOffset: intPtr(0), UntilTime: "23:59"},
+			{Name: "fixed", HTTPStatus: 500, Threshold: 2, DurationMinutes: 15, DurationType: SpecialBlacklistDurationTypeDuration, UntilDayOffset: intPtr(3), UntilTime: "08:00"},
+		},
+	}
+	id, err := service.SavePool(pool)
+	if err != nil {
+		t.Fatalf("SavePool failed: %v", err)
+	}
+
+	reloaded := NewProviderPoolService()
+	saved, err := reloaded.GetPool(id)
+	if err != nil {
+		t.Fatalf("GetPool failed: %v", err)
+	}
+	if len(saved.SpecialBlacklistRules) != 2 {
+		t.Fatalf("saved rules = %+v", saved.SpecialBlacklistRules)
+	}
+
+	until := saved.SpecialBlacklistRules[0]
+	if until.DurationType != SpecialBlacklistDurationTypeUntil {
+		t.Fatalf("lenient type variant not normalized: %+v", until)
+	}
+	if until.UntilDayOffset == nil || *until.UntilDayOffset != 0 {
+		t.Fatalf("day offset 0 did not survive persistence: %+v", until)
+	}
+	if until.UntilTime != "23:59" {
+		t.Fatalf("until time not persisted: %+v", until)
+	}
+
+	fixed := saved.SpecialBlacklistRules[1]
+	if fixed.DurationType != SpecialBlacklistDurationTypeDuration || fixed.UntilDayOffset != nil || fixed.UntilTime != "" {
+		t.Fatalf("duration rule kept stale until fields after persistence: %+v", fixed)
 	}
 }
 
