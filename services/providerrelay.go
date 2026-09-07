@@ -4190,6 +4190,7 @@ func ReqeustLogHook(c *gin.Context, kind string, usage *ReqeustLog) func(data []
 			parserFn = OpenAIChatParseTokenUsageFromResponse
 		}
 		parseEventPayload(payload, parserFn, usage)
+		markFirstTokenFromSSEPayload(payload, usage)
 		markFirstTextFromSSEPayload(payload, usage)
 		usage.syncActiveRequest()
 
@@ -4203,6 +4204,27 @@ func parseEventPayload(payload string, parser func(string, *ReqeustLog), usage *
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "data:") {
 			parser(strings.TrimPrefix(line, "data: "), usage)
+		}
+	}
+}
+
+func markFirstTokenFromSSEPayload(payload string, usage *ReqeustLog) {
+	if usage == nil || usage.FirstTokenDurationSec > 0 {
+		return
+	}
+	lines := strings.Split(payload, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if data == "" || data == "[DONE]" || !json.Valid([]byte(data)) {
+			continue
+		}
+		if ssePayloadHasReasoning(data) || ssePayloadHasText(data) {
+			usage.markFirstToken()
+			return
 		}
 	}
 }
@@ -4221,11 +4243,101 @@ func markFirstTextFromSSEPayload(payload string, usage *ReqeustLog) {
 		if data == "" || data == "[DONE]" || !json.Valid([]byte(data)) {
 			continue
 		}
-		if ssePayloadHasText(data) {
+		if ssePayloadHasFirstText(data) {
 			usage.markFirstText()
 			return
 		}
 	}
+}
+
+func ssePayloadHasReasoning(data string) bool {
+	eventType := gjson.Get(data, "type").String()
+	switch eventType {
+	case "response.reasoning_summary_text.delta", "response.reasoning_text.delta":
+		return nonEmptySSEString(gjson.Get(data, "delta"))
+	case "response.reasoning_summary_text.done", "response.reasoning_text.done":
+		return nonEmptySSEString(gjson.Get(data, "text"))
+	case "content_block_delta":
+		delta := gjson.Get(data, "delta")
+		if delta.Get("type").String() == "thinking_delta" {
+			return nonEmptySSEString(delta.Get("thinking"))
+		}
+	}
+
+	reasoningPaths := []string{
+		"reasoning_content",
+		"delta.reasoning_content",
+		"delta.reasoning",
+		"delta.thinking",
+	}
+	for _, path := range reasoningPaths {
+		if nonEmptySSEString(gjson.Get(data, path)) {
+			return true
+		}
+	}
+	for _, choice := range gjson.Get(data, "choices").Array() {
+		for _, path := range []string{"delta.reasoning_content", "delta.reasoning", "delta.thinking"} {
+			if nonEmptySSEString(choice.Get(path)) {
+				return true
+			}
+		}
+	}
+
+	item := gjson.Get(data, "item")
+	if item.Get("type").String() == "reasoning" {
+		return responseOutputItemHasUsefulContent(item, true)
+	}
+	for _, outputItem := range gjson.Get(data, "response.output").Array() {
+		if outputItem.Get("type").String() == "reasoning" && responseOutputItemHasUsefulContent(outputItem, true) {
+			return true
+		}
+	}
+	return false
+}
+
+func nonEmptySSEString(value gjson.Result) bool {
+	return value.Type == gjson.String && strings.TrimSpace(value.String()) != ""
+}
+
+func ssePayloadHasFirstText(data string) bool {
+	if !ssePayloadHasReasoning(data) {
+		return ssePayloadHasText(data)
+	}
+
+	textPaths := []string{
+		"delta.text",
+		"content_block.text",
+		"content.0.text",
+		"choices.0.delta.content",
+		"choices.0.message.content",
+		"response.output.0.content.0.text",
+	}
+	for _, path := range textPaths {
+		if strings.TrimSpace(gjson.Get(data, path).String()) != "" {
+			return true
+		}
+	}
+	if strings.TrimSpace(gjson.Get(data, "delta").String()) != "" && gjson.Get(data, "type").String() == "response.output_text.delta" {
+		return true
+	}
+	for _, choice := range gjson.Get(data, "choices").Array() {
+		if strings.TrimSpace(choice.Get("delta.content").String()) != "" || strings.TrimSpace(choice.Get("message.content").String()) != "" {
+			return true
+		}
+	}
+	for _, content := range gjson.Get(data, "content").Array() {
+		if strings.TrimSpace(content.Get("text").String()) != "" {
+			return true
+		}
+	}
+	for _, item := range gjson.Get(data, "response.output").Array() {
+		for _, content := range item.Get("content").Array() {
+			if strings.TrimSpace(content.Get("text").String()) != "" || strings.TrimSpace(content.Get("refusal").String()) != "" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func ssePayloadHasText(data string) bool {
@@ -4509,20 +4621,29 @@ func (r *ReqeustLog) markFirstEvent() {
 }
 
 func (r *ReqeustLog) markFirstText() {
-	if r != nil {
-		changed := false
-		if r.FirstTextSec == 0 {
-			r.FirstTextSec = r.elapsedSinceStart()
-			changed = true
-		}
-		if r.FirstTokenDurationSec == 0 {
-			r.FirstTokenDurationSec = r.elapsedSinceStart()
-			changed = true
-		}
-		if changed {
-			r.syncActiveRequest()
-		}
+	if r == nil {
+		return
 	}
+	changed := false
+	if r.FirstTokenDurationSec == 0 {
+		r.FirstTokenDurationSec = r.elapsedSinceStart()
+		changed = true
+	}
+	if r.FirstTextSec == 0 {
+		r.FirstTextSec = r.elapsedSinceStart()
+		changed = true
+	}
+	if changed {
+		r.syncActiveRequest()
+	}
+}
+
+func (r *ReqeustLog) markFirstToken() {
+	if r == nil || r.FirstTokenDurationSec != 0 {
+		return
+	}
+	r.FirstTokenDurationSec = r.elapsedSinceStart()
+	r.syncActiveRequest()
 }
 
 func (r *ReqeustLog) syncActiveRequest() {

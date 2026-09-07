@@ -537,7 +537,14 @@ func TestWriteCodexGuardedStreamingResponseAcceptsCompletedCodexOutputItems(t *t
 			if !responseWritten || recorder.status != http.StatusOK || !strings.Contains(recorder.BodyString(), "response.output_item.done") {
 				t.Fatalf("valid Codex output item was not forwarded: written=%v status=%d body=%q", responseWritten, recorder.status, recorder.BodyString())
 			}
-			if requestLog.FirstTextSec <= 0 {
+			if test.name == "reasoning with encrypted content" {
+				if requestLog.FirstTokenDurationSec <= 0 {
+					t.Fatal("reasoning output item did not mark first token")
+				}
+				if requestLog.FirstTextSec != 0 {
+					t.Fatalf("reasoning output item marked first text = %f, want 0", requestLog.FirstTextSec)
+				}
+			} else if requestLog.FirstTextSec <= 0 {
 				t.Fatal("valid Codex output item did not mark first useful content")
 			}
 		})
@@ -2070,6 +2077,57 @@ data: {"type":"response.output_text.delta","delta":"你"}`
 	}
 	if requestLog.FirstTokenDurationSec <= 0 {
 		t.Fatalf("expected FirstTokenDurationSec to be recorded")
+	}
+}
+
+func TestMarkFirstTokenFromReasoningSSEPayload(t *testing.T) {
+	tests := []struct {
+		name    string
+		payload string
+	}{
+		{
+			name:    "openai chat reasoning content",
+			payload: `data: {"choices":[{"delta":{"reasoning_content":"think"}}]}`,
+		},
+		{
+			name:    "anthropic thinking delta",
+			payload: `data: {"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"think"}}`,
+		},
+		{
+			name:    "openai responses reasoning delta",
+			payload: `data: {"type":"response.reasoning_summary_text.delta","delta":"think"}`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			requestLog := &ReqeustLog{startedAt: time.Now()}
+			markFirstTokenFromSSEPayload(test.payload, requestLog)
+
+			if requestLog.FirstTokenDurationSec <= 0 {
+				t.Fatalf("expected FirstTokenDurationSec to be recorded")
+			}
+			if requestLog.FirstTextSec != 0 {
+				t.Fatalf("FirstTextSec = %f, want 0 for reasoning-only output", requestLog.FirstTextSec)
+			}
+		})
+	}
+}
+
+func TestReasoningTokenPrecedesFirstText(t *testing.T) {
+	requestLog := &ReqeustLog{startedAt: time.Now()}
+	hook := ReqeustLogHook(nil, "openai-chat", requestLog)
+	hook([]byte(`data: {"choices":[{"delta":{"reasoning_content":"think"}}]}`))
+	firstTokenSec := requestLog.FirstTokenDurationSec
+	if firstTokenSec <= 0 {
+		t.Fatalf("expected FirstTokenDurationSec to be recorded")
+	}
+
+	time.Sleep(2 * time.Millisecond)
+	hook([]byte(`data: {"choices":[{"delta":{"content":"answer"}}]}`))
+
+	if requestLog.FirstTextSec <= firstTokenSec {
+		t.Fatalf("FirstTextSec = %f, want after FirstTokenDurationSec = %f", requestLog.FirstTextSec, firstTokenSec)
 	}
 }
 
