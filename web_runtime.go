@@ -81,7 +81,7 @@ func newAppRuntime() (*appRuntime, error) {
 	eventHub := services.NewEventHub()
 	notificationService := services.NewNotificationService(appSettings)
 	notificationService.SetEventEmitter(eventHub)
-	providerRelay := services.NewProviderRelayService(providerService, poolService, codexRelayKeys, notificationService, appSettings, defaultRelayAddr)
+	providerRelay := services.NewProviderRelayService(providerService, poolService, codexRelayKeys, notificationService, appSettings, getenvDefault("CODE_SWITCH_RELAY_ADDR", defaultRelayAddr))
 	poolAttemptLogs := services.NewPoolAttemptLogService()
 	providerRelay.SetPoolAttemptLogService(poolAttemptLogs)
 	providerRelay.SetProxyManager(proxyService.Manager())
