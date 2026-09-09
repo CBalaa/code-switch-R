@@ -85,7 +85,9 @@ type SpecialBlacklistRule struct {
 	// DurationType selects how the blacklist deadline is derived from the
 	// trigger moment. "" and "duration" keep the legacy fixed-length block;
 	// "until" blacklists until UntilTime on the day UntilDayOffset days from
-	// now, using the server's local clock. UntilDayOffset is a pointer so a
+	// now, using the Beijing clock (Asia/Shanghai) so a configured "00:00"
+	// means Beijing midnight regardless of the server's timezone.
+	// UntilDayOffset is a pointer so a
 	// legitimate 0 (= today) survives JSON round trips; nil means unset.
 	DurationType   string `json:"durationType,omitempty"`
 	UntilDayOffset *int   `json:"untilDayOffset,omitempty"`
@@ -155,7 +157,7 @@ const (
 	// empty.
 	SpecialBlacklistDurationTypeDuration = "duration"
 	// SpecialBlacklistDurationTypeUntil blacklists until a wall-clock time on
-	// a day offset from the trigger moment (server local time).
+	// a day offset from the trigger moment (Beijing time, UTC+8).
 	SpecialBlacklistDurationTypeUntil = "until"
 )
 

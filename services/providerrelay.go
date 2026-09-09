@@ -1152,11 +1152,14 @@ func (prs *ProviderRelayService) recordProviderSuccess(platform, poolID string, 
 
 // specialBlacklistDeadline derives the blacklist deadline for a triggered rule.
 // Fixed-duration rules block from now; "until" rules block until UntilTime on
-// the day UntilDayOffset days from now, on the server's local clock. The type
-// comparison is lenient (trimmed, case-insensitive) so stale hand-edited rules
-// still behave as configured. A target at or before the trigger moment still
-// blacklists briefly (one minute) so the trigger keeps taking effect instead
-// of silently no-oping; future targets are honored exactly.
+// the day UntilDayOffset days from now, on the Beijing clock (Asia/Shanghai).
+// The console, blacklist notifications, and traffic rollups all present time
+// in Beijing, so a configured "00:00" means Beijing midnight regardless of
+// the server's own timezone. The type comparison is lenient (trimmed,
+// case-insensitive) so stale hand-edited rules still behave as configured. A
+// target at or before the trigger moment still blacklists briefly (one
+// minute) so the trigger keeps taking effect instead of silently no-oping;
+// future targets are honored exactly.
 func specialBlacklistDeadline(now time.Time, rule *SpecialBlacklistRule, durationMinutes int) time.Time {
 	if rule == nil || !strings.EqualFold(strings.TrimSpace(rule.DurationType), SpecialBlacklistDurationTypeUntil) {
 		return now.Add(time.Duration(durationMinutes) * time.Minute)
@@ -1170,7 +1173,8 @@ func specialBlacklistDeadline(now time.Time, rule *SpecialBlacklistRule, duratio
 	if rule.UntilDayOffset != nil {
 		dayOffset = *rule.UntilDayOffset
 	}
-	target := time.Date(now.Year(), now.Month(), now.Day(), hour, minute, 0, 0, now.Location()).AddDate(0, 0, dayOffset)
+	beijingNow := now.In(beijingLocation)
+	target := time.Date(beijingNow.Year(), beijingNow.Month(), beijingNow.Day(), hour, minute, 0, 0, beijingLocation).AddDate(0, 0, dayOffset)
 	if !target.After(now) {
 		target = now.Add(time.Minute)
 	}

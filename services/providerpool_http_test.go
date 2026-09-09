@@ -1570,11 +1570,12 @@ func TestHTTPAccountPoolSpecialUntilRuleBlacklistsUntilTargetDay(t *testing.T) {
 	relay, router, relayKey, poolID := setupProviderPoolHTTPTest(t, "openai-responses", nil, pool)
 
 	// Capture the baseline before the request: the relay derives the deadline
-	// from its own clock, and if the trigger races across midnight the deadline
-	// lands on the following day, so accept either expected midnight. An
-	// already-expired deadline would additionally be pruned from the status
-	// listing below, so the candidate set must be complete.
-	baseline := time.Now()
+	// from its own clock on the Beijing calendar, and if the trigger races
+	// across Beijing midnight the deadline lands on the following day, so
+	// accept either expected midnight. An already-expired deadline would
+	// additionally be pruned from the status listing below, so the candidate
+	// set must be complete.
+	baseline := time.Now().In(beijingLocation)
 	req := httptest.NewRequest(http.MethodPost, "/responses", strings.NewReader(`{"model":"gpt-5","input":"hello","stream":true}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+relayKey)
@@ -1591,11 +1592,12 @@ func TestHTTPAccountPoolSpecialUntilRuleBlacklistsUntilTargetDay(t *testing.T) {
 	if len(statuses) != 1 || statuses[0].LastReason != rule.Name || statuses[0].RuleFailureCounts[rule.ID] != 1 {
 		t.Fatalf("until rule blacklist status = %+v", statuses)
 	}
-	// The full HTTP path must honor the until deadline: the next midnight (or
-	// the one after when the test races midnight), not a fixed duration.
+	// The full HTTP path must honor the until deadline: the next Beijing
+	// midnight (or the one after when the test races midnight), not a fixed
+	// duration and not the server clock's midnight.
 	midnights := []time.Time{
-		time.Date(baseline.Year(), baseline.Month(), baseline.Day(), 0, 0, 0, 0, time.Local).AddDate(0, 0, 1),
-		time.Date(baseline.Year(), baseline.Month(), baseline.Day(), 0, 0, 0, 0, time.Local).AddDate(0, 0, 2),
+		time.Date(baseline.Year(), baseline.Month(), baseline.Day(), 0, 0, 0, 0, beijingLocation).AddDate(0, 0, 1),
+		time.Date(baseline.Year(), baseline.Month(), baseline.Day(), 0, 0, 0, 0, beijingLocation).AddDate(0, 0, 2),
 	}
 	if !nearTime(statuses[0].BlacklistedUntil, midnights, 2*time.Second) {
 		t.Fatalf("until rule deadline = %v, want one of %v", statuses[0].BlacklistedUntil, midnights)

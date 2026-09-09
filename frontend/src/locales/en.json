@@ -598,7 +598,7 @@
         "clearAllBlacklistsConfirm": "Clear all blacklisted keys in this account pool?",
         "allBlacklistsCleared": "All blacklists cleared",
         "specialBlacklistRules": "Advanced Rules",
-        "specialBlacklistRulesHint": "Rules are matched in order. JSON paths use dot notation and values must be valid JSON. 'Until date & time' uses the server's local clock (day 0 = today).",
+        "specialBlacklistRulesHint": "Rules are matched in order. JSON paths use dot notation and values must be valid JSON. 'Until date & time' uses Beijing time (UTC+8; day 0 = today).",
         "addSpecialBlacklistRule": "Add rule",
         "deleteSpecialBlacklistRule": "Delete rule",
         "moveRuleUp": "Move up",

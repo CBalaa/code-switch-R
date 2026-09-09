@@ -223,7 +223,10 @@ func TestSpecialBlacklistUntilDayOffsetZeroRoundTrip(t *testing.T) {
 }
 
 func TestSpecialBlacklistDeadline(t *testing.T) {
-	now := time.Date(2026, 8, 31, 10, 30, 15, 0, time.Local)
+	// Production servers may run far from Beijing (the ld host uses
+	// US/Eastern); "until" targets must still resolve on the Beijing clock.
+	newYork := time.FixedZone("EDT", -4*60*60)
+	now := time.Date(2026, 8, 31, 10, 30, 15, 0, newYork) // 22:30 Beijing
 
 	if got := specialBlacklistDeadline(now, nil, 5); !got.Equal(now.Add(5 * time.Minute)) {
 		t.Fatalf("nil rule deadline = %v, want %v", got, now.Add(5*time.Minute))
@@ -235,20 +238,38 @@ func TestSpecialBlacklistDeadline(t *testing.T) {
 
 	untilRule := &SpecialBlacklistRule{Name: "until", Threshold: 1, DurationType: SpecialBlacklistDurationTypeUntil}
 	untilRule.UntilDayOffset, untilRule.UntilTime = intPtr(0), "23:59"
-	want := time.Date(2026, 8, 31, 23, 59, 0, 0, time.Local)
+	want := time.Date(2026, 8, 31, 23, 59, 0, 0, beijingLocation)
 	if got := specialBlacklistDeadline(now, untilRule, 7); !got.Equal(want) {
 		t.Fatalf("same-day until deadline = %v, want %v", got, want)
 	}
 
 	untilRule.UntilDayOffset, untilRule.UntilTime = intPtr(1), "00:00"
-	want = time.Date(2026, 9, 1, 0, 0, 0, 0, time.Local)
+	want = time.Date(2026, 9, 1, 0, 0, 0, 0, beijingLocation)
 	if got := specialBlacklistDeadline(now, untilRule, 7); !got.Equal(want) {
 		t.Fatalf("next-day until deadline = %v, want %v", got, want)
 	}
 
+	// Regression for the ld deployment: a 23:10 Beijing trigger with a
+	// "next day 00:00" rule must block until Beijing midnight (~50 minutes),
+	// not until the US East Coast midnight (Beijing noon, ~770 minutes).
+	// The trigger instant must land on the same deadline whichever clock it
+	// is expressed in.
+	trigger := time.Date(2026, 9, 8, 23, 10, 0, 0, beijingLocation)
+	want = time.Date(2026, 9, 9, 0, 0, 0, 0, beijingLocation)
+	if got := specialBlacklistDeadline(trigger, untilRule, 7); !got.Equal(want) {
+		t.Fatalf("beijing-clock deadline = %v, want %v", got, want)
+	}
+	if got := specialBlacklistDeadline(trigger.In(newYork), untilRule, 7); !got.Equal(want) {
+		t.Fatalf("server-clock deadline = %v, want %v", got, want)
+	}
+	if remaining := want.Sub(trigger); remaining < 49*time.Minute || remaining > 51*time.Minute {
+		t.Fatalf("regression deadline drift = %v, want ~50 minutes", remaining)
+	}
+
 	// A future target inside the next minute is still honored exactly; only
 	// targets at or before the trigger moment fall back to one minute.
-	lateTrigger := time.Date(2026, 8, 31, 23, 59, 30, 0, time.Local)
+	lateTrigger := time.Date(2026, 8, 31, 23, 59, 30, 0, beijingLocation)
+	want = time.Date(2026, 9, 1, 0, 0, 0, 0, beijingLocation)
 	if got := specialBlacklistDeadline(lateTrigger, untilRule, 7); !got.Equal(want) {
 		t.Fatalf("near-future until deadline = %v, want %v", got, want)
 	}
@@ -269,7 +290,7 @@ func TestSpecialBlacklistDeadline(t *testing.T) {
 	// hand-edited " UNTIL " type still computes an until deadline (now+7m would
 	// mean it fell back to the duration branch).
 	staleType := &SpecialBlacklistRule{Name: "stale-type", Threshold: 1, DurationType: " UNTIL ", UntilTime: "23:59"}
-	want = time.Date(2026, 8, 31, 23, 59, 0, 0, time.Local)
+	want = time.Date(2026, 8, 31, 23, 59, 0, 0, beijingLocation)
 	if got := specialBlacklistDeadline(now, staleType, 7); !got.Equal(want) {
 		t.Fatalf("stale-type until deadline = %v, want %v", got, want)
 	}
@@ -291,9 +312,10 @@ func TestSpecialBlacklistUntilRuleRecordsTargetDeadline(t *testing.T) {
 	provider := Provider{ID: 4, Name: "provider-until"}
 
 	// Capture the baseline before triggering: the relay derives the deadline
-	// from its own clock, and if the trigger races across midnight the deadline
-	// lands on the following day, so accept either expected midnight.
-	baseline := time.Now()
+	// from its own clock on the Beijing calendar, and if the trigger races
+	// across Beijing midnight the deadline lands on the following day, so
+	// accept either expected midnight.
+	baseline := time.Now().In(beijingLocation)
 	nextMidnight := &SpecialBlacklistRule{ID: "daily-quota", Name: "Daily quota", HTTPStatus: 429, Threshold: 1, DurationType: SpecialBlacklistDurationTypeUntil, UntilDayOffset: intPtr(1), UntilTime: "00:00"}
 	if !relay.recordProviderFailureWithRuleForUser("user-a", pool.Platform, pool.ID, pool, provider, "HTTP 429", nextMidnight) {
 		t.Fatal("until-mode rule did not blacklist provider")
@@ -303,8 +325,8 @@ func TestSpecialBlacklistUntilRuleRecordsTargetDeadline(t *testing.T) {
 		t.Fatalf("unexpected until-mode penalty: %#v", penalty)
 	}
 	midnights := []time.Time{
-		time.Date(baseline.Year(), baseline.Month(), baseline.Day(), 0, 0, 0, 0, time.Local).AddDate(0, 0, 1),
-		time.Date(baseline.Year(), baseline.Month(), baseline.Day(), 0, 0, 0, 0, time.Local).AddDate(0, 0, 2),
+		time.Date(baseline.Year(), baseline.Month(), baseline.Day(), 0, 0, 0, 0, beijingLocation).AddDate(0, 0, 1),
+		time.Date(baseline.Year(), baseline.Month(), baseline.Day(), 0, 0, 0, 0, beijingLocation).AddDate(0, 0, 2),
 	}
 	if !nearTime(penalty.BlacklistedUntil, midnights, 2*time.Second) {
 		t.Fatalf("until-mode deadline = %v, want one of %v", penalty.BlacklistedUntil, midnights)
