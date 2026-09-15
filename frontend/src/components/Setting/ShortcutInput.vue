@@ -143,6 +143,12 @@ const placeholderText = computed(() => t('components.shortcut.placeholder'))
   <div
     class="mac-shortcut-input"
     tabindex="0"
+    role="textbox"
+    aria-readonly="true"
+    :aria-label="t('components.shortcut.title')"
+    data-testid="shortcut-input"
+    @keydown.enter.prevent="startRecording"
+    @keydown.space.prevent="startRecording"
     @focus="startRecording"
     @click="startRecording"
     @blur="stopRecording"
@@ -163,7 +169,8 @@ const placeholderText = computed(() => t('components.shortcut.placeholder'))
       type="button"
       class="mac-shortcut-clear"
       @click.stop="clearAll"
-      aria-label="Clear shortcut"
+      :aria-label="t('components.shortcut.clear')"
+      data-testid="shortcut-clear"
     >
       ✕
     </button>

@@ -47,6 +47,7 @@ type appRuntime struct {
 	speedTestService   *services.SpeedTestService
 	connectivityTest   *services.ConnectivityTestService
 	healthCheckService *services.HealthCheckService
+	modelTraceService  *services.ModelTraceService
 	modelMonitor       *services.ModelMonitorService
 	versionService     *VersionService
 	consoleService     *services.ConsoleService
@@ -99,6 +100,8 @@ func newAppRuntime() (*appRuntime, error) {
 	speedTestService := services.NewSpeedTestService()
 	connectivityTestService := services.NewConnectivityTestService(providerService, settingsService)
 	healthCheckService := services.NewHealthCheckService(providerService, settingsService)
+	modelTraceService := services.NewModelTraceService(providerService)
+	modelTraceService.SetEventEmitter(eventHub)
 	if err := healthCheckService.Start(); err != nil {
 		return nil, fmt.Errorf("初始化健康检查服务失败: %w", err)
 	}
@@ -171,6 +174,7 @@ func newAppRuntime() (*appRuntime, error) {
 		speedTestService:   speedTestService,
 		connectivityTest:   connectivityTestService,
 		healthCheckService: healthCheckService,
+		modelTraceService:  modelTraceService,
 		modelMonitor:       modelMonitor,
 		versionService:     versionService,
 		consoleService:     consoleService,
@@ -224,9 +228,10 @@ func (rt *appRuntime) registerServices(registry *rpcRegistry) {
 	registry.Register("codeswitch/services.EnvCheckService", rt.envCheckService)
 	registry.Register("codeswitch/services.DeepLinkService", rt.deeplinkService)
 	registry.Register("codeswitch/services.SpeedTestService", rt.speedTestService)
-	registry.Register("codeswitch/services.ConnectivityTestService", rt.connectivityTest)
+	registry.Register("codeswitch/services.ConnectivityTestService", &userScopedConnectivityTestService{base: rt.connectivityTest})
 	registry.Register("codeswitch/services.HealthCheckService", &userScopedHealthCheckService{base: rt.healthCheckService})
 	registry.Register("codeswitch/services.ModelMonitorService", &userScopedModelMonitorService{base: rt.modelMonitor})
+	registry.Register("codeswitch/services.ModelTraceService", &userScopedModelTraceService{base: rt.modelTraceService})
 	registry.Register("codeswitch/services.ConsoleService", &userScopedConsoleService{logService: rt.logService, poolAttemptLogs: rt.poolAttemptLogs})
 	registry.Register("codeswitch/services.ProviderRelayService", &userScopedProviderRelayService{base: rt.providerRelay, poolService: rt.poolService})
 	registry.Register("codeswitch/services.ProviderPoolService", &userScopedProviderPoolService{base: rt.poolService, proxyService: rt.proxyService})

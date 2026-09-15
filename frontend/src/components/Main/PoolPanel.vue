@@ -2,28 +2,42 @@
   <div class="pool-panel">
     <!-- 子标签页切换 -->
     <div class="pool-sub-tabs">
-      <button
-        class="sub-tab-pill"
-        :class="{ active: subTab === 'providers' }"
-        @click="subTab = 'providers'"
-      >
-        {{ t('components.main.pool.subTabs.providers') }}
-      </button>
-      <button
-        class="sub-tab-pill"
-        :class="{ active: subTab === 'pools' }"
-        @click="subTab = 'pools'"
-      >
-        {{ t('components.main.pool.subTabs.pools') }}
-      </button>
+      <div class="pool-sub-tablist" role="tablist" :aria-label="t('components.main.pool.subTabs.providers') + ' / ' + t('components.main.pool.subTabs.pools')">
+        <button
+          id="pool-subtab-providers"
+          class="sub-tab-pill"
+          type="button"
+          role="tab"
+          :aria-selected="subTab === 'providers'"
+          aria-controls="pool-subtab-panel-providers"
+          :class="{ active: subTab === 'providers' }"
+          data-testid="subtab-providers"
+          @click="subTab = 'providers'"
+        >
+          {{ t('components.main.pool.subTabs.providers') }}
+        </button>
+        <button
+          id="pool-subtab-pools"
+          class="sub-tab-pill"
+          type="button"
+          role="tab"
+          :aria-selected="subTab === 'pools'"
+          aria-controls="pool-subtab-panel-pools"
+          :class="{ active: subTab === 'pools' }"
+          data-testid="subtab-pools"
+          @click="subTab = 'pools'"
+        >
+          {{ t('components.main.pool.subTabs.pools') }}
+        </button>
+      </div>
       <div class="sub-tab-actions">
-        <button v-if="subTab === 'providers'" class="sub-tab-action-btn" @click="$emit('addProvider')">
+        <button v-if="subTab === 'providers'" class="sub-tab-action-btn" type="button" data-testid="add-provider" @click="$emit('addProvider')">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" />
           </svg>
           {{ t('components.main.pool.addProvider') }}
         </button>
-        <button v-if="subTab === 'pools'" class="sub-tab-action-btn" @click="openCreatePool">
+        <button v-if="subTab === 'pools'" class="sub-tab-action-btn" type="button" data-testid="pool-create-open" @click="openCreatePool">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" />
           </svg>
@@ -33,7 +47,13 @@
     </div>
 
     <!-- 供应商子标签页：原样展示供应商卡片，去掉直接应用/开关 -->
-    <div v-if="subTab === 'providers'" class="provider-sub-tab">
+    <div
+      v-if="subTab === 'providers'"
+      id="pool-subtab-panel-providers"
+      class="provider-sub-tab"
+      role="tabpanel"
+      aria-labelledby="pool-subtab-providers"
+    >
       <div class="provider-list">
         <article
           v-for="card in providers"
@@ -42,6 +62,8 @@
           :class="{
             'is-highlighted': highlightedProvider === card.name,
           }"
+          :data-provider-id="card.id"
+          :data-provider-name="card.name"
         >
           <div class="card-leading">
             <div
@@ -95,19 +117,54 @@
             </div>
           </div>
           <div class="card-actions">
+            <!-- 模型真伪检测：走数字分布指纹归因，判断渠道是否偷换了模型 -->
+            <button
+              class="ghost-icon"
+              type="button"
+              :data-tooltip="t('components.main.modelTrace.tooltip')"
+              :aria-label="t('components.main.modelTrace.tooltip')"
+              data-testid="provider-modeltrace"
+              @click.stop="$emit('modelTrace', card)"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 3l7 3v5c0 4.6-3 8.4-7 9.5C8 19.4 5 15.6 5 11V6l7-3z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="M9 11.5l2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </button>
             <!-- 只有编辑和删除按钮，没有开关和直接应用 -->
-            <button class="ghost-icon" :data-tooltip="t('components.main.form.editTitle')" @click.stop="$emit('edit', card)">
+            <button
+              class="ghost-icon"
+              type="button"
+              :data-tooltip="t('components.main.form.editTitle')"
+              :aria-label="t('components.main.form.editTitle')"
+              data-testid="provider-edit"
+              @click.stop="$emit('edit', card)"
+            >
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M11.983 2.25a1.125 1.125 0 011.077.81l.563 2.101a7.482 7.482 0 012.326 1.343l2.08-.621a1.125 1.125 0 011.356.651l1.313 3.207a1.125 1.125 0 01-.442 1.339l-1.86 1.205a7.418 7.418 0 010 2.686l1.86 1.205a1.125 1.125 0 01.442 1.339l-1.313 3.207a1.125 1.125 0 01-1.356.651l-2.08-.621a7.482 7.482 0 01-2.326 1.343l-.563 2.101a1.125 1.125 0 01-1.077.81h-2.634a1.125 1.125 0 01-1.077-.81l-.563-2.101a7.482 7.482 0 01-2.326-1.343l-2.08.621a1.125 1.125 0 01-1.356-.651l-1.313-3.207a1.125 1.125 0 01.442-1.339l1.86-1.205a7.418 7.418 0 010-2.686l-1.86-1.205a1.125 1.125 0 01-.442-1.339l1.313-3.207a1.125 1.125 0 011.356-.651l2.08.621a7.482 7.482 0 012.326-1.343l.563-2.101a1.125 1.125 0 011.077-.81h2.634z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
                 <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
             </button>
-            <button class="ghost-icon" :data-tooltip="t('components.main.controls.duplicate')" @click.stop="$emit('duplicate', card)">
+            <button
+              class="ghost-icon"
+              type="button"
+              :data-tooltip="t('components.main.controls.duplicate')"
+              :aria-label="t('components.main.controls.duplicate')"
+              data-testid="provider-duplicate"
+              @click.stop="$emit('duplicate', card)"
+            >
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
             </button>
-            <button class="ghost-icon" :data-tooltip="t('components.main.form.actions.delete')" @click.stop="$emit('remove', card)">
+            <button
+              class="ghost-icon"
+              type="button"
+              :data-tooltip="t('components.main.form.actions.delete')"
+              :aria-label="t('components.main.form.actions.delete')"
+              data-testid="provider-remove"
+              @click.stop="$emit('remove', card)"
+            >
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M9 3h6m-7 4h8m-6 0v11m4-11v11M5 7h14l-.867 12.138A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.862L5 7z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
@@ -118,18 +175,29 @@
     </div>
 
     <!-- 池子子标签页 -->
-    <div v-if="subTab === 'pools'" class="pool-sub-tab">
+    <div
+      v-if="subTab === 'pools'"
+      id="pool-subtab-panel-pools"
+      class="pool-sub-tab"
+      role="tabpanel"
+      aria-labelledby="pool-subtab-pools"
+    >
 
-      <div class="pool-list">
+      <div
+        class="pool-list"
+        :role="pools.length > 0 ? 'list' : undefined"
+        :aria-label="pools.length > 0 ? t('components.main.pool.subTabs.pools') : undefined"
+      >
         <div
           v-for="pool in pools"
           :key="pool.id"
           class="pool-container"
-
+          role="listitem"
+          :data-pool-id="pool.id"
         >
           <div class="pool-header">
             <div class="pool-header-left">
-              <span class="pool-name">{{ pool.name }}</span>
+              <h2 class="pool-name">{{ pool.name }}</h2>
             </div>
             <div class="pool-header-right">
               <!-- 普通池模式开关：左=手动(黄色)，右=托管(绿色) -->
@@ -138,17 +206,30 @@
                 <label class="mode-switch">
                   <input
                     type="checkbox"
+                    role="switch"
                     :checked="pool.mode === 'managed'"
+                    :aria-checked="pool.mode === 'managed'"
+                    :aria-label="t('components.main.pool.poolMode') + ' ' + pool.name"
+                    :data-pool-id="pool.id"
+                    data-testid="pool-mode-switch"
                     @change="togglePoolMode(pool.id, ($event.target as HTMLInputElement).checked ? 'managed' : 'manual')"
                   />
-                  <span class="mode-track"></span>
+                  <span class="mode-track" aria-hidden="true"></span>
                 </label>
                 <span class="mode-label managed-label" :class="{ active: pool.mode === 'managed' }">{{ t('components.main.pool.modeManaged') }}</span>
               </div>
               <span v-else class="account-managed-badge">
                 {{ t('components.main.pool.accountManagedOnly') }}
               </span>
-              <button class="ghost-icon" :data-tooltip="t('components.main.pool.editPool')" @click="openEditPool(pool)">
+              <button
+                class="ghost-icon"
+                type="button"
+                :data-tooltip="t('components.main.pool.editPool')"
+                :aria-label="t('components.main.pool.editPool') + ': ' + pool.name"
+                :data-pool-id="pool.id"
+                data-testid="pool-edit"
+                @click="openEditPool(pool)"
+              >
                 <svg viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M11.983 2.25a1.125 1.125 0 011.077.81l.563 2.101a7.482 7.482 0 012.326 1.343l2.08-.621a1.125 1.125 0 011.356.651l1.313 3.207a1.125 1.125 0 01-.442 1.339l-1.86 1.205a7.418 7.418 0 010 2.686l1.86 1.205a1.125 1.125 0 01.442 1.339l-1.313 3.207a1.125 1.125 0 01-1.356.651l-2.08-.621a7.482 7.482 0 01-2.326 1.343l-.563 2.101a1.125 1.125 0 01-1.077.81h-2.634a1.125 1.125 0 01-1.077-.81l-.563-2.101a7.482 7.482 0 01-2.326-1.343l-2.08.621a1.125 1.125 0 01-1.356-.651l-1.313-3.207a1.125 1.125 0 01.442-1.339l1.86-1.205a7.418 7.418 0 010-2.686l-1.86-1.205a1.125 1.125 0 01-.442-1.339l1.313-3.207a1.125 1.125 0 011.356-.651l2.08.621a7.482 7.482 0 012.326-1.343l.563-2.101a1.125 1.125 0 011.077-.81h2.634z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
                   <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -156,7 +237,11 @@
               </button>
               <button
                 class="ghost-icon"
+                type="button"
                 :data-tooltip="t('components.main.pool.deletePool')"
+                :aria-label="t('components.main.pool.deletePool') + ': ' + pool.name"
+                :data-pool-id="pool.id"
+                data-testid="pool-delete-open"
                 @click="requestDeletePool(pool)"
               >
                 <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -197,6 +282,9 @@
                   v-if="pool.mode === 'managed'"
                   class="level-select-inline member-level-select"
                   :value="member.memberLevel"
+                  :aria-label="t('components.main.pool.memberLevel') + ': ' + member.name"
+                  :data-provider-id="member.providerId"
+                  data-testid="member-level"
                   @change="updateMemberLevel(pool.id, member.providerId, Number(($event.target as HTMLSelectElement).value))"
                 >
                   <option v-for="lvl in 10" :key="lvl" :value="lvl">L{{ lvl }}</option>
@@ -204,20 +292,31 @@
               </div>
               <div class="pool-member-actions">
                 <!-- 托管模式开关 -->
-                <label v-if="pool.mode === 'managed'" class="mac-switch sm" :title="t('components.main.pool.memberEnabledHint')">
+                <label v-if="pool.mode === 'managed'" class="mac-switch sm">
                   <input
                     type="checkbox"
+                    role="switch"
                     :checked="member.memberEnabled"
+                    :aria-checked="member.memberEnabled"
+                    :aria-label="t('components.main.pool.memberEnabledHint') + ': ' + member.name"
+                    :title="t('components.main.pool.memberEnabledHint')"
+                    :data-provider-id="member.providerId"
+                    data-testid="member-enabled"
                     @change="toggleMemberEnabled(pool.id, member.providerId, ($event.target as HTMLInputElement).checked)"
                   />
-                  <span></span>
+                  <span aria-hidden="true"></span>
                 </label>
                 <!-- 手动模式直接应用按钮 -->
                 <button
                   v-if="pool.mode === 'manual'"
                   class="ghost-icon manual-apply-btn"
+                  type="button"
                   :class="{ 'is-active': isManualApplied(pool, member.providerId) }"
                   :data-tooltip="isManualApplied(pool, member.providerId) ? t('components.main.pool.manualApplied') : t('components.main.pool.manualApply')"
+                  :aria-label="(isManualApplied(pool, member.providerId) ? t('components.main.pool.manualApplied') : t('components.main.pool.manualApply')) + ': ' + member.name"
+                  :aria-pressed="isManualApplied(pool, member.providerId)"
+                  :data-provider-id="member.providerId"
+                  data-testid="member-manual-apply"
                   @click.stop="setManualProvider(pool.id, member.providerId)"
                 >
                   <svg viewBox="0 0 24 24" aria-hidden="true" class="lightning-icon">
@@ -238,8 +337,8 @@
               <span class="account-summary-value">{{ pool.accountPoolConfig?.apiUrl || '-' }}</span>
             </div>
             <div class="account-pool-endpoint">
-              <span class="account-summary-label">{{ t('components.main.pool.responsesEndpoint') }}</span>
-              <span class="account-summary-value">{{ pool.accountPoolConfig?.responsesEndpoint || '/responses' }}</span>
+              <span class="account-summary-label">{{ accountPoolEndpointLabel(pool.platform) }}</span>
+              <span class="account-summary-value">{{ readAccountPoolEndpoint(pool) }}</span>
             </div>
             <div class="account-pool-keys">
               <div class="account-keys-heading">
@@ -261,6 +360,8 @@
                     type="button"
                     class="account-key-clear-blacklists-button"
                     :disabled="isClearingAllBlacklists(pool.id)"
+                    :data-pool-id="pool.id"
+                    data-testid="pool-clear-blacklists"
                     @click="clearAllAccountPoolBlacklists(pool)"
                   >
                     {{ t('components.main.pool.clearAllBlacklists') }}
@@ -269,8 +370,11 @@
                     type="button"
                     class="account-key-collapse-button"
                     :aria-expanded="!isAccountKeysCollapsed(pool.id)"
+                    :aria-controls="'account-keys-' + pool.id"
                     :aria-label="isAccountKeysCollapsed(pool.id) ? t('components.main.pool.expandAccountKeys') : t('components.main.pool.collapseAccountKeys')"
                     :data-tooltip="isAccountKeysCollapsed(pool.id) ? t('components.main.pool.expandAccountKeys') : t('components.main.pool.collapseAccountKeys')"
+                    :data-pool-id="pool.id"
+                    data-testid="pool-account-keys-toggle"
                     @click="toggleAccountKeysCollapsed(pool.id)"
                   >
                     <svg :class="{ expanded: !isAccountKeysCollapsed(pool.id) }" viewBox="0 0 20 20" aria-hidden="true">
@@ -279,11 +383,13 @@
                   </button>
                 </div>
               </div>
-              <div v-if="!isAccountKeysCollapsed(pool.id)" class="account-key-list">
+              <div v-if="!isAccountKeysCollapsed(pool.id)" :id="'account-keys-' + pool.id" class="account-key-list" role="list">
                 <div
                   v-for="key in getAvailableAccountKeys(pool)"
                   :key="key.id"
                   class="account-key-row"
+                  role="listitem"
+                  :data-key-id="key.id"
                 >
                   <span class="account-key-chip">{{ maskAccountKey(key.apiKey) }}</span>
                 </div>
@@ -291,6 +397,8 @@
                   v-for="key in getBlacklistedAccountKeys(pool)"
                   :key="key.id"
                   class="account-key-row account-key-row-blacklisted"
+                  role="listitem"
+                  :data-key-id="key.id"
                   :title="getBlacklistPenalty(pool, key.id)?.lastReason || ''"
                 >
                   <svg viewBox="0 0 24 24" class="blacklist-key-icon" aria-hidden="true">
@@ -302,7 +410,15 @@
                   <span class="blacklist-reason">{{ getBlacklistReason(pool, key.id) }}</span>
                   <span class="blacklist-reason-suffix">{{ t('components.main.pool.blacklistReasonSuffix') }}</span>
                   <span class="blacklist-time"><span class="blacklist-minutes">{{ getBlacklistRemainingMinutes(getBlacklistPenalty(pool, key.id)!) }}</span> {{ t('components.main.pool.blacklistMinutes') }}</span>
-                  <button class="ghost-icon key-unbind-btn" :data-tooltip="t('components.main.pool.unblacklist')" @click.stop="unblacklistProvider(pool.id, key.id)">
+                  <button
+                    class="ghost-icon key-unbind-btn"
+                    type="button"
+                    :data-tooltip="t('components.main.pool.unblacklist')"
+                    :aria-label="t('components.main.pool.unblacklist') + ': ' + maskAccountKey(key.apiKey)"
+                    :data-key-id="key.id"
+                    data-testid="blacklist-clear-key"
+                    @click.stop="unblacklistProvider(pool.id, key.id)"
+                  >
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 18 18 6M6 6l12 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" /></svg>
                   </button>
                 </div>
@@ -334,7 +450,15 @@
                   <span class="blacklist-reason">{{ getPenaltyReason(pool, penalty) }}</span>
                   <span class="blacklist-reason-suffix">{{ t('components.main.pool.blacklistReasonSuffix') }}</span>
                   <span class="blacklist-time"><span class="blacklist-minutes">{{ getBlacklistRemainingMinutes(penalty) }}</span> {{ t('components.main.pool.blacklistMinutes') }}</span>
-                  <button class="ghost-icon key-unbind-btn" :data-tooltip="t('components.main.pool.unblacklist')" @click.stop="unblacklistProvider(pool.id, penalty.providerID)">
+                  <button
+                    class="ghost-icon key-unbind-btn"
+                    type="button"
+                    :data-tooltip="t('components.main.pool.unblacklist')"
+                    :aria-label="t('components.main.pool.unblacklist') + ': ' + getBlacklistSubjectName(pool, penalty.providerID)"
+                    :data-provider-id="penalty.providerID"
+                    data-testid="blacklist-clear-provider"
+                    @click.stop="unblacklistProvider(pool.id, penalty.providerID)"
+                  >
                     <svg viewBox="0 0 24 24" aria-hidden="true">
                       <path d="M6 18L18 6M6 6l12 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" />
                     </svg>
@@ -358,7 +482,15 @@
                     <path d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                   </svg>
                   <span class="pool-key-name">{{ key.name }}</span>
-                  <button class="ghost-icon key-unbind-btn" :data-tooltip="t('components.main.pool.unbindKey')" @click.stop="unbindKey(key.id, pool.id)">
+                  <button
+                    class="ghost-icon key-unbind-btn"
+                    type="button"
+                    :data-tooltip="t('components.main.pool.unbindKey')"
+                    :aria-label="t('components.main.pool.unbindKey') + ': ' + key.name"
+                    :data-key-id="key.id"
+                    data-testid="key-unbind"
+                    @click.stop="unbindKey(key.id, pool.id)"
+                  >
                     <svg viewBox="0 0 24 24" aria-hidden="true">
                       <path d="M6 18L18 6M6 6l12 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none" />
                     </svg>
@@ -385,6 +517,7 @@
             v-for="key in unboundKeys"
             :key="key.id"
             class="unbound-key-card"
+            :data-key-id="key.id"
           >
             <div class="unbound-key-info">
               <svg viewBox="0 0 24 24" class="key-icon" aria-hidden="true">
@@ -393,7 +526,13 @@
               <span class="unbound-key-name">{{ key.name }}</span>
             </div>
             <div class="unbound-key-bind">
-              <select class="key-bind-select" @change="bindKeyToPool(key.id, ($event.target as HTMLSelectElement).value)">
+              <select
+                class="key-bind-select"
+                :aria-label="t('components.main.pool.unboundKeys') + ': ' + key.name"
+                :data-key-id="key.id"
+                data-testid="bind-key-select"
+                @change="bindKeyToPool(key.id, ($event.target as HTMLSelectElement).value)"
+              >
                 <option value="">{{ t('components.main.pool.selectPool') }}</option>
                 <option v-for="pool in pools" :key="pool.id" :value="pool.id">{{ pool.name }}</option>
               </select>
@@ -407,40 +546,52 @@
         :open="poolModalState.open"
         :title="poolModalState.editingId ? t('components.main.pool.editPoolTitle') : t('components.main.pool.createPoolTitle')"
         :size="poolModalState.form.poolType === 'account' ? 'wide' : 'default'"
+        test-id="pool-modal"
         @close="closePoolModal()"
       >
-        <form class="vendor-form pool-form" @submit.prevent="submitPoolModal()">
-          <label class="form-field">
-            <span>{{ t('components.main.pool.poolName') }}</span>
+        <form class="vendor-form pool-form" data-testid="pool-form" @submit.prevent="submitPoolModal()">
+          <div class="form-field">
+            <label for="pool-name">{{ t('components.main.pool.poolName') }}</label>
             <BaseInput
+              id="pool-name"
               v-model="poolModalState.form.name"
               type="text"
               :placeholder="t('components.main.pool.poolNamePlaceholder')"
+              data-testid="pool-name-input"
               required
             />
-          </label>
+          </div>
 
-          <div v-if="props.platform === 'openai-responses'" class="form-field">
-            <span>{{ t('components.main.pool.poolType') }}</span>
-            <div class="pool-type-selector" :class="{ disabled: !!poolModalState.editingId }">
-              <label class="pool-type-option" :class="{ selected: poolModalState.form.poolType === 'normal' }">
+          <div v-if="supportsAccountPool(props.platform)" class="form-field">
+            <span id="pool-type-group-label">{{ t('components.main.pool.poolType') }}</span>
+            <div
+              class="pool-type-selector"
+              :class="{ disabled: !!poolModalState.editingId }"
+              role="radiogroup"
+              aria-labelledby="pool-type-group-label"
+            >
+              <div class="pool-type-option" :class="{ selected: poolModalState.form.poolType === 'normal' }">
                 <input
+                  id="pool-type-normal"
                   v-model="poolModalState.form.poolType"
                   type="radio"
                   value="normal"
                   :disabled="!!poolModalState.editingId"
+                  data-testid="pool-type-normal"
                 />
-                <span>{{ t('components.main.pool.poolTypeNormal') }}</span>
-              </label>
-              <label class="pool-type-option" :class="{ selected: poolModalState.form.poolType === 'account' }">
+                <label for="pool-type-normal">{{ t('components.main.pool.poolTypeNormal') }}</label>
+              </div>
+              <div class="pool-type-option" :class="{ selected: poolModalState.form.poolType === 'account' }">
                 <input
+                  id="pool-type-account"
                   v-model="poolModalState.form.poolType"
                   type="radio"
                   value="account"
                   :disabled="!!poolModalState.editingId"
+                  data-testid="pool-type-account"
                 />
-                <span>{{ t('components.main.pool.poolTypeAccount') }}</span>
-              </label>
+                <label for="pool-type-account">{{ t('components.main.pool.poolTypeAccount') }}</label>
+              </div>
             </div>
             <span v-if="poolModalState.editingId" class="form-field-hint">
               {{ t('components.main.pool.poolTypeImmutable') }}
@@ -448,22 +599,22 @@
           </div>
 
           <div v-if="poolModalState.form.poolType === 'normal'" class="form-field">
-            <span>{{ t('components.main.pool.poolMode') }}</span>
-            <div class="pool-mode-selector">
-              <label class="pool-mode-option" :class="{ selected: poolModalState.form.mode === 'managed' }">
-                <input type="radio" v-model="poolModalState.form.mode" value="managed" />
-                <div class="mode-card">
+            <span id="pool-mode-group-label">{{ t('components.main.pool.poolMode') }}</span>
+            <div class="pool-mode-selector" role="radiogroup" aria-labelledby="pool-mode-group-label">
+              <div class="pool-mode-option" :class="{ selected: poolModalState.form.mode === 'managed' }">
+                <input id="pool-mode-managed" type="radio" v-model="poolModalState.form.mode" value="managed" data-testid="pool-mode-managed" />
+                <label class="mode-card" for="pool-mode-managed">
                   <span class="mode-title">{{ t('components.main.pool.modeManaged') }}</span>
                   <span class="mode-desc">{{ t('components.main.pool.modeManagedDesc') }}</span>
-                </div>
-              </label>
-              <label class="pool-mode-option" :class="{ selected: poolModalState.form.mode === 'manual' }">
-                <input type="radio" v-model="poolModalState.form.mode" value="manual" />
-                <div class="mode-card">
+                </label>
+              </div>
+              <div class="pool-mode-option" :class="{ selected: poolModalState.form.mode === 'manual' }">
+                <input id="pool-mode-manual" type="radio" v-model="poolModalState.form.mode" value="manual" data-testid="pool-mode-manual" />
+                <label class="mode-card" for="pool-mode-manual">
                   <span class="mode-title">{{ t('components.main.pool.modeManual') }}</span>
                   <span class="mode-desc">{{ t('components.main.pool.modeManualDesc') }}</span>
-                </div>
-              </label>
+                </label>
+              </div>
             </div>
           </div>
 
@@ -474,87 +625,102 @@
 
           <!-- 普通池自动拉黑配置（仅 managed 模式） -->
           <div v-if="poolModalState.form.poolType === 'normal' && poolModalState.form.mode === 'managed'" class="form-field">
-            <span>{{ t('components.main.pool.autoBlacklist') }}</span>
+            <span id="auto-blacklist-label">{{ t('components.main.pool.autoBlacklist') }}</span>
             <div class="blacklist-config">
-              <label class="pool-member-checkbox">
+              <div class="pool-member-checkbox">
                 <input
+                  id="pool-auto-blacklist"
                   type="checkbox"
                   v-model="poolModalState.form.autoBlacklistEnabled"
+                  aria-labelledby="auto-blacklist-label"
+                  data-testid="pool-auto-blacklist"
                 />
-                <span class="member-checkbox-label">{{ t('components.main.pool.autoBlacklistEnable') }}</span>
-              </label>
+                <label class="member-checkbox-label" for="pool-auto-blacklist">{{ t('components.main.pool.autoBlacklistEnable') }}</label>
+              </div>
               <div v-if="poolModalState.form.autoBlacklistEnabled" class="blacklist-config-inputs">
-                <label class="form-field" style="margin-top: 8px;">
-                  <span>{{ t('components.main.pool.blacklistThreshold') }}</span>
+                <div class="form-field" style="margin-top: 8px;">
+                  <label for="pool-blacklist-threshold">{{ t('components.main.pool.blacklistThreshold') }}</label>
                   <input
+                    id="pool-blacklist-threshold"
                     type="number"
                     :min="1"
                     :max="100"
                     class="mac-input"
                     v-model.number="poolModalState.form.autoBlacklistThreshold"
+                    data-testid="pool-blacklist-threshold"
                   />
-                </label>
-                <label class="form-field" style="margin-top: 8px;">
-                  <span>{{ t('components.main.pool.blacklistDuration') }}</span>
+                </div>
+                <div class="form-field" style="margin-top: 8px;">
+                  <label for="pool-blacklist-duration">{{ t('components.main.pool.blacklistDuration') }}</label>
                   <input
+                    id="pool-blacklist-duration"
                     type="number"
                     :min="1"
                     :max="1440"
                     class="mac-input"
                     v-model.number="poolModalState.form.autoBlacklistDurationMinutes"
+                    data-testid="pool-blacklist-duration"
                   />
-                </label>
+                </div>
               </div>
             </div>
           </div>
 
           <!-- 号池上游与密钥配置 -->
           <template v-if="poolModalState.form.poolType === 'account'">
-            <label class="form-field">
-              <span>{{ t('components.main.pool.accountPoolBaseUrl') }}</span>
+            <div class="form-field">
+              <label for="pool-account-api-url">{{ t('components.main.pool.accountPoolBaseUrl') }}</label>
               <input
+                id="pool-account-api-url"
                 v-model="poolModalState.form.accountApiUrl"
                 class="mac-input"
                 type="url"
                 :placeholder="t('components.main.pool.accountPoolBaseUrlPlaceholder')"
+                data-testid="pool-account-api-url"
                 required
               />
-            </label>
+            </div>
 
-            <label class="form-field">
-              <span>{{ t('components.main.pool.responsesEndpoint') }}</span>
+            <div class="form-field">
+              <label for="pool-account-endpoint">{{ accountPoolEndpointLabel(props.platform) }}</label>
               <input
-                v-model="poolModalState.form.accountResponsesEndpoint"
+                id="pool-account-endpoint"
+                v-model="poolModalState.form.accountEndpoint"
                 class="mac-input"
                 type="text"
-                :placeholder="t('components.main.pool.responsesEndpointPlaceholder')"
+                :placeholder="accountPoolEndpointPlaceholder(props.platform)"
+                data-testid="pool-account-endpoint"
                 required
               />
-            </label>
+            </div>
 
-            <label class="form-field">
-              <span>{{ t('components.main.pool.accountPoolKeys') }}</span>
+            <div class="form-field">
+              <label for="pool-account-keys">{{ t('components.main.pool.accountPoolKeys') }}</label>
               <textarea
+                id="pool-account-keys"
                 v-model="poolModalState.form.accountKeysText"
                 class="mac-input account-keys-textarea"
                 :placeholder="t('components.main.pool.accountPoolKeysPlaceholder')"
                 autocomplete="off"
                 autocapitalize="off"
                 spellcheck="false"
+                data-testid="pool-account-keys-input"
                 required
               ></textarea>
               <span class="form-field-hint">{{ t('components.main.pool.accountPoolKeysHint') }}</span>
-            </label>
+            </div>
 
             <div class="form-field pool-proxy-section">
-              <label class="pool-member-checkbox">
+              <div class="pool-member-checkbox">
                 <input
+                  id="pool-proxy-enabled"
                   v-model="poolModalState.form.proxyEnabled"
                   type="checkbox"
+                  data-testid="pool-proxy-enabled"
                   @change="toggleProxyEnabled"
                 />
-                <span class="member-checkbox-label">{{ t('components.main.pool.useProxy') }}</span>
-              </label>
+                <label class="member-checkbox-label" for="pool-proxy-enabled">{{ t('components.main.pool.useProxy') }}</label>
+              </div>
               <span class="form-field-hint">{{ t('components.main.pool.proxySharedHint') }}</span>
 
               <div v-if="poolModalState.form.proxyEnabled" class="pool-proxy-config">
@@ -570,6 +736,7 @@
                       type="button"
                       class="sub-tab-action-btn proxy-bulk-test-button"
                       :disabled="proxyBulkTestLoading || proxyConfigsLoading || proxyUploadLoading || proxySubscriptionImportLoading || proxyConfigActionLoading !== null || !hasProxyNodes"
+                      data-testid="proxy-test-all"
                       @click="testAllProxyLatencies"
                     >
                       {{ proxyBulkTestLoading ? t('components.main.pool.proxyBulkTesting') : t('components.main.pool.testAllProxyLatencies') }}
@@ -582,21 +749,25 @@
                     :aria-label="t('components.main.pool.proxySelection')"
                     :aria-busy="proxyBulkTestLoading"
                   >
-                    <label
+                    <div
                       class="proxy-strategy-card proxy-auto-card"
                       :class="{ selected: poolModalState.form.proxySelection === 'auto', disabled: proxyConfigsLoading || !hasProxyNodes }"
                     >
                       <input
+                        id="proxy-strategy-auto"
                         class="proxy-strategy-radio"
                         type="radio"
                         name="pool-proxy-selection"
                         :checked="poolModalState.form.proxySelection === 'auto'"
                         :disabled="proxyConfigsLoading || !hasProxyNodes"
+                        :aria-label="t('components.main.pool.proxyAuto')"
+                        :aria-describedby="'proxy-auto-selection-detail'"
+                        data-testid="proxy-strategy-auto"
                         @change="selectAutoProxy"
                       />
-                      <span class="proxy-strategy-card-content">
+                      <label class="proxy-strategy-card-content" for="proxy-strategy-auto">
                         <span class="proxy-strategy-card-name">{{ t('components.main.pool.proxyAuto') }}</span>
-                        <span class="proxy-auto-selection">
+                        <span class="proxy-auto-selection" id="proxy-auto-selection-detail">
                           <span class="proxy-auto-selected-node" :title="proxyAutoSelectedNode?.name || ''">
                             {{ proxyAutoSelectedNode?.name || '-' }}
                           </span>
@@ -608,8 +779,8 @@
                             {{ proxyAutoLatencyLabel }}
                           </span>
                         </span>
-                      </span>
-                    </label>
+                      </label>
+                    </div>
 
                     <section
                       v-for="config in proxyConfigs"
@@ -641,24 +812,28 @@
                         :id="proxyConfigNodesRegionID(config.id)"
                         class="proxy-node-grid"
                       >
-                        <label
+                        <div
                           v-for="node in config.nodes"
                           :key="node.id"
                           class="proxy-strategy-card proxy-node-card"
                           :class="{ selected: isSelectedProxyNode(node.id), disabled: proxyConfigsLoading }"
-                          @click="selectProxyNodeIfAvailable(node.id)"
                         >
                           <input
+                            :id="'proxy-node-' + node.id"
                             class="proxy-strategy-radio"
                             type="radio"
                             name="pool-proxy-selection"
                             :checked="isSelectedProxyNode(node.id)"
                             :disabled="proxyConfigsLoading"
+                            :aria-label="node.originalName || node.name"
+                            :aria-describedby="'proxy-node-metrics-' + node.id"
+                            :data-node-id="node.id"
+                            data-testid="proxy-strategy-node"
                             @change="selectProxyNode(node.id)"
                           />
-                          <span class="proxy-strategy-card-content">
+                          <label class="proxy-strategy-card-content" :for="'proxy-node-' + node.id">
                             <span class="proxy-strategy-card-name">{{ node.originalName || node.name }}</span>
-                            <span class="proxy-node-metrics">
+                            <span class="proxy-node-metrics" :id="'proxy-node-metrics-' + node.id">
                               <span class="proxy-node-metric">
                                 <span class="proxy-node-metric-label">{{ t('components.main.pool.localProxyLatency') }}</span>
                                 <span class="proxy-strategy-latency" :class="proxyNodeLatencyClass(node.id)" :title="proxyNodeLatencyTooltip(node.id)">
@@ -672,8 +847,8 @@
                                 </span>
                               </span>
                             </span>
-                          </span>
-                        </label>
+                          </label>
+                        </div>
                       </div>
                     </section>
                   </div>
@@ -681,11 +856,16 @@
                   <span v-if="proxyNodeSelectionRequired" class="form-field-hint pool-proxy-error" role="alert">
                     {{ selectedProxyNodeHidden ? t('components.main.pool.proxyNodeHidden') : t('components.main.pool.proxyNodeRequired') }}
                   </span>
-                  <label v-if="poolModalState.form.proxySelection === 'auto'" class="pool-member-checkbox proxy-auto-disable-toggle">
-                    <input v-model="poolModalState.form.autoDisableProxyWhenNoAvailable" type="checkbox" />
-                    <span class="member-checkbox-label">{{ t('components.main.pool.autoDisableProxyWhenNoAvailable') }}</span>
+                  <div v-if="poolModalState.form.proxySelection === 'auto'" class="pool-member-checkbox proxy-auto-disable-toggle">
+                    <input
+                      id="pool-proxy-auto-disable"
+                      v-model="poolModalState.form.autoDisableProxyWhenNoAvailable"
+                      type="checkbox"
+                      data-testid="pool-proxy-auto-disable"
+                    />
+                    <label class="member-checkbox-label" for="pool-proxy-auto-disable">{{ t('components.main.pool.autoDisableProxyWhenNoAvailable') }}</label>
                     <span class="form-field-hint">{{ t('components.main.pool.autoDisableProxyWhenNoAvailableHint') }}</span>
-                  </label>
+                  </div>
                   <span class="sr-only" aria-live="polite">
                     {{ proxyBulkTestLoading ? t('components.main.pool.proxyBulkTesting') : '' }}
                   </span>
@@ -694,12 +874,31 @@
                 <div class="proxy-upload-row">
                   <label :class="['sub-tab-action-btn', 'proxy-upload-button', proxyUploadLoading || proxySubscriptionImportLoading || proxyBulkTestLoading ? 'disabled' : '']">
                     {{ proxyUploadLoading ? t('components.main.pool.proxyUploading') : t('components.main.pool.uploadProxyConfig') }}
-                    <input type="file" accept=".yaml,.yml" :disabled="proxyUploadLoading || proxySubscriptionImportLoading || proxyBulkTestLoading" @change="uploadProxyConfig" />
+                    <input
+                      type="file"
+                      accept=".yaml,.yml"
+                      :disabled="proxyUploadLoading || proxySubscriptionImportLoading || proxyBulkTestLoading"
+                      :aria-label="t('components.main.pool.uploadProxyConfig')"
+                      data-testid="proxy-config-upload"
+                      @change="uploadProxyConfig"
+                    />
                   </label>
-                  <button type="button" class="sub-tab-action-btn" :disabled="proxyUploadLoading || proxySubscriptionImportLoading || proxyBulkTestLoading || proxyConfigActionLoading !== null" @click="importProxySubscription">
+                  <button
+                    type="button"
+                    class="sub-tab-action-btn"
+                    :disabled="proxyUploadLoading || proxySubscriptionImportLoading || proxyBulkTestLoading || proxyConfigActionLoading !== null"
+                    data-testid="proxy-subscription-import"
+                    @click="importProxySubscription"
+                  >
                     {{ proxySubscriptionImportLoading ? t('components.main.pool.proxySubscriptionImporting') : t('components.main.pool.importProxySubscription') }}
                   </button>
-                  <button type="button" class="sub-tab-action-btn" :disabled="proxyConfigsLoading || proxyUploadLoading || proxySubscriptionImportLoading || proxyBulkTestLoading || proxyConfigActionLoading !== null" @click="loadProxyConfigs">
+                  <button
+                    type="button"
+                    class="sub-tab-action-btn"
+                    :disabled="proxyConfigsLoading || proxyUploadLoading || proxySubscriptionImportLoading || proxyBulkTestLoading || proxyConfigActionLoading !== null"
+                    data-testid="proxy-config-refresh"
+                    @click="loadProxyConfigs"
+                  >
                     {{ proxyConfigsLoading ? t('components.main.pool.proxyRefreshing') : t('components.main.pool.refreshProxyConfigs') }}
                   </button>
                 </div>
@@ -776,30 +975,34 @@
             </div>
 
             <div class="form-field">
-              <span>{{ t('components.main.pool.autoBlacklist') }}</span>
+              <span id="account-blacklist-label">{{ t('components.main.pool.autoBlacklist') }}</span>
               <div class="blacklist-config-inputs account-blacklist-inputs">
-                <label class="form-field">
-                  <span>{{ t('components.main.pool.blacklistThreshold') }}</span>
+                <div class="form-field">
+                  <label for="pool-account-blacklist-threshold">{{ t('components.main.pool.blacklistThreshold') }}</label>
                   <input
+                    id="pool-account-blacklist-threshold"
                     v-model.number="poolModalState.form.autoBlacklistThreshold"
                     type="number"
                     :min="1"
                     :max="100"
                     class="mac-input"
+                    data-testid="pool-account-blacklist-threshold"
                     required
                   />
-                </label>
-                <label class="form-field">
-                  <span>{{ t('components.main.pool.blacklistDuration') }}</span>
+                </div>
+                <div class="form-field">
+                  <label for="pool-account-blacklist-duration">{{ t('components.main.pool.blacklistDuration') }}</label>
                   <input
+                    id="pool-account-blacklist-duration"
                     v-model.number="poolModalState.form.autoBlacklistDurationMinutes"
                     type="number"
                     :min="1"
                     :max="1440"
                     class="mac-input"
+                    data-testid="pool-account-blacklist-duration"
                     required
                   />
-                </label>
+                </div>
               </div>
             </div>
           </template>
@@ -809,21 +1012,49 @@
             class="form-field special-blacklist-rules"
           >
             <div class="special-rules-heading">
-              <span>{{ t('components.main.pool.specialBlacklistRules') }}</span>
-              <button class="ghost-icon" type="button" :data-tooltip="t('components.main.pool.addSpecialBlacklistRule')" @click="addSpecialBlacklistRule">
+              <span id="special-rules-label">{{ t('components.main.pool.specialBlacklistRules') }}</span>
+              <button
+                class="ghost-icon"
+                type="button"
+                :data-tooltip="t('components.main.pool.addSpecialBlacklistRule')"
+                :aria-label="t('components.main.pool.addSpecialBlacklistRule')"
+                data-testid="special-rule-add"
+                @click="addSpecialBlacklistRule"
+              >
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14m-7-7h14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
               </button>
             </div>
             <p class="form-field-hint">{{ t('components.main.pool.specialBlacklistRulesHint') }}</p>
-            <div v-for="(rule, index) in poolModalState.form.specialBlacklistRules" :key="rule.id || index" class="special-rule-row">
-              <label class="form-field"><span>{{ t('components.main.pool.specialRuleName') }}</span><input v-model="rule.name" class="mac-input" type="text" required /></label>
-              <label class="form-field"><span>{{ t('components.main.pool.specialRuleHttpStatus') }}</span><input v-model.number="rule.httpStatus" class="mac-input" type="number" min="100" max="599" required /></label>
-              <label class="form-field"><span>{{ t('components.main.pool.specialRuleJsonPath') }}</span><input v-model="rule.jsonPath" class="mac-input" type="text" placeholder="error.code" /></label>
-              <label class="form-field"><span>{{ t('components.main.pool.specialRuleJsonValue') }}</span><input v-model="rule.expectedJsonValue" class="mac-input" type="text" placeholder='"rate_limit"' /></label>
-              <label class="form-field"><span>{{ t('components.main.pool.blacklistThreshold') }}</span><input v-model.number="rule.threshold" class="mac-input" type="number" min="1" max="100" required /></label>
-              <label class="form-field">
-                <span>{{ t('components.main.pool.specialRuleDurationType') }}</span>
+            <div
+              v-for="(rule, index) in poolModalState.form.specialBlacklistRules"
+              :key="rule.id || index"
+              class="special-rule-row"
+              :data-rule-index="index"
+            >
+              <div class="form-field">
+                <label :for="'rule-' + index + '-name'">{{ t('components.main.pool.specialRuleName') }}</label>
+                <input :id="'rule-' + index + '-name'" v-model="rule.name" class="mac-input" type="text" :data-testid="'rule-' + index + '-name'" required />
+              </div>
+              <div class="form-field">
+                <label :for="'rule-' + index + '-status'">{{ t('components.main.pool.specialRuleHttpStatus') }}</label>
+                <input :id="'rule-' + index + '-status'" v-model.number="rule.httpStatus" class="mac-input" type="number" min="100" max="599" :data-testid="'rule-' + index + '-status'" required />
+              </div>
+              <div class="form-field">
+                <label :for="'rule-' + index + '-json-path'">{{ t('components.main.pool.specialRuleJsonPath') }}</label>
+                <input :id="'rule-' + index + '-json-path'" v-model="rule.jsonPath" class="mac-input" type="text" placeholder="error.code" />
+              </div>
+              <div class="form-field">
+                <label :for="'rule-' + index + '-json-value'">{{ t('components.main.pool.specialRuleJsonValue') }}</label>
+                <input :id="'rule-' + index + '-json-value'" v-model="rule.expectedJsonValue" class="mac-input" type="text" placeholder='"rate_limit"' />
+              </div>
+              <div class="form-field">
+                <label :for="'rule-' + index + '-threshold'">{{ t('components.main.pool.blacklistThreshold') }}</label>
+                <input :id="'rule-' + index + '-threshold'" v-model.number="rule.threshold" class="mac-input" type="number" min="1" max="100" required />
+              </div>
+              <div class="form-field">
+                <label :for="'rule-' + index + '-duration-type'">{{ t('components.main.pool.specialRuleDurationType') }}</label>
                 <select
+                  :id="'rule-' + index + '-duration-type'"
                   class="mac-select"
                   :value="rule.durationType"
                   @change="rule.durationType = (($event.target as HTMLSelectElement).value as SpecialBlacklistDurationType)"
@@ -831,76 +1062,106 @@
                   <option value="duration">{{ t('components.main.pool.specialRuleDurationMode') }}</option>
                   <option value="until">{{ t('components.main.pool.specialRuleUntilMode') }}</option>
                 </select>
-              </label>
-              <label v-if="rule.durationType !== 'until'" class="form-field"><span>{{ t('components.main.pool.blacklistDuration') }}</span><input v-model.number="rule.durationMinutes" class="mac-input" type="number" min="1" max="144000" required /></label>
+              </div>
+              <div v-if="rule.durationType !== 'until'" class="form-field">
+                <label :for="'rule-' + index + '-duration-minutes'">{{ t('components.main.pool.blacklistDuration') }}</label>
+                <input :id="'rule-' + index + '-duration-minutes'" v-model.number="rule.durationMinutes" class="mac-input" type="number" min="1" max="144000" required />
+              </div>
               <template v-else>
-                <label class="form-field"><span>{{ t('components.main.pool.specialRuleUntilDayOffset') }}</span><input v-model.number="rule.untilDayOffset" class="mac-input" type="number" min="0" max="99" required /></label>
-                <label class="form-field"><span>{{ t('components.main.pool.specialRuleUntilTime') }}</span><input v-model="rule.untilTime" class="mac-input" type="time" required /></label>
+                <div class="form-field">
+                  <label :for="'rule-' + index + '-day-offset'">{{ t('components.main.pool.specialRuleUntilDayOffset') }}</label>
+                  <input :id="'rule-' + index + '-day-offset'" v-model.number="rule.untilDayOffset" class="mac-input" type="number" min="0" max="99" required />
+                </div>
+                <div class="form-field">
+                  <label :for="'rule-' + index + '-until-time'">{{ t('components.main.pool.specialRuleUntilTime') }}</label>
+                  <input :id="'rule-' + index + '-until-time'" v-model="rule.untilTime" class="mac-input" type="time" required />
+                </div>
               </template>
               <div class="special-rule-actions">
-                <button class="ghost-icon" type="button" :disabled="index === 0" :data-tooltip="t('components.main.pool.moveRuleUp')" @click="moveSpecialBlacklistRule(index, -1)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 14 6-6 6 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg></button>
-                <button class="ghost-icon" type="button" :disabled="index === poolModalState.form.specialBlacklistRules.length - 1" :data-tooltip="t('components.main.pool.moveRuleDown')" @click="moveSpecialBlacklistRule(index, 1)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 10 6 6 6-6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg></button>
-                <button class="ghost-icon" type="button" :data-tooltip="t('components.main.pool.deleteSpecialBlacklistRule')" @click="removeSpecialBlacklistRule(index)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 18 18 6M6 6l12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg></button>
+                <button class="ghost-icon" type="button" :disabled="index === 0" :data-tooltip="t('components.main.pool.moveRuleUp')" :aria-label="t('components.main.pool.moveRuleUp')" :data-rule-index="index" data-testid="rule-move-up" @click="moveSpecialBlacklistRule(index, -1)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 14 6-6 6 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg></button>
+                <button class="ghost-icon" type="button" :disabled="index === poolModalState.form.specialBlacklistRules.length - 1" :data-tooltip="t('components.main.pool.moveRuleDown')" :aria-label="t('components.main.pool.moveRuleDown')" :data-rule-index="index" data-testid="rule-move-down" @click="moveSpecialBlacklistRule(index, 1)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 10 6 6 6-6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg></button>
+                <button class="ghost-icon" type="button" :data-tooltip="t('components.main.pool.deleteSpecialBlacklistRule')" :aria-label="t('components.main.pool.deleteSpecialBlacklistRule')" :data-rule-index="index" data-testid="rule-delete" @click="removeSpecialBlacklistRule(index)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 18 18 6M6 6l12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg></button>
               </div>
             </div>
           </div>
 
           <div class="form-field">
-            <span>{{ t('components.main.pool.firstTextRetry') }}</span>
+            <span id="first-text-retry-label">{{ t('components.main.pool.firstTextRetry') }}</span>
             <div class="blacklist-config">
-              <label class="pool-member-checkbox">
-                <input v-model="poolModalState.form.firstTextRetryEnabled" type="checkbox" />
-                <span class="member-checkbox-label">{{ t('components.main.pool.firstTextRetryEnable') }}</span>
-              </label>
+              <div class="pool-member-checkbox">
+                <input
+                  id="pool-first-text-retry"
+                  v-model="poolModalState.form.firstTextRetryEnabled"
+                  type="checkbox"
+                  aria-labelledby="first-text-retry-label"
+                  data-testid="pool-first-text-retry-enable"
+                />
+                <label class="member-checkbox-label" for="pool-first-text-retry">{{ t('components.main.pool.firstTextRetryEnable') }}</label>
+              </div>
               <div v-if="poolModalState.form.firstTextRetryEnabled" class="blacklist-config-inputs">
-                <label class="form-field" style="margin-top: 8px;">
-                  <span>{{ t('components.main.pool.firstTextRetryTimeoutSeconds') }}</span>
+                <div class="form-field" style="margin-top: 8px;">
+                  <label for="pool-first-text-retry-timeout">{{ t('components.main.pool.firstTextRetryTimeoutSeconds') }}</label>
                   <input
+                    id="pool-first-text-retry-timeout"
                     v-model.number="poolModalState.form.firstTextRetryTimeoutSeconds"
                     type="number"
                     min="5"
                     max="240"
                     step="1"
                     class="mac-input"
+                    data-testid="pool-first-text-retry-timeout"
                     required
                   />
                   <span class="form-field-hint">{{ t('components.main.pool.firstTextRetryHint') }}</span>
-                </label>
+                </div>
               </div>
             </div>
           </div>
 
           <div v-if="poolModalState.form.poolType === 'account'" class="account-log-options">
-            <label class="pool-member-checkbox account-option-toggle">
-              <input v-model="poolModalState.form.excludeFromTotalTraffic" type="checkbox" />
-              <span class="member-checkbox-label">{{ t('components.main.pool.excludeFromTotalTraffic') }}</span>
+            <div class="pool-member-checkbox account-option-toggle">
+              <input
+                id="pool-exclude-total-traffic"
+                v-model="poolModalState.form.excludeFromTotalTraffic"
+                type="checkbox"
+                data-testid="pool-exclude-total-traffic"
+              />
+              <label class="member-checkbox-label" for="pool-exclude-total-traffic">{{ t('components.main.pool.excludeFromTotalTraffic') }}</label>
               <span class="form-field-hint">{{ t('components.main.pool.excludeFromTotalTrafficHint') }}</span>
-            </label>
-            <label class="pool-member-checkbox account-option-toggle">
-              <input v-model="poolModalState.form.hideFromLogs" type="checkbox" />
-              <span class="member-checkbox-label">{{ t('components.main.pool.hideFromLogs') }}</span>
+            </div>
+            <div class="pool-member-checkbox account-option-toggle">
+              <input
+                id="pool-hide-from-logs"
+                v-model="poolModalState.form.hideFromLogs"
+                type="checkbox"
+                data-testid="pool-hide-from-logs"
+              />
+              <label class="member-checkbox-label" for="pool-hide-from-logs">{{ t('components.main.pool.hideFromLogs') }}</label>
               <span class="form-field-hint">{{ t('components.main.pool.hideFromLogsHint') }}</span>
-            </label>
+            </div>
           </div>
 
           <!-- 普通池成员供应商 -->
           <div v-if="poolModalState.form.poolType === 'normal'" class="form-field">
-            <span>{{ t('components.main.pool.selectMembers') }}</span>
-            <div class="pool-member-selector">
+            <span id="pool-members-label">{{ t('components.main.pool.selectMembers') }}</span>
+            <div class="pool-member-selector" role="group" aria-labelledby="pool-members-label">
               <div
                 v-for="p in providers"
                 :key="p.id"
                 class="pool-member-row"
               >
-                <label class="pool-member-checkbox">
+                <div class="pool-member-checkbox">
                   <input
+                    :id="'pool-member-' + p.id"
                     type="checkbox"
                     :value="p.id"
-                  :checked="isMemberSelected(p.id)"
-                  @change="toggleMemberSelection(p.id, ($event.target as HTMLInputElement).checked)"
-                />
-                <span class="member-checkbox-label">{{ p.name }}</span>
-              </label>
+                    :checked="isMemberSelected(p.id)"
+                    :data-provider-id="p.id"
+                    data-testid="pool-member-checkbox"
+                    @change="toggleMemberSelection(p.id, ($event.target as HTMLInputElement).checked)"
+                  />
+                  <label class="member-checkbox-label" :for="'pool-member-' + p.id">{{ p.name }}</label>
+                </div>
               </div>
               <div v-if="providers.length === 0" class="pool-member-empty">
                 {{ t('components.main.pool.noProviders') }}
@@ -909,10 +1170,14 @@
           </div>
 
           <footer class="form-actions">
-            <BaseButton variant="outline" type="button" @click="closePoolModal()">
+            <BaseButton variant="outline" type="button" data-testid="pool-cancel" @click="closePoolModal()">
               {{ t('components.main.form.actions.cancel') }}
             </BaseButton>
-            <BaseButton type="submit" :disabled="poolSaveLoading || proxyConfigRequired || proxyNodeSelectionRequired">
+            <BaseButton
+              type="submit"
+              :disabled="poolSaveLoading || proxyConfigRequired || proxyNodeSelectionRequired"
+              data-testid="pool-save"
+            >
               {{ t('components.main.form.actions.save') }}
             </BaseButton>
           </footer>
@@ -924,16 +1189,17 @@
         :open="deleteConfirmState.open"
         :title="t('components.main.pool.deletePoolTitle')"
         variant="confirm"
+        test-id="pool-delete-modal"
         @close="closeDeleteConfirm"
       >
         <div class="confirm-body">
           <p>{{ t('components.main.pool.deletePoolMessage', { name: deleteConfirmState.pool?.name ?? '' }) }}</p>
         </div>
         <footer class="form-actions confirm-actions">
-          <BaseButton variant="outline" type="button" @click="closeDeleteConfirm">
+          <BaseButton variant="outline" type="button" data-testid="pool-delete-cancel" @click="closeDeleteConfirm">
             {{ t('components.main.form.actions.cancel') }}
           </BaseButton>
-          <BaseButton variant="danger" type="button" @click="confirmDeletePool">
+          <BaseButton variant="danger" type="button" data-testid="pool-delete-confirm" @click="confirmDeletePool">
             {{ t('components.main.form.actions.delete') }}
           </BaseButton>
         </footer>
@@ -1009,6 +1275,7 @@ const emit = defineEmits<{
   edit: [card: AutomationCard]
   remove: [card: AutomationCard]
   duplicate: [card: AutomationCard]
+  modelTrace: [card: AutomationCard]
   addProvider: []
   refresh: []
 }>()
@@ -1032,7 +1299,7 @@ interface PoolFormState {
   memberProviderIds: number[]
   memberLevels: Record<number, number>
   accountApiUrl: string
-  accountResponsesEndpoint: string
+  accountEndpoint: string
   accountKeysText: string
   proxyEnabled: boolean
   proxySelection: AccountPoolProxySelection
@@ -1048,7 +1315,32 @@ interface PoolFormState {
   hideFromLogs: boolean
 }
 
-const createEmptyPoolForm = (): PoolFormState => ({
+/** 号池目前支持 OpenAI Responses 与 OpenAI Chat Completions 两种协议平台。 */
+const supportsAccountPool = (platform: string): boolean =>
+  platform === 'openai-responses' || platform === 'openai-chat'
+
+const isChatAccountPool = (platform: string): boolean => platform === 'openai-chat'
+
+const defaultAccountPoolEndpoint = (platform: string): string =>
+  isChatAccountPool(platform) ? '/v1/chat/completions' : '/responses'
+
+const accountPoolEndpointLabel = (platform: string): string =>
+  isChatAccountPool(platform)
+    ? t('components.main.pool.chatEndpoint')
+    : t('components.main.pool.responsesEndpoint')
+
+const accountPoolEndpointPlaceholder = (platform: string): string =>
+  isChatAccountPool(platform)
+    ? t('components.main.pool.chatEndpointPlaceholder')
+    : t('components.main.pool.responsesEndpointPlaceholder')
+
+const readAccountPoolEndpoint = (pool: ProviderPool): string => {
+  const config = pool.accountPoolConfig
+  const stored = isChatAccountPool(pool.platform) ? config?.chatEndpoint : config?.responsesEndpoint
+  return stored?.trim() || defaultAccountPoolEndpoint(pool.platform)
+}
+
+const createEmptyPoolForm = (platform: string): PoolFormState => ({
   name: '',
   poolType: 'normal',
   mode: 'managed',
@@ -1056,7 +1348,7 @@ const createEmptyPoolForm = (): PoolFormState => ({
   memberProviderIds: [],
   memberLevels: {},
   accountApiUrl: '',
-  accountResponsesEndpoint: '/responses',
+  accountEndpoint: defaultAccountPoolEndpoint(platform),
   accountKeysText: '',
   proxyEnabled: false,
   proxySelection: 'none',
@@ -1079,7 +1371,7 @@ const poolModalState = reactive<{
 }>({
   open: false,
   editingId: '',
-  form: createEmptyPoolForm(),
+  form: createEmptyPoolForm(props.platform),
 })
 
 const proxyConfigs = ref<ProxyConfigSummary[]>([])
@@ -1285,13 +1577,9 @@ const selectAutoProxy = () => {
 }
 
 const selectProxyNode = (nodeID: string) => {
+  if (proxyConfigsLoading.value) return
   poolModalState.form.proxySelection = 'node'
   poolModalState.form.proxyNodeId = nodeID
-}
-
-const selectProxyNodeIfAvailable = (nodeID: string) => {
-  if (proxyConfigsLoading.value) return
-  selectProxyNode(nodeID)
 }
 
 const toggleProxyEnabled = () => {
@@ -1336,19 +1624,19 @@ const loadProxyConfigs = () => {
 }
 const listProxyConfigs = () => updateProxyConfigLists(ListProxyConfigs)
 
-const responsesProbeURL = () => {
+const accountProbeURL = () => {
   const baseURL = poolModalState.form.accountApiUrl.trim()
-  const endpoint = poolModalState.form.accountResponsesEndpoint.trim()
+  const endpoint = poolModalState.form.accountEndpoint.trim()
   if (!baseURL || !endpoint) return ''
   return `${baseURL.replace(/\/+$/, '')}/${endpoint.replace(/^\/+/, '')}`
 }
 
 const loadSharedProxySpeedTests = async (isCurrent = () => true) => {
-  const targetURL = responsesProbeURL()
+  const targetURL = accountProbeURL()
   if (!targetURL) return
   try {
     const snapshot: ProxySpeedTestSnapshot = await GetProxySpeedTests(poolModalState.editingId, targetURL)
-    if (!isCurrent() || !poolModalState.open || responsesProbeURL() !== targetURL) return
+    if (!isCurrent() || !poolModalState.open || accountProbeURL() !== targetURL) return
     const results: Record<string, ProxyNodeLatencyResult> = {}
     for (const result of snapshot.results) {
       results[result.nodeId] = result
@@ -1465,7 +1753,7 @@ const unhideProxyConfig = async (config: ProxyConfigSummary) => {
 
 const testAllProxyLatencies = async () => {
   if (proxyBulkTestLoading.value || proxySubscriptionImportLoading.value || !hasProxyNodes.value) return
-  const targetURL = responsesProbeURL()
+  const targetURL = accountProbeURL()
   if (!targetURL) {
     showToast(t('components.main.pool.proxyBaseUrlRequired'), 'warning')
     return
@@ -1521,7 +1809,7 @@ const testAllProxyLatencies = async () => {
             && generation === proxyBulkTestGeneration
             && poolModalState.open
             && poolModalState.editingId === poolID
-            && responsesProbeURL() === targetURL) {
+            && accountProbeURL() === targetURL) {
             proxyNodeLatencyResults.value = { ...proxyNodeLatencyResults.value, [node.id]: result }
           }
         }
@@ -1532,7 +1820,7 @@ const testAllProxyLatencies = async () => {
       && generation === proxyBulkTestGeneration
       && poolModalState.open
       && poolModalState.editingId === poolID
-      && responsesProbeURL() === targetURL) {
+      && accountProbeURL() === targetURL) {
       proxyBulkTestCompleted.value = true
       // The latency probes are done. Do not leave the action disabled while
       // the separate shared-cache refresh is still waiting on the server.
@@ -1542,7 +1830,7 @@ const testAllProxyLatencies = async () => {
         proxyBulkTestPoolID.value = ''
         proxyBulkTestTargetURL.value = ''
       }
-      await loadSharedProxySpeedTests(() => !controller.signal.aborted && generation === proxyBulkTestGeneration && responsesProbeURL() === targetURL)
+      await loadSharedProxySpeedTests(() => !controller.signal.aborted && generation === proxyBulkTestGeneration && accountProbeURL() === targetURL)
     }
   } finally {
     if (generation === proxyBulkTestGeneration && proxyBulkTestAbortController === controller) {
@@ -1800,14 +2088,15 @@ const openCreatePool = () => {
 	poolModalGeneration += 1
   invalidateAllProxyTests()
   poolModalState.editingId = ''
-  poolModalState.form = createEmptyPoolForm()
+  poolModalState.form = createEmptyPoolForm(props.platform)
   poolModalState.open = true
 }
 
 const openEditPool = (pool: ProviderPool) => {
 	poolModalGeneration += 1
+  const endpoint = pool.accountPoolConfig ? readAccountPoolEndpoint(pool) : ''
   const targetURL = pool.accountPoolConfig
-    ? `${pool.accountPoolConfig.apiUrl.trim().replace(/\/+$/, '')}/${pool.accountPoolConfig.responsesEndpoint.trim().replace(/^\/+/, '')}`
+    ? `${pool.accountPoolConfig.apiUrl.trim().replace(/\/+$/, '')}/${endpoint.replace(/^\/+/, '')}`
     : ''
   const resumeBulkTest = proxyBulkTestLoading.value
     && proxyBulkTestPoolID.value === pool.id
@@ -1826,7 +2115,7 @@ const openEditPool = (pool: ProviderPool) => {
     memberProviderIds: (pool.members ?? []).map((m) => normalizeProviderId(m.providerId)),
     memberLevels: levels,
     accountApiUrl: pool.accountPoolConfig?.apiUrl ?? '',
-    accountResponsesEndpoint: pool.accountPoolConfig?.responsesEndpoint || '/responses',
+    accountEndpoint: readAccountPoolEndpoint(pool),
     accountKeysText: (pool.accountPoolConfig?.keys ?? []).map((key) => key.apiKey).join('\n'),
     proxyEnabled: pool.proxyConfig?.enabled ?? false,
     proxySelection: pool.proxyConfig?.selection === 'node' ? 'node' : pool.proxyConfig?.enabled ? 'auto' : 'none',
@@ -1984,7 +2273,9 @@ const poolConfigSignature = (pool: Partial<ProviderPool>) => {
     accountPoolConfig: poolType === 'account'
       ? {
           apiUrl: accountPoolConfig?.apiUrl.trim() ?? '',
-          responsesEndpoint: accountPoolConfig?.responsesEndpoint.trim() ?? '',
+          endpoint: (isChatAccountPool(pool.platform ?? '')
+            ? accountPoolConfig?.chatEndpoint
+            : accountPoolConfig?.responsesEndpoint)?.trim() ?? '',
           keys: (accountPoolConfig?.keys ?? []).map((key) => key.apiKey),
         }
       : undefined,
@@ -1997,7 +2288,7 @@ const submitPoolModal = async (closeAfterSave = true): Promise<boolean> => {
   const existingPool = poolModalState.editingId
     ? pools.value.find((pool) => pool.id === poolModalState.editingId)
     : null
-  const poolType: ProviderPoolType = props.platform === 'openai-responses'
+  const poolType: ProviderPoolType = supportsAccountPool(props.platform)
     ? poolModalState.form.poolType
     : 'normal'
 
@@ -2059,9 +2350,11 @@ const submitPoolModal = async (closeAfterSave = true): Promise<boolean> => {
             : false,
         }
       : { enabled: false, selection: 'none', proxyNodeId: '', autoDisableWhenNoAvailable: false }
+    const accountEndpoint = poolModalState.form.accountEndpoint.trim()
     poolData.accountPoolConfig = {
       apiUrl: poolModalState.form.accountApiUrl.trim(),
-      responsesEndpoint: poolModalState.form.accountResponsesEndpoint.trim(),
+      responsesEndpoint: isChatAccountPool(props.platform) ? '' : accountEndpoint,
+      chatEndpoint: isChatAccountPool(props.platform) ? accountEndpoint : '',
       keys: parsedKeys.map((apiKey) => ({
         id: existingKeysBySecret.get(apiKey)?.id ?? 0,
         apiKey,
@@ -2274,7 +2567,7 @@ watch(
 )
 
 watch(
-  () => [poolModalState.form.accountApiUrl, poolModalState.form.accountResponsesEndpoint] as const,
+  () => [poolModalState.form.accountApiUrl, poolModalState.form.accountEndpoint] as const,
   () => {
     invalidateProxyBulkTest()
   },
@@ -2701,6 +2994,11 @@ watch(
   margin-bottom: 16px;
   border-bottom: 1px solid var(--color-border, #e5e7eb);
   padding-bottom: 8px;
+}
+.pool-sub-tablist {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .sub-tab-pill {
@@ -3465,7 +3763,8 @@ watch(
   pointer-events: none;
 }
 
-.pool-type-option span {
+.pool-type-option span,
+.pool-type-option > label {
   display: block;
   padding: 7px 10px;
   border-radius: 5px;
@@ -3475,10 +3774,16 @@ watch(
   text-align: center;
 }
 
-.pool-type-option.selected span {
+.pool-type-option.selected span,
+.pool-type-option.selected > label {
   background: var(--color-bg, #fff);
   color: var(--color-text, #1f2937);
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.1);
+}
+
+.pool-type-option input:focus-visible + label {
+  outline: 2px solid var(--color-primary, #3b82f6);
+  outline-offset: 1px;
 }
 
 .form-field-hint {
@@ -3538,15 +3843,34 @@ watch(
 }
 
 .pool-mode-option {
+  position: relative;
   flex: 1;
   cursor: pointer;
 }
 
+/* Visually hidden but still in the accessibility tree, keyboard reachable, and
+   the element the pointer hits (a 1x1 clip made clicks activate the input and
+   the wrapping label, cancelling out). */
 .pool-mode-option input {
-  display: none;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 1;
+}
+
+.pool-mode-option input:focus-visible + .mode-card {
+  outline: 2px solid var(--color-primary, #3b82f6);
+  outline-offset: 2px;
 }
 
 .mode-card {
+  display: block;
   padding: 12px;
   border: 1px solid var(--color-border, #d1d5db);
   border-radius: 8px;

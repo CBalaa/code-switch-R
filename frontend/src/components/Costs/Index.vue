@@ -17,25 +17,25 @@
     </div>
 
     <form class="costs-filter-row" @submit.prevent="applyFilters">
-      <label class="filter-field">
-        <span>{{ t('components.costs.filters.platform') }}</span>
-        <select v-model="filters.platform" class="mac-select">
+      <div class="filter-field">
+        <label for="costs-platform-filter">{{ t('components.costs.filters.platform') }}</label>
+        <select id="costs-platform-filter" v-model="filters.platform" class="mac-select" data-testid="costs-platform-filter">
           <option value="">{{ t('components.costs.filters.allPlatforms') }}</option>
           <option value="claude">Claude</option>
           <option value="openai-responses">OpenAI Responses</option>
           <option value="openai-chat">OpenAI Chat</option>
         </select>
-      </label>
-      <label class="filter-field">
-        <span>{{ t('components.costs.filters.provider') }}</span>
-        <select v-model="filters.provider" class="mac-select">
+      </div>
+      <div class="filter-field">
+        <label for="costs-provider-filter">{{ t('components.costs.filters.provider') }}</label>
+        <select id="costs-provider-filter" v-model="filters.provider" class="mac-select" data-testid="costs-provider-filter">
           <option value="">{{ t('components.costs.filters.allProviders') }}</option>
           <option v-for="provider in availableProviderOptions" :key="provider" :value="provider">
             {{ provider }}
           </option>
         </select>
-      </label>
-      <BaseButton type="submit" :disabled="loading">
+      </div>
+      <BaseButton type="submit" :disabled="loading" data-testid="costs-query">
         {{ t('components.costs.query') }}
       </BaseButton>
     </form>
@@ -84,12 +84,12 @@
             <table class="model-cost-table">
               <thead>
                 <tr>
-                  <th>{{ t('components.costs.table.model') }}</th>
-                  <th>{{ t('components.costs.table.requests') }}</th>
-                  <th>{{ t('components.costs.table.tokens') }}</th>
-                  <th>{{ t('components.costs.table.prices') }}</th>
-                  <th>{{ t('components.costs.table.multiplier') }}</th>
-                  <th>{{ t('components.costs.table.subtotal') }}</th>
+                  <th scope="col">{{ t('components.costs.table.model') }}</th>
+                  <th scope="col">{{ t('components.costs.table.requests') }}</th>
+                  <th scope="col">{{ t('components.costs.table.tokens') }}</th>
+                  <th scope="col">{{ t('components.costs.table.prices') }}</th>
+                  <th scope="col">{{ t('components.costs.table.multiplier') }}</th>
+                  <th scope="col">{{ t('components.costs.table.subtotal') }}</th>
                 </tr>
               </thead>
               <tbody>
@@ -138,21 +138,21 @@
           <table class="price-editor-table">
             <thead>
               <tr>
-                <th>{{ t('components.costs.table.model') }}</th>
-                <th>{{ t('components.costs.price.input') }}</th>
-                <th>{{ t('components.costs.price.output') }}</th>
-                <th>{{ t('components.costs.price.cacheRead') }}</th>
-                <th></th>
+                <th scope="col">{{ t('components.costs.table.model') }}</th>
+                <th scope="col">{{ t('components.costs.price.input') }}</th>
+                <th scope="col">{{ t('components.costs.price.output') }}</th>
+                <th scope="col">{{ t('components.costs.price.cacheRead') }}</th>
+                <th scope="col"><span class="sr-only">{{ t('components.costs.settings.removeModel') }}</span></th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="row in modelPriceDrafts" :key="row.id">
-                <td><BaseInput v-model="row.model" :placeholder="t('components.costs.settings.modelName')" /></td>
-                <td><BaseInput v-model="row.input" type="number" min="0" step="0.000001" /></td>
-                <td><BaseInput v-model="row.output" type="number" min="0" step="0.000001" /></td>
-                <td><BaseInput v-model="row.cache_read" type="number" min="0" step="0.000001" /></td>
+              <tr v-for="row in modelPriceDrafts" :key="row.id" :data-row-id="row.id">
+                <td><BaseInput v-model="row.model" :aria-label="t('components.costs.settings.modelName')" :placeholder="t('components.costs.settings.modelName')" data-testid="price-model" /></td>
+                <td><BaseInput v-model="row.input" type="number" min="0" step="0.000001" :aria-label="t('components.costs.price.input')" data-testid="price-input" /></td>
+                <td><BaseInput v-model="row.output" type="number" min="0" step="0.000001" :aria-label="t('components.costs.price.output')" data-testid="price-output" /></td>
+                <td><BaseInput v-model="row.cache_read" type="number" min="0" step="0.000001" :aria-label="t('components.costs.price.cacheRead')" data-testid="price-cache-read" /></td>
                 <td class="price-editor-remove-cell">
-                  <BaseButton variant="outline" type="button" :disabled="saving" @click="removeModelPrice(row.id)">
+                  <BaseButton variant="outline" type="button" :disabled="saving" :data-row-id="row.id" data-testid="price-remove" @click="removeModelPrice(row.id)">
                     {{ t('components.costs.settings.removeModel') }}
                   </BaseButton>
                 </td>
@@ -160,15 +160,15 @@
             </tbody>
           </table>
         </div>
-        <BaseButton variant="outline" type="button" :disabled="saving" @click="addModelPrice">
+        <BaseButton variant="outline" type="button" :disabled="saving" data-testid="price-add-model" @click="addModelPrice">
           {{ t('components.costs.settings.addModel') }}
         </BaseButton>
       </section>
       <footer class="form-actions price-editor-actions">
-        <BaseButton variant="outline" type="button" :disabled="saving" @click="closePriceEditor">
+        <BaseButton variant="outline" type="button" :disabled="saving" data-testid="price-cancel" @click="closePriceEditor">
           {{ t('components.main.form.actions.cancel') }}
         </BaseButton>
-        <BaseButton type="button" :disabled="saving" @click="savePriceEditor">
+        <BaseButton type="button" :disabled="saving" data-testid="price-save" @click="savePriceEditor">
           {{ t('components.costs.settings.save') }}
         </BaseButton>
       </footer>

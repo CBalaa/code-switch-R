@@ -1,12 +1,23 @@
 <template>
-  <span class="help-hint" @mouseenter="show" @mouseleave="hide">
+  <button
+    type="button"
+    class="help-hint"
+    :aria-label="text"
+    :aria-expanded="visible"
+    data-testid="help-hint"
+    @mouseenter="show"
+    @mouseleave="hide"
+    @focus="show"
+    @blur="hide"
+    @click.prevent="toggle"
+  >
     <svg viewBox="0 0 24 24" class="help-icon" aria-hidden="true">
       <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.5" />
       <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
       <line x1="12" y1="17" x2="12.01" y2="17" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
     </svg>
-    <span v-if="visible" class="help-tooltip">{{ text }}</span>
-  </span>
+    <span v-if="visible" class="help-tooltip" role="tooltip">{{ text }}</span>
+  </button>
 </template>
 
 <script setup lang="ts">
@@ -16,6 +27,7 @@ defineProps<{ text: string }>()
 const visible = ref(false)
 const show = () => { visible.value = true }
 const hide = () => { visible.value = false }
+const toggle = () => { visible.value = !visible.value }
 </script>
 
 <style scoped>
@@ -24,6 +36,10 @@ const hide = () => { visible.value = false }
   align-items: center;
   position: relative;
   margin-left: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
   cursor: help;
 }
 
@@ -34,8 +50,15 @@ const hide = () => { visible.value = false }
   transition: color 0.15s;
 }
 
-.help-hint:hover .help-icon {
+.help-hint:hover .help-icon,
+.help-hint:focus-visible .help-icon {
   color: var(--color-primary, #3b82f6);
+}
+
+.help-hint:focus-visible {
+  outline: 2px solid var(--color-primary, #3b82f6);
+  outline-offset: 1px;
+  border-radius: 4px;
 }
 
 .help-tooltip {

@@ -107,6 +107,11 @@ func promptNewPassword() (string, error) {
 	return password, nil
 }
 
+// stdinReader 复用同一个缓冲读取器。
+// 每次新建 bufio.Reader 会把管道里后续的输入一并读进第一个 reader 的缓冲区，
+// 第二次读取只能拿到 EOF，导致 `printf 'pw\npw\n' | manage-users add` 这类脚本化调用必然失败。
+var stdinReader = bufio.NewReader(os.Stdin)
+
 func readPassword(prompt string) (string, error) {
 	fmt.Fprint(os.Stderr, prompt)
 	if isTerminal(os.Stdin.Fd()) {
@@ -116,8 +121,7 @@ func readPassword(prompt string) (string, error) {
 			fmt.Fprintln(os.Stderr)
 		}()
 	}
-	reader := bufio.NewReader(os.Stdin)
-	value, err := reader.ReadString('\n')
+	value, err := stdinReader.ReadString('\n')
 	if err != nil {
 		return "", err
 	}

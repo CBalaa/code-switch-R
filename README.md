@@ -47,10 +47,66 @@ Code Switch 是适合 Linux 服务器运行的 Web 管理界面 + 本地代理�
 
 这个目录包含 API key、relay key、用户凭据哈希等敏感数据，应按私密数据处理。
 
+### 号池支持的协议平台
+
+号池（一个上游 Base URL + 多把密钥，按密钥轮转、拉黑和粘性会话）支持 `openai-responses` 和
+`openai-chat` 两种协议的供应商池；`claude`（Anthropic Messages）池目前只支持普通池。
+号池保存时只会保留与所在平台匹配的协议端点（`responsesEndpoint` 或 `chatEndpoint`）。
+
 ### 号池代理配置
 
 号池代理不提供任何默认 YAML。用户需要在号池界面上传 YAML；上传后的配置对所有用户可见，
 但只有上传者可以删除。其他用户可以仅对自己隐藏某个配置，不会影响共享代理运行时或其他用户。
+
+### 可用性探活的端点解析
+
+可用性监测（`HealthCheckService`）同样以供应商配置的协议端点为准。这里有一个历史坑：
+供应商弹窗在 `availabilityConfig.testEndpoint` 为空时会自动写入平台默认值（`openai-responses`
+对应 `/responses`），保存后它就变成了一个"显式覆盖"，把 `responsesEndpoint` 挡住，
+于是探活打的是平台默认路径——不少网关该路径返回门户 HTML 且状态码 200，而探活只看状态码
+（`determineStatus` 不校验响应体），于是绿灯常亮但 API 未必可用。
+
+现在的规则：当 `testEndpoint` 等于平台默认值、且供应商另有协议端点时，以协议端点为准；
+用户手填的其他值仍然优先。
+
+### 模型真伪检测（指纹归因）
+
+供应商卡片上的盾牌按钮可以对某个供应商做一次"模型真伪检测"：后端发一条数值生成挑战
+（凭第一反应给出约 300 个 1~355 的整数），从回答的数字分布做指纹归因，得到 13 个候选模型的
+概率分布；top-1 与用户声称的模型不一致时给出"疑似偷换"。
+
+- **覆盖范围**：`gpt-5.4`、`gpt-5.5`、`gpt-5.6-sol`、`gpt-5.6-terra`、`gpt-5.6-luna`、
+  `gpt-6-astra`、`claude-haiku-4-5-20251001`、`claude-sonnet-4-6`、`claude-sonnet-5`、
+  `claude-opus-4-6`、`claude-opus-4-7`、`claude-opus-4-8`、`claude-opus-5`。
+- **模型名归一化**：容忍大小写、vendor 前缀（`openai/gpt-5.4`）与日期/版本后缀
+  （`gpt-5.4-2026-01-31`）。**刻意不剥离** `-mini` / `-nano` / `-pro` 这类后缀——它们代表另一个
+  型号，剥离后会把"偷换成了更弱的型号"误判成身份一致。歧义（如 `gpt-5.6` 有 3 个候选）一律拒绝。
+- **映射优先**：先应用供应商自己的 `modelMapping`，再拿映射后的实际请求模型与归因结果比对，
+  因此用户自建的映射不会被误报成偷换。
+- **多租户**：`VerifyProviderModel` 只读取调用者自己的供应商，进度与流式事件带 `userID`
+  由 SSE 层过滤（见 `services.UserScopedEvent`），跨租户调用在发起网络请求之前就失败。
+- **协议与端点**：按平台选择报文形态（`claude` → Anthropic、`openai-responses` → Responses、
+  `openai-chat` → Chat），流式被上游拒绝时自动降级为非流式。
+  端点解析与 relay 转发共用同一条路径（`Provider.GetEffectiveEndpoint`），
+  因此供应商配置的 `responsesEndpoint` / `chatEndpoint` / `apiEndpoint` 都会生效。
+- **长度门槛**：参考实现的挑战提示词只有几百 token，部分中转（例如要求请求体达到
+  2000 input token 的渠道）会直接 400。命中这类"请求体太小"的拒绝时，会自动带上
+  Codex 客户端默认的 `instructions` 重发一次——既是真实 Codex 调用的形态，也自然越过门槛。
+  `instructions` 原文来自 openai/codex（Apache-2.0），存放于 `services/codex_default_instructions.txt`。
+- **不覆盖号池**：号池（`AccountPoolConfig`）是独立实体，不在 provider 列表里，因此检测只作用于
+  普通供应商。要检测号池需要另加入口。
+- **来源与许可**：算法与指纹库移植自 [ModelTrace](https://github.com/xqy2006/ModelTrace)（MIT），
+  许可证全文见 `services/modeltrace/LICENSE`。
+
+免额度回归（用 mock 上游跑通整条链路，不消耗真实额度；需要 `go` 与 `node` 在 PATH 中）：
+
+```bash
+bash scripts/mt-e2e/run-e2e.sh          # 非流式
+bash scripts/mt-e2e/run-stream-e2e.sh   # 流式 + 实时片段
+```
+
+脚本会自建隔离 HOME、建用户、登录、写一个指向 mock 的供应商，然后用带断言的
+SSE 订阅校验：进度事件到达、事件载荷不泄漏 `userID`、归因结论为 `gpt-5.4` 且置信度 > 50%。
 
 ## 生产约定
 
@@ -369,7 +425,7 @@ sudo systemctl status codeswitch.service --no-pager -l
 
 - 只改前端：上传 `frontend/dist`，通常不需要重启。
 - 改了 Go 后端、路由、数据结构、relay、服务逻辑：上传 `codeswitch-web` 和 `frontend/dist`，然后由操作员重启服务。
-- 只改 `cmd/manage-users`：重新构建并上传用户管理脚本和二进制，不需要重启服务。
+- 只改 `cmd/manage-users`：重新构建并替换 `scripts/manage-users-bin`（**不要动同目录的包装脚本 `scripts/manage-users`**），不需要重启服务。
 
 ### 纯前端发布
 
@@ -528,23 +584,41 @@ mkdir -p "$ARTIFACT_DIR"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 SSH_TARGET="<用户提供的 SSH 别名或 user@host>"
 REMOTE_DIR="~/apps/code-switch"
-MANAGE_USERS_ARTIFACT="$ARTIFACT_DIR/manage-users.$STAMP"
+MANAGE_USERS_ARTIFACT="$ARTIFACT_DIR/manage-users-bin.$STAMP"
 
 go build -o "$MANAGE_USERS_ARTIFACT" ./cmd/manage-users
 ssh "$SSH_TARGET" "mkdir -p $REMOTE_DIR/scripts"
-scp "$MANAGE_USERS_ARTIFACT" "$SSH_TARGET:$REMOTE_DIR/scripts/manage-users.new"
+scp "$MANAGE_USERS_ARTIFACT" "$SSH_TARGET:$REMOTE_DIR/scripts/manage-users-bin.new"
 
 ssh "$SSH_TARGET" "
   set -e
   cd $REMOTE_DIR
 
-  if [ -f scripts/manage-users ]; then
-    cp scripts/manage-users scripts/manage-users.bak.$STAMP
+  # scripts/manage-users 是包装脚本（见下），绝不能用二进制覆盖它。
+  if [ ! -f scripts/manage-users ]; then
+    echo 'scripts/manage-users 包装脚本缺失，请先恢复再发布' >&2
+    exit 1
   fi
-  mv scripts/manage-users.new scripts/manage-users
-  chmod +x scripts/manage-users
+  if [ -f scripts/manage-users-bin ]; then
+    cp scripts/manage-users-bin scripts/manage-users-bin.bak.$STAMP
+  fi
+  mv scripts/manage-users-bin.new scripts/manage-users-bin
+  chmod +x scripts/manage-users-bin
+
+  # 冒烟：列表能打出来才算替换成功
+  scripts/manage-users list > /dev/null
 "
 ```
+
+服务器上是**包装脚本 + 二进制**两个文件，不要合并成一个：
+
+| 路径 | 内容 | 作用 |
+| --- | --- | --- |
+| `scripts/manage-users` | 约 471 字节的 `sh` 脚本 | 分发器：Linux x86_64 上 `exec manage-users-bin`，其他平台退回 `go run cmd/manage-users` |
+| `scripts/manage-users-bin` | `go build ./cmd/manage-users` 的产物 | 真正干活的二进制，发布时替换的就是它 |
+| `scripts/manage-users-bin.bak.<STAMP>` | 上一版二进制 | 回滚用 |
+
+用二进制覆盖 `scripts/manage-users` 会把分发器弄丢（这是踩过的坑）。包装脚本本身除非要改分发逻辑，否则不需要重新上传。
 
 使用：
 
@@ -555,6 +629,12 @@ scripts/manage-users add --username <name>
 scripts/manage-users reset-password --username <name>
 scripts/manage-users disable --username <name>
 scripts/manage-users enable --username <name>
+```
+
+密码既支持交互输入，也支持管道输入（用于脚本化建号）：
+
+```bash
+printf 'S3cret-Pass\nS3cret-Pass\n' | scripts/manage-users add --username ci-bot
 ```
 
 ## 验证
@@ -689,6 +769,60 @@ go build ./...
 go test ./...
 cd frontend && npm run build
 ```
+
+## 无障碍与自动化测试（ego）
+
+界面按可被无障碍树（accessibility tree）驱动的标准编写，`ego-browser` 之类的自动化工具可以直接
+读取语义树完成登录、开关平台页签、填写弹窗表单并断言结果。改动界面时请保持以下约定：
+
+- **表单控件不要嵌在 `<label>` 里**。语义树的序列化遇到"文本全等于自身名称"的 `<label>` 会跳过其子树，
+  嵌在里面的 `input/textarea/select` 会整体消失。统一写成
+  `<div class="form-field"><label for="id">名称</label><input id="id" …></div>`。
+- **图标按钮必须有 `aria-label`**（`data-tooltip` 只是 CSS 气泡，不进入无障碍树）。
+- **自定义开关**：`<input type="checkbox" role="switch" :aria-checked>`，并且不能用 `display:none` 隐藏
+  （`.mac-switch` / `.pool-mode-option` 已改为 clip 方案），否则键盘和自动化都点不到。
+- **不要为了"可点击"把展示型卡片改成 `<button>`**：`style.css` 里那条
+  `button:where(:not(…))` 全是 `!important`（`display:inline-flex`、`padding:10px 20px`、
+  `flex-direction:row`…），会把卡片的自定义排版整个接管掉（实测：日志页的汇总卡片从
+  312×121 塌成 60×34）。这类卡片保持 `<article>`/`<div>` 原标签即可；确实要真按钮，
+  就得把类名加进那条规则的 `:not()` 列表。顺带一提，`<article role="button">` 会被 axe
+  的 `aria-allowed-role` 判为不合规，别用它绕。
+- **弹窗**用 `BaseModal`（HeadlessUI 提供 `role="dialog"`/`aria-modal`/焦点陷阱），并通过 `test-id` 传入稳定钩子。
+- **Toast** 带 `role="status|alert"`、`data-testid="toast"`、`data-toast-type`、`data-state`，可以稳定等待。
+- **`data-testid` 命名**：`login-*`、`tab-<platform>`、`subtab-providers|pools`、
+  `provider-*`（新增/编辑/删除、表单字段、`modal-save`/`modal-cancel`、`provider-modeltrace`）、
+  `pool-*`（`pool-create-open`、`pool-save`、`pool-cancel`、`pool-delete-confirm`、
+  `pool-account-*`、`member-level`、`member-enabled`）、`special-rule-*`、
+  `modeltrace-*`（`modeltrace-models`、`modeltrace-model-chip`、`modeltrace-verify`、
+  `modeltrace-progress`、`modeltrace-stream`、`modeltrace-result`、`modeltrace-verdict`、
+  `modeltrace-bars`、`modeltrace-retry`、`modeltrace-close`）、
+  `logs-*`、`keys-*`、`costs-*`、`console-*`、`setting-*`、`toast`。
+  列表项同时带业务 id，例如 `data-provider-id`、`data-pool-id`、`data-key-id`、`data-log-id`、`:data-rule-index`。
+- **`data-testid` 不要互为子串**：`loc=testid:foo` 是子串匹配，`foo` 会同时命中 `foo-bar`。
+  需要精确匹配时用 `loc=testid:exact:foo`；新增钩子时请避免 `a` 是 `b` 的子串。
+  这条约定由 `frontend/tests/testidContracts.test.ts` 全量扫静态 testid 做两两子串检查，
+  `npm run test` 会直接失败并打印冲突对。
+
+改动界面后建议跑一遍无障碍审计（`frontend/dist` 由后端静态目录提供）：
+
+```bash
+# 1) 构建并在隔离 HOME 下起一个测试实例
+cd frontend && npm run build && cd ..
+mkdir -p /tmp/cs-a11y/home
+go build -o /tmp/cs-a11y/codeswitch .
+HOME=/tmp/cs-a11y/home CODE_SWITCH_WEB_ADDR=127.0.0.1:18080 CODE_SWITCH_RELAY_ADDR=127.0.0.1:18199 /tmp/cs-a11y/codeswitch
+
+# 2) 用 ego 打开 http://127.0.0.1:18080/ ，或注入 axe-core 跑一遍
+#    curl -sL -o frontend/dist/axe.min.js https://cdn.jsdelivr.net/npm/axe-core@4.10.2/axe.min.js
+#    然后在页面里 axe.run(document, { resultTypes: ['violations'] })
+```
+
+当前版本首页、日志、费用、控制台、密钥、设置、供应商/号池弹窗、模型真伪检测弹窗
+（空闲 / 选中 / 检测中 / 一致 / 疑似偷换 / 失败 六种状态，浅色与深色两套主题）的 axe 违规均为 0。
+
+> **`:global()` 只能整条选择器使用**：`@vue/compiler-sfc` 遇到 `:global(html.dark) .foo` 只会保留
+> `html.dark`，**把 `.foo` 整段丢掉**，规则会落到 `<html>` 上而目标元素完全拿不到样式。
+> 深色覆盖一律写成普通选择器 `html.dark .foo`（scoped 会把 `[data-v-x]` 追加到 `.foo` 上）。
 
 ## 技术栈
 

@@ -55,7 +55,14 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div v-if="isCheckingAuth" class="app-auth-loading" aria-live="polite">
+  <div
+    v-if="isCheckingAuth"
+    class="app-auth-loading"
+    role="status"
+    aria-live="polite"
+    aria-label="正在检查登录状态"
+    data-testid="auth-check-loading"
+  >
     <span class="app-auth-spinner" aria-hidden="true"></span>
   </div>
   <AdminAccessGate v-else-if="!canRenderApp" />

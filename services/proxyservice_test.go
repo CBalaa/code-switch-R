@@ -1522,6 +1522,45 @@ func TestMeasureResponsesEndpointPostsWithoutCredentials(t *testing.T) {
 	}
 }
 
+// TestMeasureChatEndpointPostsChatProbeBody verifies a chat account pool is
+// probed with a Chat Completions payload and a non-codex user agent, so the
+// latency test measures the same protocol the pool actually serves.
+func TestMeasureChatEndpointPostsChatProbeBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodPost || request.URL.Path != "/v1/chat/completions" {
+			writer.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if got := request.Header.Get("Authorization"); got != "Bearer code-switch-connectivity-probe-invalid" {
+			t.Fatalf("chat probe authorization = %q", got)
+		}
+		if got := request.Header.Get("User-Agent"); got != "openai-python/1.0" {
+			t.Fatalf("chat probe user agent = %q", got)
+		}
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(body) != `{"model":"gpt-4o-mini","messages":[{"role":"user","content":"ping"}],"stream":true}` {
+			t.Fatalf("unexpected chat probe body: %s", body)
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		writer.WriteHeader(http.StatusUnauthorized)
+		_, _ = writer.Write([]byte(`{"error":"missing API key"}`))
+	}))
+	defer server.Close()
+
+	targetURL, err := url.Parse(server.URL + "/v1/chat/completions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := resolvedProxyTestTarget{url: targetURL, hostHeader: targetURL.Host, serverName: targetURL.Hostname()}
+	latency, status, probeErr, cloudflareBlocked := measureResponsesEndpoint(context.Background(), target, "")
+	if latency == nil || *latency < 0 || status != http.StatusUnauthorized || probeErr != "" || cloudflareBlocked {
+		t.Fatalf("chat probe result = latency=%v status=%d error=%q cloudflare=%v", latency, status, probeErr, cloudflareBlocked)
+	}
+}
+
 func TestMeasureResponsesEndpointMarksCloudflareForbidden(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		writer.Header().Set("Server", "cloudflare")

@@ -73,11 +73,18 @@ const navigate = (path: string) => {
 </script>
 
 <template>
-  <nav class="mac-sidebar" :class="{ collapsed: isCollapsed && !isMobile }">
+  <nav class="mac-sidebar" :class="{ collapsed: isCollapsed && !isMobile }" :aria-label="t('sidebar.navLabel')" data-testid="app-sidebar">
     <div class="sidebar-header">
       <span class="sidebar-title" v-if="!isCollapsed || isMobile">Code Switch R</span>
-      <button class="collapse-btn" @click="toggleCollapse" :title="isCollapsed ? 'Expand' : 'Collapse'">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <button
+        class="collapse-btn"
+        type="button"
+        :aria-label="isCollapsed ? t('sidebar.expand') : t('sidebar.collapse')"
+        :aria-expanded="!isCollapsed"
+        data-testid="sidebar-collapse"
+        @click="toggleCollapse"
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
           <polyline v-if="isCollapsed" points="9 18 15 12 9 6"></polyline>
           <polyline v-else points="15 18 9 12 15 6"></polyline>
         </svg>
@@ -89,8 +96,12 @@ const navigate = (path: string) => {
         v-for="item in navItems"
         :key="item.path"
         class="nav-item"
+        type="button"
         :class="{ active: currentPath === item.path }"
-        :title="isCollapsed ? t(item.labelKey) : ''"
+        :aria-label="t(item.labelKey)"
+        :aria-current="currentPath === item.path ? 'page' : undefined"
+        :data-nav="item.path"
+        :data-testid="'nav-' + item.icon"
         @click="navigate(item.path)"
       >
         <!-- Home -->
@@ -293,13 +304,15 @@ html.dark .nav-item:hover {
   background: rgba(255, 255, 255, 0.08);
 }
 
+/* #0a84ff leaves the white label at 3.65:1; this darker accent clears 4.5:1
+   while staying in the same blue family. */
 .nav-item.active {
-  background: var(--mac-accent);
+  background: #0a6ed1;
   color: #fff;
 }
 
 .nav-item.active:hover {
-  background: var(--mac-accent);
+  background: #0a6ed1;
   color: #fff;
 }
 
@@ -320,8 +333,8 @@ html.dark .nav-item:hover {
 
 .version {
   font-size: 0.75rem;
+  /* opacity below 1 dropped this to 2.4:1 against the sidebar surface. */
   color: var(--mac-text-secondary);
-  opacity: 0.6;
 }
 
 @media (max-width: 760px) {

@@ -741,29 +741,29 @@ func (hcs *HealthCheckService) getEffectiveModel(provider *Provider, platform st
 	}
 }
 
-// getEffectiveEndpoint 获取有效的测试端点
+// getEffectiveEndpoint 获取有效的测试端点。
+//
+// 后端一律以供应商配置的协议端点为准（responsesEndpoint / chatEndpoint / apiEndpoint），
+// 与 relay 的 resolveRelayEndpoint 走同一条解析路径——探活必须打真实转发会打的地址。
+//
+// 这里有一个历史坑：界面在 testEndpoint 为空时会自动把平台默认值写进去
+// （openai-responses -> "/responses"），那只是"没配"的另一种写法。如果直接把它
+// 当成用户覆盖，供应商真正配置的 responsesEndpoint 就永远不生效，探活会打到
+// 平台默认路径上（不少网关该路径返回门户 HTML 且状态码 200，于是绿灯常亮）。
 func (hcs *HealthCheckService) getEffectiveEndpoint(provider *Provider, platform string) string {
-	// 优先级 1：用户配置的健康检查专用端点
-	if provider.AvailabilityConfig != nil && provider.AvailabilityConfig.TestEndpoint != "" {
-		return provider.AvailabilityConfig.TestEndpoint
-	}
+	defaultEndpoint := defaultEndpointForPlatform(platform)
+	resolved := provider.GetEffectiveEndpoint(defaultEndpoint)
 
-	// 优先级 2：用户配置的生产端点（如果配置了 apiEndpoint）
-	if provider.APIEndpoint != "" {
-		return provider.GetEffectiveEndpoint("")
+	if cfg := provider.AvailabilityConfig; cfg != nil {
+		if endpoint := strings.TrimSpace(cfg.TestEndpoint); endpoint != "" {
+			// 只有"等于平台默认值、且供应商另有协议端点"时才忽略它，其余情况仍尊重用户显式配置
+			if strings.EqualFold(endpoint, defaultEndpoint) && !strings.EqualFold(resolved, defaultEndpoint) {
+				return resolved
+			}
+			return endpoint
+		}
 	}
-
-	// 优先级 3：平台默认端点
-	switch strings.ToLower(platform) {
-	case "claude":
-		return "/v1/messages"
-	case "openai-responses":
-		return "/responses"
-	case "openai-chat":
-		return "/chat/completions"
-	default:
-		return "/chat/completions"
-	}
+	return resolved
 }
 
 // getEffectiveTimeout 获取有效的超时时间（毫秒）

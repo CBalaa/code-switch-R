@@ -11,7 +11,11 @@ import (
 )
 
 func TestUserScopedPoolSaveRejectsEnabledProxyWithoutCatalogNodes(t *testing.T) {
-	testUserScopedPoolSaveRejectsEnabledProxyWithoutCatalogNodes(t, services.ProviderPoolTypeAccount)
+	testUserScopedPoolSaveRejectsEnabledProxyWithoutCatalogNodes(t, "openai-responses", services.ProviderPoolTypeAccount)
+}
+
+func TestUserScopedChatPoolSaveRejectsEnabledProxyWithoutCatalogNodes(t *testing.T) {
+	testUserScopedPoolSaveRejectsEnabledProxyWithoutCatalogNodes(t, "openai-chat", services.ProviderPoolTypeAccount)
 }
 
 func TestUserScopedRelayClearAllProviderBlacklistsOnlyAllowsAccountPools(t *testing.T) {
@@ -50,37 +54,77 @@ func TestUserScopedRelayClearAllProviderBlacklistsOnlyAllowsAccountPools(t *test
 	if err := scoped.ClearAllProviderBlacklists(ctx, accountPool.Platform, accountPool.ID); err != nil {
 		t.Fatalf("clear account pool: %v", err)
 	}
+
+	// Chat account pools are first-class too: the same batch clear must be
+	// authorized (blacklists are scoped by platform + pool).
+	chatAccountPool := &services.ProviderPool{
+		Platform: "openai-chat",
+		Name:     "chat account pool",
+		PoolType: services.ProviderPoolTypeAccount,
+		Mode:     services.ProviderPoolModeManaged,
+		AccountPoolConfig: &services.AccountPoolConfig{
+			APIURL:       "https://api.example.com",
+			ChatEndpoint: "/v1/chat/completions",
+			Keys:         []services.AccountPoolKey{{APIKey: "sk-chat-test"}},
+		},
+	}
+	if _, err := poolService.SavePoolForUser("user-a", chatAccountPool); err != nil {
+		t.Fatalf("save chat account pool: %v", err)
+	}
+	if err := scoped.ClearAllProviderBlacklists(ctx, chatAccountPool.Platform, chatAccountPool.ID); err != nil {
+		t.Fatalf("clear chat account pool: %v", err)
+	}
 }
 
 func TestAggregateCostUsageByAccountPoolCollapsesAccountKeys(t *testing.T) {
 	firstKey := services.AccountPoolKey{ID: -101, APIKey: "sk-account-key-one"}
 	secondKey := services.AccountPoolKey{ID: -202, APIKey: "sk-account-key-two"}
-	pools := []services.ProviderPool{{
-		Platform: "openai-responses",
-		Name:     "Japan Account Pool",
-		PoolType: services.ProviderPoolTypeAccount,
-		AccountPoolConfig: &services.AccountPoolConfig{Keys: []services.AccountPoolKey{
-			firstKey, secondKey,
-		}},
-	}}
+	chatKey := services.AccountPoolKey{ID: -303, APIKey: "sk-chat-account-key"}
+	pools := []services.ProviderPool{
+		{
+			Platform: "openai-responses",
+			Name:     "Japan Account Pool",
+			PoolType: services.ProviderPoolTypeAccount,
+			AccountPoolConfig: &services.AccountPoolConfig{Keys: []services.AccountPoolKey{
+				firstKey, secondKey,
+			}},
+		},
+		{
+			Platform: "openai-chat",
+			Name:     "Chat Account Pool",
+			PoolType: services.ProviderPoolTypeAccount,
+			AccountPoolConfig: &services.AccountPoolConfig{
+				ChatEndpoint: "/v1/chat/completions",
+				Keys:         []services.AccountPoolKey{chatKey},
+			},
+		},
+	}
 	items := []services.CostUsageItem{
 		{Platform: "openai-responses", Provider: services.AccountPoolKeyDisplayName(firstKey), Model: "gpt-5", TotalRequests: 2, InputTokens: 10, OutputTokens: 4},
 		{Platform: "openai-responses", Provider: services.AccountPoolKeyDisplayName(secondKey), Model: "gpt-5", TotalRequests: 3, InputTokens: 20, OutputTokens: 6},
 		{Platform: "openai-responses", Provider: "regular provider", Model: "gpt-5", TotalRequests: 1, InputTokens: 5, OutputTokens: 1},
+		{Platform: "openai-chat", Provider: services.AccountPoolKeyDisplayName(chatKey), Model: "gpt-4o-mini", TotalRequests: 4, InputTokens: 40, OutputTokens: 8},
 	}
 
 	aggregated := aggregateCostUsageByAccountPool(items, pools, "")
-	if len(aggregated) != 2 {
+	if len(aggregated) != 3 {
 		t.Fatalf("aggregated items = %#v", aggregated)
 	}
 	var poolItem *services.CostUsageItem
+	var chatPoolItem *services.CostUsageItem
 	for index := range aggregated {
 		if aggregated[index].Provider == "Japan Account Pool" {
 			poolItem = &aggregated[index]
 		}
+		if aggregated[index].Provider == "Chat Account Pool" {
+			chatPoolItem = &aggregated[index]
+		}
 	}
 	if poolItem == nil || poolItem.TotalRequests != 5 || poolItem.InputTokens != 30 || poolItem.OutputTokens != 10 {
 		t.Fatalf("account-pool aggregation = %#v", poolItem)
+	}
+	if chatPoolItem == nil || chatPoolItem.Platform != "openai-chat" || chatPoolItem.TotalRequests != 4 || chatPoolItem.InputTokens != 40 {
+		t.Fatalf("chat account-pool aggregation = %#v", chatPoolItem)
 	}
 	filtered := aggregateCostUsageByAccountPool(items, pools, "Japan Account Pool")
 	if len(filtered) != 1 || filtered[0].Provider != "Japan Account Pool" || filtered[0].TotalRequests != 5 {
@@ -89,10 +133,10 @@ func TestAggregateCostUsageByAccountPoolCollapsesAccountKeys(t *testing.T) {
 }
 
 func TestUserScopedPoolSaveRejectsWhitespacePaddedAccountProxyWithoutCatalogNodes(t *testing.T) {
-	testUserScopedPoolSaveRejectsEnabledProxyWithoutCatalogNodes(t, services.ProviderPoolType(" account "))
+	testUserScopedPoolSaveRejectsEnabledProxyWithoutCatalogNodes(t, "openai-responses", services.ProviderPoolType(" account "))
 }
 
-func testUserScopedPoolSaveRejectsEnabledProxyWithoutCatalogNodes(t *testing.T, poolType services.ProviderPoolType) {
+func testUserScopedPoolSaveRejectsEnabledProxyWithoutCatalogNodes(t *testing.T, platform string, poolType services.ProviderPoolType) {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("CODE_SWITCH_REFERENCE_PROXY_DIR", t.TempDir())
@@ -104,16 +148,21 @@ func testUserScopedPoolSaveRejectsEnabledProxyWithoutCatalogNodes(t *testing.T, 
 	poolService := services.NewProviderPoolService()
 	scoped := &userScopedProviderPoolService{base: poolService, proxyService: proxyService}
 	ctx := contextWithAuthenticatedUser(context.Background(), &services.AuthenticatedUser{ID: "user-a", Username: "alice"})
+	accountPoolConfig := &services.AccountPoolConfig{
+		APIURL: "https://api.example.com",
+		Keys:   []services.AccountPoolKey{{APIKey: "sk-test"}},
+	}
+	if platform == "openai-chat" {
+		accountPoolConfig.ChatEndpoint = "/v1/chat/completions"
+	} else {
+		accountPoolConfig.ResponsesEndpoint = "/v1/responses"
+	}
 	pool := &services.ProviderPool{
-		Platform: "openai-responses",
-		Name:     "account pool",
-		PoolType: poolType,
-		Mode:     services.ProviderPoolModeManaged,
-		AccountPoolConfig: &services.AccountPoolConfig{
-			APIURL:            "https://api.example.com",
-			ResponsesEndpoint: "/v1/responses",
-			Keys:              []services.AccountPoolKey{{APIKey: "sk-test"}},
-		},
+		Platform:          platform,
+		Name:              "account pool",
+		PoolType:          poolType,
+		Mode:              services.ProviderPoolModeManaged,
+		AccountPoolConfig: accountPoolConfig,
 		ProxyConfig: &services.AccountPoolProxyConfig{
 			Enabled:   true,
 			Selection: services.AccountPoolProxySelectionAuto,
@@ -123,7 +172,7 @@ func testUserScopedPoolSaveRejectsEnabledProxyWithoutCatalogNodes(t *testing.T, 
 	if _, err := scoped.SavePool(ctx, pool); err == nil || !strings.Contains(err.Error(), "至少一个有效的代理配置") {
 		t.Fatalf("save enabled proxy without catalog nodes error = %v", err)
 	}
-	pools, err := poolService.ListPoolsForUser("user-a", "openai-responses")
+	pools, err := poolService.ListPoolsForUser("user-a", platform)
 	if err != nil {
 		t.Fatalf("ListPoolsForUser: %v", err)
 	}

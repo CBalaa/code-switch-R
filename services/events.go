@@ -7,6 +7,12 @@ type EventEmitter interface {
 	Emit(name string, payload any)
 }
 
+// UserScopedEvent 事件载荷可实现该接口，声明事件归属的用户。
+// SSE 层据此只把事件投递给该用户；返回空字符串表示广播。
+type UserScopedEvent interface {
+	EventUserID() string
+}
+
 // EventMessage is the normalized payload sent over the in-process event bus.
 type EventMessage struct {
 	Name string

@@ -379,7 +379,10 @@ onMounted(async () => {
         :class="{ active: activeTab === tab.id }"
         type="button"
         role="tab"
+        :id="'keys-tab-' + tab.id"
         :aria-selected="activeTab === tab.id"
+        :aria-controls="'keys-panel-' + tab.id"
+        :data-testid="'keys-tab-' + tab.id"
         @click="activeTab = tab.id"
       >
         {{ t(tab.labelKey) }}
@@ -387,7 +390,13 @@ onMounted(async () => {
     </div>
 
     <section class="keys-content">
-      <div v-if="activeTab === 'management'" class="keys-panel keys-manager">
+      <div
+        v-if="activeTab === 'management'"
+        id="keys-panel-management"
+        class="keys-panel keys-manager"
+        role="tabpanel"
+        aria-labelledby="keys-tab-management"
+      >
         <div class="panel-heading">
           <div>
             <h2>{{ t('keys.management') }}</h2>
@@ -397,14 +406,17 @@ onMounted(async () => {
 
         <div class="create-row">
           <input
+            id="key-create-name"
             v-model="createName"
             class="keys-input"
             type="text"
+            :aria-label="t('auth.security.createPlaceholder')"
             :placeholder="t('auth.security.createPlaceholder')"
             :disabled="createBusy"
+            data-testid="key-create-name"
             @keyup.enter="handleCreateKey"
           />
-          <button class="primary-btn" :disabled="createBusy" @click="handleCreateKey">
+          <button class="primary-btn" type="button" :disabled="createBusy" data-testid="key-create-submit" @click="handleCreateKey">
             {{ createBusy ? t('auth.security.creating') : t('auth.security.create') }}
           </button>
         </div>
@@ -427,8 +439,15 @@ onMounted(async () => {
             v-for="key in keys"
             :key="key.id"
             class="key-row"
+            role="option"
+            tabindex="0"
+            :aria-selected="key.id === selectedKeyId"
             :class="{ selected: key.id === selectedKeyId }"
+            :data-key-id="key.id"
+            :data-testid="'key-row-' + key.id"
             @click="selectedKeyId = key.id"
+            @keydown.enter.prevent="selectedKeyId = key.id"
+            @keydown.space.prevent="selectedKeyId = key.id"
           >
             <div class="key-main">
               <template v-if="renameKeyId === key.id">
@@ -455,11 +474,36 @@ onMounted(async () => {
                 <button class="ghost-btn" @click="cancelRename">{{ t('common.cancel') }}</button>
               </template>
               <template v-else>
-                <button class="secondary-btn" :disabled="keyBusyId === key.id" @click="handleCopyExistingKey(key.id)">
+                <button
+                  class="secondary-btn"
+                  type="button"
+                  :disabled="keyBusyId === key.id"
+                  :aria-label="t('auth.security.copy') + ': ' + key.name"
+                  :data-key-id="key.id"
+                  data-testid="key-copy"
+                  @click="handleCopyExistingKey(key.id)"
+                >
                   {{ t('auth.security.copy') }}
                 </button>
-                <button class="secondary-btn" @click="startRename(key)">{{ t('keys.rename') }}</button>
-                <button class="danger-btn" :disabled="keyBusyId === key.id" @click="handleDeleteKey(key)">
+                <button
+                  class="secondary-btn"
+                  type="button"
+                  :aria-label="t('keys.rename') + ': ' + key.name"
+                  :data-key-id="key.id"
+                  data-testid="key-rename"
+                  @click="startRename(key)"
+                >
+                  {{ t('keys.rename') }}
+                </button>
+                <button
+                  class="danger-btn"
+                  type="button"
+                  :disabled="keyBusyId === key.id"
+                  :aria-label="t('auth.security.delete') + ': ' + key.name"
+                  :data-key-id="key.id"
+                  data-testid="key-delete"
+                  @click="handleDeleteKey(key)"
+                >
                   {{ t('auth.security.delete') }}
                 </button>
               </template>
@@ -468,40 +512,52 @@ onMounted(async () => {
         </div>
       </div>
 
-      <div v-else class="keys-panel keys-usage">
+      <div
+        v-else
+        id="keys-panel-usage"
+        class="keys-panel keys-usage"
+        role="tabpanel"
+        aria-labelledby="keys-tab-usage"
+      >
         <div class="panel-heading usage-heading">
           <div>
             <h2>{{ t('keys.usage') }}</h2>
             <p>{{ t('keys.usageAllKeys') }}</p>
           </div>
           <div class="usage-controls">
-            <div class="range-tabs">
+            <div class="range-tabs" role="group" :aria-label="t('keys.usage')">
               <button
                 v-for="range in ranges"
                 :key="range.value"
+                type="button"
                 :class="{ active: usageRange === range.value }"
+                :aria-pressed="usageRange === range.value"
+                :data-range="range.value"
+                :data-testid="'keys-range-' + range.value"
                 @click="handleUsageRangeClick(range.value)"
               >
                 {{ t(range.labelKey) }}
               </button>
             </div>
             <div v-if="usageRange === 'custom'" class="custom-range-controls">
-              <label>
-                <span>{{ t('keys.customRange.start') }}</span>
-                <input v-model="customUsageStart" type="datetime-local" />
-              </label>
-              <label>
-                <span>{{ t('keys.customRange.end') }}</span>
-                <input v-model="customUsageEnd" type="datetime-local" />
-              </label>
+              <div class="custom-range-field">
+                <label for="keys-custom-range-start">{{ t('keys.customRange.start') }}</label>
+                <input id="keys-custom-range-start" v-model="customUsageStart" type="datetime-local" data-testid="keys-custom-range-start" />
+              </div>
+              <div class="custom-range-field">
+                <label for="keys-custom-range-end">{{ t('keys.customRange.end') }}</label>
+                <input id="keys-custom-range-end" v-model="customUsageEnd" type="datetime-local" data-testid="keys-custom-range-end" />
+              </div>
               <button type="button" @click="handleApplyCustomUsageRange">
                 {{ t('keys.customRange.apply') }}
               </button>
             </div>
-            <div class="metric-tabs">
+            <div class="metric-tabs" role="group" :aria-label="t('keys.chart.tokens') + ' / ' + t('keys.chart.calls')">
               <button
                 :class="{ active: usageMetric === 'tokens' }"
                 type="button"
+                :aria-pressed="usageMetric === 'tokens'"
+                data-testid="keys-metric-tokens"
                 @click="usageMetric = 'tokens'"
               >
                 {{ t('keys.chart.tokens') }}
@@ -509,6 +565,8 @@ onMounted(async () => {
               <button
                 :class="{ active: usageMetric === 'calls' }"
                 type="button"
+                :aria-pressed="usageMetric === 'calls'"
+                data-testid="keys-metric-calls"
                 @click="usageMetric = 'calls'"
               >
                 {{ t('keys.chart.calls') }}
@@ -530,7 +588,7 @@ onMounted(async () => {
 
         <div class="chart-shell">
           <div v-if="usageLoading" class="chart-loading">{{ t('keys.loadingUsage') }}</div>
-          <Line v-else :data="chartData" :options="chartOptions" />
+          <Line v-else :data="chartData" :options="chartOptions" role="img" :aria-label="t('keys.chartLabel')" />
         </div>
       </div>
     </section>
@@ -815,12 +873,18 @@ button:disabled {
   background: var(--mac-surface-strong);
 }
 
-.custom-range-controls label {
+.custom-range-controls label,
+.custom-range-controls .custom-range-field {
   display: grid;
   gap: 4px;
   color: var(--mac-text-secondary);
   font-size: 0.78rem;
   font-weight: 700;
+}
+
+.custom-range-controls label {
+  font: inherit;
+  color: inherit;
 }
 
 .custom-range-controls input {

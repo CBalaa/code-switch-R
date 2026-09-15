@@ -2751,3 +2751,249 @@ func TestErrProviderEmptyShellIsDistinct(t *testing.T) {
 		t.Fatal("errProviderEmptyShell should not be errCodexEmptyStream")
 	}
 }
+
+// ==================== Chat Completions 号池流式守卫 ====================
+
+// chatGuardTestOptions mirrors the production guard options used for account
+// pools: the header stays uncommitted until useful content is observed.
+func chatGuardTestOptions(kind string) codexStreamGuardOptions {
+	return codexStreamGuardOptions{
+		kind:                         kind,
+		deferInitialKeepAlive:        true,
+		disableKeepAliveUntilRelease: true,
+	}
+}
+
+func chatGuardTestResponse(payload string) *xrequest.Response {
+	return xrequest.NewResponse(&http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(strings.NewReader(payload)),
+	})
+}
+
+// TestWriteGuardedStreamingResponseAcceptsChatCompletionDeltas verifies the
+// shared preflight guard understands Chat Completions chunks: HTTP 200 is
+// committed only once a delta carries model output, the chunk id aliases the
+// sticky session, and the first-text marker is recorded.
+func TestWriteGuardedStreamingResponseAcceptsChatCompletionDeltas(t *testing.T) {
+	resp := chatGuardTestResponse(
+		"data: {\"id\":\"chatcmpl-chat-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"}}]}\n\n" +
+			"data: {\"id\":\"chatcmpl-chat-1\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hello \"}}]}\n\n" +
+			"data: {\"id\":\"chatcmpl-chat-1\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"world\"}}]}\n\n" +
+			"data: {\"id\":\"chatcmpl-chat-1\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n" +
+			"data: [DONE]\n\n",
+	)
+
+	recorder := newStreamingRecorder()
+	requestLog := &ReqeustLog{startedAt: time.Now()}
+	var committedID string
+	options := chatGuardTestOptions("openai-chat")
+	options.onSuccessfulCompleted = func(responseID string) {
+		committedID = responseID
+	}
+	written, responseWritten, err := writeCodexGuardedStreamingResponseWithOptions(
+		recorder, resp, requestLog, options, ReqeustLogHook(nil, "openai-chat", requestLog),
+	)
+	if err != nil {
+		t.Fatalf("chat guard returned error: %v", err)
+	}
+	if !responseWritten || recorder.status != http.StatusOK {
+		t.Fatalf("chat stream not committed: responseWritten=%v status=%d", responseWritten, recorder.status)
+	}
+	if body := recorder.BodyString(); !strings.Contains(body, "hello ") || !strings.Contains(body, "world") || !strings.Contains(body, "[DONE]") {
+		t.Fatalf("chat stream body = %q", body)
+	}
+	if written == 0 {
+		t.Fatal("chat stream wrote zero bytes")
+	}
+	if committedID != "chatcmpl-chat-1" {
+		t.Fatalf("chat sticky alias = %q, want chatcmpl-chat-1", committedID)
+	}
+	if requestLog.FirstTextSec <= 0 {
+		t.Fatal("chat delta content did not mark first text")
+	}
+}
+
+// TestWriteGuardedStreamingResponseRejectsContentFreeChatStream verifies a 200
+// chat stream that terminates without any model output is treated as an empty
+// upstream stream (502 at the relay, no client-visible 200).
+func TestWriteGuardedStreamingResponseRejectsContentFreeChatStream(t *testing.T) {
+	resp := chatGuardTestResponse(
+		"data: {\"id\":\"chatcmpl-empty\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"}}]}\n\n" +
+			"data: {\"id\":\"chatcmpl-empty\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n" +
+			"data: [DONE]\n\n",
+	)
+
+	recorder := newStreamingRecorder()
+	written, responseWritten, err := writeCodexGuardedStreamingResponseWithOptions(
+		recorder, resp, &ReqeustLog{startedAt: time.Now()}, chatGuardTestOptions("openai-chat"),
+	)
+	if !errors.Is(err, errCodexEmptyStream) {
+		t.Fatalf("err = %v, want errCodexEmptyStream", err)
+	}
+	if written != 0 || responseWritten || recorder.status != 0 || recorder.BodyString() != "" {
+		t.Fatalf("content-free chat stream was committed: written=%d responseWritten=%v status=%d body=%q",
+			written, responseWritten, recorder.status, recorder.BodyString())
+	}
+}
+
+// TestWriteGuardedStreamingResponseRejectsChatErrorPayload verifies a mid-stream
+// chat error object is a terminal failure, not usable output.
+func TestWriteGuardedStreamingResponseRejectsChatErrorPayload(t *testing.T) {
+	resp := chatGuardTestResponse(
+		"data: {\"error\":{\"message\":\"upstream overloaded\",\"type\":\"server_error\"}}\n\n" +
+			"data: [DONE]\n\n",
+	)
+
+	recorder := newStreamingRecorder()
+	_, responseWritten, err := writeCodexGuardedStreamingResponseWithOptions(
+		recorder, resp, &ReqeustLog{startedAt: time.Now()}, chatGuardTestOptions("openai-chat"),
+	)
+	if !errors.Is(err, errCodexTerminalStreamFailure) {
+		t.Fatalf("err = %v, want errCodexTerminalStreamFailure", err)
+	}
+	if responseWritten || recorder.status != 0 {
+		t.Fatalf("chat error stream was committed: responseWritten=%v status=%d", responseWritten, recorder.status)
+	}
+}
+
+// TestChatGuardDoesNotAcceptResponsesEventsAsChatContent locks in that the guard
+// stays dialect-specific: Responses events passing through a chat pool are not
+// chat output and must not commit HTTP 200.
+func TestChatGuardDoesNotAcceptResponsesEventsAsChatContent(t *testing.T) {
+	resp := chatGuardTestResponse(
+		"data: {\"type\":\"response.output_text.delta\",\"delta\":\"responses-only text\"}\n\n" +
+			"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_wrong_protocol\",\"output\":[{\"type\":\"message\",\"content\":[{\"type\":\"output_text\",\"text\":\"responses-only text\"}]}]}}\n\n" +
+			"data: [DONE]\n\n",
+	)
+
+	recorder := newStreamingRecorder()
+	written, responseWritten, err := writeCodexGuardedStreamingResponseWithOptions(
+		recorder, resp, &ReqeustLog{startedAt: time.Now()}, chatGuardTestOptions("openai-chat"),
+	)
+	if !errors.Is(err, errCodexEmptyStream) {
+		t.Fatalf("err = %v, want errCodexEmptyStream", err)
+	}
+	if written != 0 || responseWritten || recorder.BodyString() != "" {
+		t.Fatalf("Responses events committed a chat stream: written=%d responseWritten=%v body=%q",
+			written, responseWritten, recorder.BodyString())
+	}
+}
+
+// TestWriteGuardedStreamingResponseAcceptsChatToolCallDelta verifies tool-call
+// arguments count as useful chat output.
+func TestWriteGuardedStreamingResponseAcceptsChatToolCallDelta(t *testing.T) {
+	resp := chatGuardTestResponse(
+		"data: {\"id\":\"chatcmpl-tool\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"function\":{\"name\":\"get_weather\",\"arguments\":\"{\\\"city\\\"\"}}]}}]}\n\n" +
+			"data: [DONE]\n\n",
+	)
+
+	recorder := newStreamingRecorder()
+	requestLog := &ReqeustLog{startedAt: time.Now()}
+	_, responseWritten, err := writeCodexGuardedStreamingResponseWithOptions(
+		recorder, resp, requestLog, chatGuardTestOptions("openai-chat"),
+	)
+	if err != nil {
+		t.Fatalf("chat tool-call guard returned error: %v", err)
+	}
+	if !responseWritten || !strings.Contains(recorder.BodyString(), "get_weather") {
+		t.Fatalf("chat tool-call stream not committed: responseWritten=%v body=%q", responseWritten, recorder.BodyString())
+	}
+}
+
+// TestStreamGuardProtocolMessagesUseRequestDialect verifies client-visible guard
+// errors describe the pool's own protocol while Responses wording stays stable.
+func TestStreamGuardProtocolMessagesUseRequestDialect(t *testing.T) {
+	chatErr := newCodexStreamPreflightProtocolError(http.StatusOK, errCodexEmptyStream, "openai-chat")
+	if !strings.Contains(chatErr.message, "chat upstream stream") || strings.Contains(chatErr.message, "codex") {
+		t.Fatalf("chat empty-stream message = %q", chatErr.message)
+	}
+	responsesErr := newCodexStreamPreflightProtocolError(http.StatusOK, errCodexEmptyStream, "openai-responses")
+	if responsesErr.message != errCodexEmptyStream.Error() {
+		t.Fatalf("responses empty-stream message = %q, want %q", responsesErr.message, errCodexEmptyStream.Error())
+	}
+	chatMissing := newCodexStreamPreflightProtocolError(http.StatusOK, errCodexMissingCompletion, "openai-chat")
+	if !strings.Contains(chatMissing.message, "terminal SSE event") || strings.Contains(chatMissing.message, "response.completed") {
+		t.Fatalf("chat missing-completion message = %q", chatMissing.message)
+	}
+	if code := chatErr.code; code != emptyStreamErrorCode {
+		t.Fatalf("chat empty-stream code = %q, want %q", code, emptyStreamErrorCode)
+	}
+}
+
+// ==================== 上游错误「请求级 vs key 级」判定 ====================
+
+func TestIsRequestScopedUpstreamErrorClassification(t *testing.T) {
+	cases := []struct {
+		name   string
+		status int
+		body   string
+		want   bool
+	}{
+		{"400 bad request", http.StatusBadRequest, `{"error":{"message":"bad"}}`, true},
+		{"401 unauthorized stays key scoped", http.StatusUnauthorized, `{"error":{"code":"invalid_api_key"}}`, false},
+		{"403 forbidden stays key scoped", http.StatusForbidden, `{"error":{"message":"no access"}}`, false},
+		{"429 rate limit stays key scoped", http.StatusTooManyRequests, `{"error":{"code":"rate_limit_exceeded"}}`, false},
+		{"new-api 503 model_not_found", http.StatusServiceUnavailable,
+			`{"error":{"code":"model_not_found","message":"No available channel for model x under group default (distributor)","type":"new_api_error"}}`, true},
+		{"openai 503 invalid_request_error", http.StatusServiceUnavailable,
+			`{"error":{"message":"model does not exist","type":"invalid_request_error","code":"model_not_found"}}`, true},
+		{"anthropic 500 invalid_request_error type", http.StatusInternalServerError,
+			`{"type":"error","error":{"type":"invalid_request_error","message":"unknown model"}}`, true},
+		{"generic 503 server_error stays key scoped", http.StatusServiceUnavailable,
+			`{"error":{"code":"server_error","message":"upstream exploded"}}`, false},
+		{"503 with html body stays key scoped", http.StatusServiceUnavailable, `<html>bad gateway</html>`, false},
+		{"503 with empty body stays key scoped", http.StatusServiceUnavailable, ``, false},
+		{"500 without error node stays key scoped", http.StatusInternalServerError, `{"message":"oops"}`, false},
+		{"502 overloaded stays key scoped", http.StatusBadGateway,
+			`{"error":{"type":"overloaded_error","message":"busy"}}`, false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isRequestScopedUpstreamStatusBody(tc.status, []byte(tc.body)); got != tc.want {
+				t.Fatalf("isRequestScopedUpstreamStatusBody(%d, %q) = %v, want %v", tc.status, tc.body, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestIsRequestScopedUpstreamResponsePeekRestoresBody locks in that classifying
+// a 5xx response does not consume its payload: the error body must still be
+// available to the code path that returns it to the caller.
+func TestIsRequestScopedUpstreamResponsePeekRestoresBody(t *testing.T) {
+	payload := `{"error":{"code":"model_not_found","message":"No available channel for model typo"}}`
+	resp := xrequest.NewResponse(&http.Response{
+		StatusCode: http.StatusServiceUnavailable,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(payload)),
+	})
+
+	if !isRequestScopedUpstreamResponse(resp) {
+		t.Fatal("new-api model_not_found 503 must be treated as request scoped")
+	}
+	restored, err := io.ReadAll(resp.RawResponse.Body)
+	if err != nil {
+		t.Fatalf("read restored body: %v", err)
+	}
+	if string(restored) != payload {
+		t.Fatalf("body after classification = %q, want the original payload", restored)
+	}
+}
+
+// TestGenericUpstreamServerErrorIsNotRequestScoped keeps the fix narrow: a real
+// upstream outage must still fail over to the next account key.
+func TestGenericUpstreamServerErrorIsNotRequestScoped(t *testing.T) {
+	resp := xrequest.NewResponse(&http.Response{
+		StatusCode: http.StatusServiceUnavailable,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"error":{"code":"server_error","message":"overloaded"}}`)),
+	})
+	if isRequestScopedUpstreamResponse(resp) {
+		t.Fatal("a plain server_error 503 must stay key scoped")
+	}
+	if isRequestScopedUpstream4xx(http.StatusServiceUnavailable) {
+		t.Fatal("503 must not be classified as a request-scoped 4xx")
+	}
+}

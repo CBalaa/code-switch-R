@@ -5000,7 +5000,7 @@ func measureResponsesEndpoint(ctx context.Context, target resolvedProxyTestTarge
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
 	}
 	start := time.Now()
-	probeBody := []byte(`{"model":"gpt-5-codex","input":[{"role":"user","content":[{"type":"input_text","text":"ping"}]}],"stream":true}`)
+	probeBody, probeUserAgent := proxyConnectivityProbe(target)
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, target.url.String(), bytes.NewReader(probeBody))
 	if err != nil {
 		return nil, 0, err.Error(), false
@@ -5010,7 +5010,7 @@ func measureResponsesEndpoint(ctx context.Context, target resolvedProxyTestTarge
 	request.Header.Set("Accept", "text/event-stream")
 	request.Header.Set("Accept-Encoding", "identity")
 	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("User-Agent", "codex-cli/1.0")
+	request.Header.Set("User-Agent", probeUserAgent)
 	response, err := client.Do(request)
 	if err != nil {
 		return nil, 0, err.Error(), false
@@ -5021,6 +5021,18 @@ func measureResponsesEndpoint(ctx context.Context, target resolvedProxyTestTarge
 		return nil, response.StatusCode, "Cloudflare 拦截（HTTP 403）", true
 	}
 	return &ms, response.StatusCode, "", false
+}
+
+// proxyConnectivityProbe returns the protocol-shaped probe body and User-Agent
+// for an account-pool latency test. The target URL already carries the pool's
+// configured protocol endpoint, so the dialect is derived from its path: a Chat
+// Completions pool must not be probed with a Responses payload (and a
+// codex-cli user agent would route it to the wrong upstream handler).
+func proxyConnectivityProbe(target resolvedProxyTestTarget) ([]byte, string) {
+	if target.url != nil && strings.Contains(strings.ToLower(target.url.Path), "/chat/completions") {
+		return []byte(`{"model":"gpt-4o-mini","messages":[{"role":"user","content":"ping"}],"stream":true}`), "openai-python/1.0"
+	}
+	return []byte(`{"model":"gpt-5-codex","input":[{"role":"user","content":[{"type":"input_text","text":"ping"}]}],"stream":true}`), "codex-cli/1.0"
 }
 
 func cloudflareBlockedResponse(response *http.Response) bool {

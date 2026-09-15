@@ -81,6 +81,14 @@ func TestFetchProviderFaviconSkipsHTMLFaviconICO(t *testing.T) {
 	}
 }
 
+// scopedTestEvent 实现 services.UserScopedEvent，用于验证结构化事件的租户隔离。
+type scopedTestEvent struct {
+	userID string
+	body   string
+}
+
+func (e scopedTestEvent) EventUserID() string { return e.userID }
+
 func TestEventVisibleToUser(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -93,6 +101,10 @@ func TestEventVisibleToUser(t *testing.T) {
 		{name: "global event", payload: map[string]interface{}{"userID": ""}, userID: "user-a", want: true},
 		{name: "legacy event", payload: map[string]interface{}{"platform": "openai-responses"}, userID: "user-a", want: true},
 		{name: "non-map event", payload: "ready", userID: "user-a", want: true},
+		// 结构化事件（services.UserScopedEvent）：模型真伪检测的进度/流式事件走这条路径
+		{name: "scoped struct matching", payload: scopedTestEvent{userID: "user-a", body: "123, 456"}, userID: "user-a", want: true},
+		{name: "scoped struct other user", payload: scopedTestEvent{userID: "user-b", body: "123, 456"}, userID: "user-a", want: false},
+		{name: "scoped struct broadcast", payload: scopedTestEvent{userID: ""}, userID: "user-a", want: true},
 	}
 
 	for _, test := range tests {

@@ -14,9 +14,13 @@
     "console": "Console",
     "settings": "Settings",
     "keys": "Keys",
-    "costs": "Costs"
+    "costs": "Costs",
+    "expand": "Expand sidebar",
+    "collapse": "Collapse sidebar",
+    "navLabel": "Main navigation"
   },
   "common": {
+    "close": "Close",
     "save": "Save",
     "saving": "Saving...",
     "cancel": "Cancel"
@@ -439,6 +443,31 @@
         "loadAppSettingsFailed": "Failed to load application settings",
         "loadProvidersFailed": "Failed to load providers for {tab} tab"
       },
+      "modelTrace": {
+        "title": "Model Authenticity Check",
+        "tooltip": "Check model authenticity",
+        "selectModel": "Select model to verify",
+        "verify": "Verify",
+        "verifying": "Verifying…",
+        "waitingStream": "Waiting for model output…",
+        "stepSending": "Send challenge",
+        "stepReceived": "Generate answer",
+        "stepDone": "Attribution",
+        "match": "Identity matches",
+        "mismatch": "Possible model swap",
+        "matchDetail": "Fingerprint attribution matches the selected model: {model} (confidence {probability})",
+        "mismatchDetail": "Fingerprint attribution does not match: claimed {expected}, closest match is {actual} (confidence {probability}). The provider may have swapped the model.",
+        "expectedModel": "Selected",
+        "topPrediction": "Attribution",
+        "validNumbers": "Valid numbers",
+        "latency": "Latency",
+        "attempts": "Attempts",
+        "distributionTitle": "Attribution probabilities",
+        "close": "Close",
+        "retry": "Retry",
+        "error": "Verification failed",
+        "notCovered": "This model is not covered by the fingerprint bank"
+      },
       "pool": {
         "subTabs": {
           "providers": "Providers",
@@ -463,6 +492,8 @@
         "accountPoolBaseUrlPlaceholder": "https://api.example.com/v1",
         "responsesEndpoint": "Responses Endpoint",
         "responsesEndpointPlaceholder": "/responses",
+        "chatEndpoint": "Chat Endpoint",
+        "chatEndpointPlaceholder": "/v1/chat/completions",
         "accountPoolKeys": "Provider Keys",
         "accountPoolKeysPlaceholder": "sk-key-1\nsk-key-2\nsk-key-3",
         "accountPoolKeysHint": "Enter one key per line. Whitespace, blank lines, and duplicates are removed on save",
@@ -514,24 +545,24 @@
         "proxyConfigHideFailed": "Failed to hide proxy YAML configuration",
         "proxyConfigUnhideFailed": "Failed to show proxy YAML configuration",
         "proxyTesting": "Testing...",
-        "testProxy": "Test selected proxy Responses connectivity",
-        "testAllProxyLatencies": "Test all Responses latencies",
-        "proxyBulkTesting": "Testing Responses connectivity one at a time...",
+        "testProxy": "Test the selected proxy's protocol connectivity",
+        "testAllProxyLatencies": "Test all protocol connectivity latencies",
+        "proxyBulkTesting": "Testing protocol connectivity one at a time...",
         "proxyLastTested": "Last test: {minutes} min ago",
-        "proxyBulkTestComplete": "All Responses connectivity tests completed",
+        "proxyBulkTestComplete": "All protocol connectivity tests completed",
         "proxyBulkTestIncomplete": "Proxy health-check latency test incomplete",
-        "proxyBulkTestFailed": "Failed to test all Responses connectivity checks",
-        "proxyBaseUrlRequired": "Enter the provider Base URL and Responses endpoint before testing proxy latency",
+        "proxyBulkTestFailed": "Failed to test all protocol connectivity checks",
+        "proxyBaseUrlRequired": "Enter the provider Base URL and protocol endpoint before testing proxy latency",
         "proxyTestInProgress": "A proxy test is in progress. Wait for it to finish before saving or closing the pool.",
         "proxyNotTested": "Not tested",
         "proxyUnavailable": "Unavailable",
         "proxyTimeout": "Timed out",
-        "proxyAllUnavailable": "All visible proxies cannot reach the Responses endpoint",
+        "proxyAllUnavailable": "All visible proxies cannot reach the upstream endpoint",
         "proxyCloudflareBlocked": "Blocked by Cloudflare",
         "proxyLatency": "Proxy latency",
         "localProxyLatency": "Local to proxy",
-        "directBaseLatency": "Direct Responses latency",
-        "proxiedBaseLatency": "Responses connectivity",
+        "directBaseLatency": "Direct upstream latency",
+        "proxiedBaseLatency": "Protocol connectivity",
         "proxyTestAfterCreate": "You can test speed from the edit dialog after saving the pool",
         "proxyUploadWarning": "This YAML will be visible to all users and may contain proxy credentials. Continue uploading?",
         "proxySubscriptionURLPrompt": "Enter a public Clash subscription URL (HTTP/HTTPS only)",
@@ -614,7 +645,8 @@
         "specialRuleUntilDayOffset": "Day offset (0 = today)",
         "specialRuleUntilTime": "Time of day",
         "specialRuleUntilDayOffsetInvalid": "Day offset must be between 0 and 99",
-        "specialRuleUntilTimeInvalid": "Invalid target time"
+        "specialRuleUntilTimeInvalid": "Invalid target time",
+        "memberLevel": "Member level"
       }
     },
     "logs": {
@@ -672,7 +704,11 @@
       "back": "Back to home",
       "tokenDetail": {
         "title": "Today's Token Breakdown"
-      }
+      },
+      "tableCaption": "Request logs table",
+      "prevPage": "Previous page",
+      "nextPage": "Next page",
+      "chartLabel": "Request trend chart"
     },
     "general": {
       "traffic": {
@@ -739,7 +775,8 @@
     "themesetting": {
       "select": {
         "opt_dark": "Dark Mode",
-        "opt_light": "Bright Mode"
+        "opt_light": "Bright Mode",
+        "theme": "Theme"
       }
     },
     "shortcut": {
@@ -758,7 +795,8 @@
         "failed": "Failed to save shortcut",
         "invalid": "Invalid combination, include a modifier"
       },
-      "placeholder": "Press keys to record"
+      "placeholder": "Press keys to record",
+      "clear": "Clear shortcut"
     },
     "deeplink": {
       "title": "Import Provider from Deep Link",
@@ -931,6 +969,7 @@
       "loadUsage": "Failed to load key usage",
       "rename": "Failed to rename key",
       "invalidCustomRange": "Select a valid start and end time"
-    }
+    },
+    "chartLabel": "Usage trend chart"
   }
 }

@@ -46,7 +46,7 @@ const submit = async () => {
       </section>
 
       <section class="auth-panel">
-        <div v-if="!authState.ready || authState.loading" class="auth-loading">
+        <div v-if="!authState.ready || authState.loading" class="auth-loading" role="status" data-testid="auth-loading">
           <span class="auth-spinner" aria-hidden="true"></span>
           <span>{{ t('auth.statusChecking') }}</span>
         </div>
@@ -57,7 +57,7 @@ const submit = async () => {
           <p class="auth-form-description">{{ t('auth.noUsers.description') }}</p>
         </div>
 
-        <form v-else class="auth-form" @submit.prevent="submit">
+        <form v-else class="auth-form" data-testid="login-form" @submit.prevent="submit">
           <p class="auth-form-eyebrow">
             {{ t('auth.login.eyebrow') }}
           </p>
@@ -68,33 +68,37 @@ const submit = async () => {
             {{ t('auth.login.description') }}
           </p>
 
-          <label class="auth-field">
-            <span>{{ t('auth.fields.username') }}</span>
+          <div class="auth-field">
+            <label for="login-username">{{ t('auth.fields.username') }}</label>
             <input
+              id="login-username"
               v-model="username"
               class="base-input"
               type="text"
               autocomplete="username"
               :placeholder="t('auth.placeholders.username')"
               :disabled="submitting"
+              data-testid="login-username"
               required
             />
-          </label>
+          </div>
 
-          <label class="auth-field">
-            <span>{{ t('auth.fields.password') }}</span>
+          <div class="auth-field">
+            <label for="login-password">{{ t('auth.fields.password') }}</label>
             <input
+              id="login-password"
               v-model="password"
               class="base-input"
               type="password"
               autocomplete="current-password"
               :placeholder="t('auth.placeholders.password')"
               :disabled="submitting"
+              data-testid="login-password"
               required
             />
-          </label>
+          </div>
 
-          <button class="auth-submit" type="submit" :disabled="submitting">
+          <button class="auth-submit" type="submit" :disabled="submitting" data-testid="login-submit">
             {{ submitting ? t('auth.login.submitting') : t('auth.login.submit') }}
           </button>
         </form>

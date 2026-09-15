@@ -1,19 +1,23 @@
 <template>
   <div class="logs-page">
+    <h1 class="sr-only">{{ t('sidebar.logs') }}</h1>
     <div class="logs-header">
-      <BaseButton variant="outline" type="button" @click="backToHome">
+      <BaseButton variant="outline" type="button" data-testid="logs-back" @click="backToHome">
         {{ t('components.logs.back') }}
       </BaseButton>
-      <BaseButton size="sm" :disabled="loading" @click="manualRefresh">
+      <BaseButton size="sm" :disabled="loading" data-testid="logs-refresh" @click="manualRefresh">
         {{ t('components.logs.refresh') }}
       </BaseButton>
     </div>
 
     <section class="logs-summary">
+      <!-- 这里的卡片保持 <article>：换成 <button> 会被全局 button 重置
+           （style.css 里那条 !important 规则）接管成 inline-flex + 固定内边距，排版会散掉 -->
       <article
         v-for="card in statsCards"
         :key="card.key"
         :class="['summary-card', { 'summary-card--clickable': card.key === 'tokens' }]"
+        :data-testid="'logs-summary-' + card.key"
         @click="handleCardClick(card.key)"
       >
         <div class="summary-card__label">{{ card.label }}</div>
@@ -26,11 +30,12 @@
     </section>
 
     <section class="logs-chart">
-      <Line :data="chartData" :options="chartOptions" />
+      <Line :data="chartData" :options="chartOptions" role="img" :aria-label="t('components.logs.chartLabel')" />
     </section>
 
-    <section class="logs-table-wrapper">
+    <section class="logs-table-wrapper" :aria-busy="loading">
       <table ref="logsTableRef" class="logs-table">
+        <caption class="sr-only">{{ t('components.logs.tableCaption') }}</caption>
         <colgroup>
           <col
             v-for="column in logTableColumns"
@@ -43,6 +48,7 @@
             <th
               v-for="(column, index) in logTableColumns"
               :key="column.id"
+              scope="col"
               :class="[column.className, 'log-resizable-th', { 'is-resizing': resizingColumnId === column.id }]"
             >
               <span class="column-header-label">{{ t(column.labelKey) }}</span>
@@ -57,7 +63,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="item in pagedLogs" :key="item.id" :class="isActiveLog(item) ? 'processing-row' : ''">
+          <tr v-for="item in pagedLogs" :key="item.id" :class="isActiveLog(item) ? 'processing-row' : ''" :data-log-id="item.id">
             <td :data-label="t('components.logs.table.time')">{{ formatTime(item.created_at) }}</td>
             <td :data-label="t('components.logs.table.platform')">{{ item.platform || '—' }}</td>
             <td :data-label="t('components.logs.table.provider')" class="provider-cell">{{ item.provider || '—' }}</td>
@@ -83,6 +89,9 @@
                 v-else-if="showRetryButton(item)"
                 type="button"
                 class="retry-token-button"
+                :data-log-id="item.id"
+                :aria-label="t('components.logs.retry.action') + ' #' + item.id"
+                data-testid="logs-retry"
                 @click="handleRetryLog(item)"
               >
                 {{ t('components.logs.retry.action') }}
@@ -116,16 +125,30 @@
           </tr>
         </tbody>
       </table>
-      <p v-if="loading" class="empty">{{ t('components.logs.loading') }}</p>
+      <p v-if="loading" class="empty" role="status">{{ t('components.logs.loading') }}</p>
     </section>
 
     <div class="logs-pagination">
-      <span>{{ page }} / {{ totalPages }}</span>
+      <span aria-live="polite" data-testid="logs-page-indicator">{{ page }} / {{ totalPages }}</span>
       <div class="pagination-actions">
-        <BaseButton variant="outline" size="sm" :disabled="page === 1 || loading" @click="prevPage">
+        <BaseButton
+          variant="outline"
+          size="sm"
+          :disabled="page === 1 || loading"
+          :aria-label="t('components.logs.prevPage')"
+          data-testid="logs-prev-page"
+          @click="prevPage"
+        >
           ‹
         </BaseButton>
-        <BaseButton variant="outline" size="sm" :disabled="page >= totalPages || loading" @click="nextPage">
+        <BaseButton
+          variant="outline"
+          size="sm"
+          :disabled="page >= totalPages || loading"
+          :aria-label="t('components.logs.nextPage')"
+          data-testid="logs-next-page"
+          @click="nextPage"
+        >
           ›
         </BaseButton>
       </div>

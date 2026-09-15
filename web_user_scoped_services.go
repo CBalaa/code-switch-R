@@ -60,6 +60,132 @@ func (s *userScopedProviderService) DuplicateProvider(ctx context.Context, kind 
 	return s.base.DuplicateProviderForUser(user.ID, kind, sourceID)
 }
 
+// userScopedModelTraceService 把模型真伪检测限定在调用者租户内：
+// provider 读取用 userID 隔离，进度/流式事件带上 userID 由 SSE 层过滤。
+type userScopedModelTraceService struct {
+	base *services.ModelTraceService
+}
+
+func (s *userScopedModelTraceService) GetSupportedModels(ctx context.Context) ([]services.ModelTraceModelOption, error) {
+	if _, err := authenticatedUserFromContext(ctx); err != nil {
+		return nil, err
+	}
+	return s.base.GetSupportedModels()
+}
+
+func (s *userScopedModelTraceService) VerifyProviderModel(
+	ctx context.Context,
+	platform string,
+	providerID int64,
+	expectedModel string,
+) services.ModelTraceResult {
+	user, err := authenticatedUserFromContext(ctx)
+	if err != nil {
+		return services.ModelTraceResult{Verdict: "error", Message: "登录状态已失效，请重新登录后再试"}
+	}
+	return s.base.VerifyProviderModel(user.ID, platform, providerID, expectedModel)
+}
+
+// userScopedConnectivityTestService 把可用性检测里涉及 provider 的读写限定在调用者租户内。
+// 手动探测类方法由前端直接传入 apiURL/apiKey，本来就不读 provider 文件，原样透传。
+type userScopedConnectivityTestService struct {
+	base *services.ConnectivityTestService
+}
+
+func (s *userScopedConnectivityTestService) TestAll(ctx context.Context, platform string) ([]services.ConnectivityResult, error) {
+	user, err := authenticatedUserFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.base.TestAllForUser(user.ID, platform), nil
+}
+
+func (s *userScopedConnectivityTestService) RunSingleTest(ctx context.Context, platform string, providerID int64) (*services.ConnectivityResult, error) {
+	user, err := authenticatedUserFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.base.RunSingleTestForUser(user.ID, platform, providerID)
+}
+
+func (s *userScopedConnectivityTestService) GetResults(ctx context.Context, platform string) ([]services.ConnectivityResult, error) {
+	user, err := authenticatedUserFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.base.GetResultsForUser(user.ID, platform)
+}
+
+func (s *userScopedConnectivityTestService) GetAllResults(ctx context.Context) (map[string][]services.ConnectivityResult, error) {
+	user, err := authenticatedUserFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.base.GetAllResultsForUser(user.ID)
+}
+
+// TestProvider 直接对传入的 provider 配置执行一次探测，不读供应商文件，原样透传。
+// 保留它是为了不缩小原有的 RPC 表面（它过去是可达的）。
+func (s *userScopedConnectivityTestService) TestProvider(ctx context.Context, provider services.Provider, platform string) *services.ConnectivityResult {
+	return s.base.TestProvider(ctx, provider, platform)
+}
+
+// Start / Stop 是运行时生命周期钩子，同样保留以免 RPC 表面缩水。
+func (s *userScopedConnectivityTestService) Start() error { return s.base.Start() }
+func (s *userScopedConnectivityTestService) Stop() error  { return s.base.Stop() }
+
+func (s *userScopedConnectivityTestService) TestProviderManual(
+	platform string,
+	apiURL string,
+	apiKey string,
+	model string,
+	endpoint string,
+	authType string,
+) services.ManualTestResult {
+	return s.base.TestProviderManual(platform, apiURL, apiKey, model, endpoint, authType)
+}
+
+func (s *userScopedConnectivityTestService) TestProviderManualWithMessage(
+	platform string,
+	apiURL string,
+	apiKey string,
+	model string,
+	endpoint string,
+	authType string,
+	testMessage string,
+) services.ManualTestResult {
+	return s.base.TestProviderManualWithMessage(platform, apiURL, apiKey, model, endpoint, authType, testMessage)
+}
+
+func (s *userScopedConnectivityTestService) TestModelsEndpointManual(
+	apiURL string,
+	apiKey string,
+	modelsEndpoint string,
+	authType string,
+	platform string,
+) services.ManualTestResult {
+	return s.base.TestModelsEndpointManual(apiURL, apiKey, modelsEndpoint, authType, platform)
+}
+
+func (s *userScopedConnectivityTestService) ListModelsEndpointManual(
+	apiURL string,
+	apiKey string,
+	modelsEndpoint string,
+	authType string,
+	platform string,
+) (*services.ProviderModelList, error) {
+	return s.base.ListModelsEndpointManual(apiURL, apiKey, modelsEndpoint, authType, platform)
+}
+
+// SetAutoTestEnabled / GetAutoTestEnabled 是全局后台巡检开关（非租户数据），保持透传。
+func (s *userScopedConnectivityTestService) SetAutoTestEnabled(enabled bool) error {
+	return s.base.SetAutoTestEnabled(enabled)
+}
+
+func (s *userScopedConnectivityTestService) GetAutoTestEnabled() bool {
+	return s.base.GetAutoTestEnabled()
+}
+
 type userScopedProviderPoolService struct {
 	base         *services.ProviderPoolService
 	proxyService *services.ProxyService

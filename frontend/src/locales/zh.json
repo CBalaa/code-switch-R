@@ -14,9 +14,13 @@
     "console": "控制台",
     "settings": "设置",
     "keys": "密钥",
-    "costs": "费用"
+    "costs": "费用",
+    "expand": "展开侧边栏",
+    "collapse": "收起侧边栏",
+    "navLabel": "主导航"
   },
   "common": {
+    "close": "关闭",
     "save": "保存",
     "saving": "保存中...",
     "cancel": "取消"
@@ -440,6 +444,31 @@
         "loadAppSettingsFailed": "加载应用设置失败",
         "loadProvidersFailed": "加载 {tab} 标签页的供应商失败"
       },
+      "modelTrace": {
+        "title": "模型真伪检测",
+        "tooltip": "检测模型真伪（指纹归因）",
+        "selectModel": "选择要检测的模型",
+        "verify": "开始检测",
+        "verifying": "检测中…",
+        "waitingStream": "等待模型生成回答…",
+        "stepSending": "发送挑战",
+        "stepReceived": "生成回答",
+        "stepDone": "完成归因",
+        "match": "身份一致",
+        "mismatch": "疑似偷换",
+        "matchDetail": "指纹归因结果与所选模型一致：{model}（置信度 {probability}）",
+        "mismatchDetail": "指纹归因结果与所选模型不符：声称 {expected}，实际最接近 {actual}（置信度 {probability}），该渠道可能偷换了模型",
+        "expectedModel": "所选模型",
+        "topPrediction": "归因结果",
+        "validNumbers": "有效数字",
+        "latency": "耗时",
+        "attempts": "尝试次数",
+        "distributionTitle": "归因概率分布",
+        "close": "关闭",
+        "retry": "重新检测",
+        "error": "检测失败",
+        "notCovered": "该模型不在指纹库覆盖范围内"
+      },
       "pool": {
         "subTabs": {
           "providers": "供应商",
@@ -464,6 +493,8 @@
         "accountPoolBaseUrlPlaceholder": "https://api.example.com/v1",
         "responsesEndpoint": "Responses 端点",
         "responsesEndpointPlaceholder": "/responses",
+        "chatEndpoint": "Chat 端点",
+        "chatEndpointPlaceholder": "/v1/chat/completions",
         "accountPoolKeys": "供应商密钥",
         "accountPoolKeysPlaceholder": "sk-key-1\nsk-key-2\nsk-key-3",
         "accountPoolKeysHint": "每行一个密钥；保存时会去除首尾空格、空行和重复项",
@@ -515,24 +546,24 @@
         "proxyConfigHideFailed": "隐藏代理 YAML 配置失败",
         "proxyConfigUnhideFailed": "显示代理 YAML 配置失败",
         "proxyTesting": "测试中...",
-        "testProxy": "测试所选代理的 Responses 连通性",
-        "testAllProxyLatencies": "测试全部 Responses 延时",
-        "proxyBulkTesting": "正在逐个测试 Responses 连通性...",
+        "testProxy": "测试所选代理的协议连通性",
+        "testAllProxyLatencies": "测试全部协议连通性延时",
+        "proxyBulkTesting": "正在逐个测试协议连通性...",
         "proxyLastTested": "上次测速：{minutes} 分钟前",
-        "proxyBulkTestComplete": "全部 Responses 连通性测试完成",
+        "proxyBulkTestComplete": "全部协议连通性测试完成",
         "proxyBulkTestIncomplete": "测试未完成",
-        "proxyBulkTestFailed": "全部 Responses 连通性测试失败",
-        "proxyBaseUrlRequired": "请先填写供应商 Base URL 和 Responses 端点，再测试代理延时",
+        "proxyBulkTestFailed": "全部协议连通性测试失败",
+        "proxyBaseUrlRequired": "请先填写供应商 Base URL 和协议端点，再测试代理延时",
         "proxyTestInProgress": "代理测速进行中，请等待完成后再保存或关闭号池。",
         "proxyNotTested": "未测试",
         "proxyUnavailable": "不可用",
         "proxyTimeout": "超时",
-        "proxyAllUnavailable": "所有可见代理均无法连通 Responses 端点",
+        "proxyAllUnavailable": "所有可见代理均无法连通上游端点",
         "proxyCloudflareBlocked": "Cloudflare 拦截",
         "proxyLatency": "代理延时",
         "localProxyLatency": "本地到代理",
-        "directBaseLatency": "Responses 直连延时",
-        "proxiedBaseLatency": "Responses 连通性",
+        "directBaseLatency": "上游直连延时",
+        "proxiedBaseLatency": "协议连通性",
         "proxyTestAfterCreate": "保存号池后也可以在编辑窗口测试速度",
         "proxyUploadWarning": "该 YAML 配置将对所有用户可见，且可能包含代理凭据。确定继续上传吗？",
         "proxySubscriptionURLPrompt": "请输入公网 Clash 订阅链接（仅 HTTP/HTTPS）",
@@ -615,7 +646,8 @@
         "specialRuleUntilDayOffset": "拉黑到第几天（0=当天）",
         "specialRuleUntilTime": "具体时间",
         "specialRuleUntilDayOffsetInvalid": "高级拉黑规则的目标天数必须在 0 到 99 之间",
-        "specialRuleUntilTimeInvalid": "高级拉黑规则的目标时间无效"
+        "specialRuleUntilTimeInvalid": "高级拉黑规则的目标时间无效",
+        "memberLevel": "池内优先级"
       }
     },
     "logs": {
@@ -673,7 +705,11 @@
       "back": "返回主页",
       "tokenDetail": {
         "title": "今日 Token 明细"
-      }
+      },
+      "tableCaption": "请求日志表格",
+      "prevPage": "上一页",
+      "nextPage": "下一页",
+      "chartLabel": "请求趋势图"
     },
     "general": {
       "traffic": {
@@ -740,7 +776,8 @@
     "themesetting": {
       "select": {
         "opt_light": "亮色模式",
-        "opt_dark": "暗色模式"
+        "opt_dark": "暗色模式",
+        "theme": "主题"
       }
     },
     "shortcut": {
@@ -759,7 +796,8 @@
         "failed": "快捷键保存失败",
         "invalid": "组合无效，请包含修饰键"
       },
-      "placeholder": "点击并按下组合键"
+      "placeholder": "点击并按下组合键",
+      "clear": "清除快捷键"
     },
     "deeplink": {
       "title": "从深度链接导入供应商",
@@ -932,6 +970,7 @@
       "loadUsage": "加载密钥用量失败",
       "rename": "重命名密钥失败",
       "invalidCustomRange": "请选择有效的开始和结束时间"
-    }
+    },
+    "chartLabel": "用量趋势图"
   }
 }

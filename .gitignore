@@ -11,7 +11,9 @@ CLAUDE.md
 reference/
 codeswitch-web
 /codeswitch
-/scripts/
+# 只忽略 scripts/ 下的本地私有内容；离线端到端回归脚本需要入库
+/scripts/*
+!/scripts/mt-e2e/
 /.claude/worktrees/
 /.test/
 /build.sh

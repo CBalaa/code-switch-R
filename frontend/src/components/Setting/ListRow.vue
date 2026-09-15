@@ -1,18 +1,25 @@
 <script setup lang="ts">
+import { useId } from 'vue'
+
 defineProps<{
    label: string
    subLabel?: string
  }>()
+
+// The visible label lives in a sibling div, so the slotted control has no
+// implicit label. Expose the generated id so callers can wire
+// aria-labelledby and every switch/select keeps an accessible name.
+const labelId = useId()
 </script>
 
 <template>
   <div class="mac-list-row">
     <div class="mac-list-text">
-      <div class="mac-list-label">{{ label }}</div>
+      <div class="mac-list-label" :id="labelId">{{ label }}</div>
       <div v-if="subLabel" class="mac-list-sublabel">{{ subLabel }}</div>
     </div>
     <div class="mac-list-control">
-      <slot />
+      <slot :label-id="labelId" />
     </div>
   </div>
 </template>

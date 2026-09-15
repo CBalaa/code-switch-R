@@ -66,6 +66,12 @@ type accountPoolRequestIdentity struct {
 	provisionalHash string
 }
 
+// accountPoolRequestIdentityFromBody derives the sticky-session identity from
+// the inbound request body. The fields are shared by both account-pool
+// protocols: Responses clients send conversation/previous_response_id, while
+// Chat Completions clients send prompt_cache_key (and often nothing else).
+// Requests that carry no durable identity fall back to least-loaded selection
+// with a provisional reservation.
 func accountPoolRequestIdentityFromBody(body []byte) accountPoolRequestIdentity {
 	conversationID := ""
 	conversation := gjson.GetBytes(body, "conversation")
@@ -87,8 +93,9 @@ func accountPoolRequestIdentityFromBody(body []byte) accountPoolRequestIdentity 
 		identity.sessionHashes = append(identity.sessionHashes, conversationHash)
 	}
 	if promptCacheKey != "" {
-		// Pi's OpenAI Responses client sends its stable session ID as
-		// prompt_cache_key instead of previous_response_id. It is safe to use
+		// OpenAI Responses clients (e.g. Pi) send their stable session ID as
+		// prompt_cache_key instead of previous_response_id, and Chat Completions
+		// clients use the same field for prompt-cache affinity. It is safe to use
 		// for affinity because only its one-way hash reaches the runtime store.
 		promptCacheHash := accountPoolIdentityHash(promptCacheKey)
 		if len(identity.lookupHashes) == 0 || identity.lookupHashes[len(identity.lookupHashes)-1] != promptCacheHash {

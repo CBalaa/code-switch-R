@@ -412,6 +412,51 @@ func TestSpecialBlacklistRuleUntilModePersistsThroughSavePool(t *testing.T) {
 	}
 }
 
+// TestChatAccountPoolSpecialBlacklistRulesPersistThroughSavePool exercises the
+// relaxed account-pool validator with a chat pool: managed-mode coercion, the
+// chat endpoint round trip, and special-rule persistence.
+func TestChatAccountPoolSpecialBlacklistRulesPersistThroughSavePool(t *testing.T) {
+	testHome := t.TempDir()
+	t.Setenv("HOME", testHome)
+
+	service := NewProviderPoolService()
+	pool := &ProviderPool{
+		Platform:                     "openai-chat",
+		Name:                         "Chat Account Rules Round Trip",
+		PoolType:                     ProviderPoolTypeAccount,
+		Mode:                         ProviderPoolModeManaged,
+		AutoBlacklistEnabled:         true,
+		AutoBlacklistThreshold:       3,
+		AutoBlacklistDurationMinutes: 10,
+		AccountPoolConfig: &AccountPoolConfig{
+			APIURL:       "https://api.example.com/v1",
+			ChatEndpoint: "chat/completions",
+			Keys:         []AccountPoolKey{{APIKey: "sk-chat-round-trip"}},
+		},
+		SpecialBlacklistRules: []SpecialBlacklistRule{
+			{Name: "chat-429", HTTPStatus: 429, Threshold: 1, DurationType: SpecialBlacklistDurationTypeUntil, UntilDayOffset: intPtr(0), UntilTime: "23:59"},
+		},
+	}
+	id, err := service.SavePool(pool)
+	if err != nil {
+		t.Fatalf("SavePool failed: %v", err)
+	}
+
+	saved, err := NewProviderPoolService().GetPool(id)
+	if err != nil || saved == nil {
+		t.Fatalf("GetPool failed: pool=%v err=%v", saved, err)
+	}
+	if saved.Platform != "openai-chat" || saved.PoolType != ProviderPoolTypeAccount {
+		t.Fatalf("saved chat account pool = %#v", saved)
+	}
+	if saved.AccountPoolConfig == nil || saved.AccountPoolConfig.ChatEndpoint != "/chat/completions" || saved.AccountPoolConfig.ResponsesEndpoint != "" {
+		t.Fatalf("saved chat account endpoints = %#v", saved.AccountPoolConfig)
+	}
+	if len(saved.SpecialBlacklistRules) != 1 || saved.SpecialBlacklistRules[0].DurationType != SpecialBlacklistDurationTypeUntil {
+		t.Fatalf("saved chat account rules = %+v", saved.SpecialBlacklistRules)
+	}
+}
+
 func TestPoolAttemptLogsAreUserScopedAndRedactAccountKeys(t *testing.T) {
 	logs := NewPoolAttemptLogService()
 	relay := NewProviderRelayService(NewProviderService(), NewProviderPoolService(), nil, nil, nil, DefaultRelayBindAddr)

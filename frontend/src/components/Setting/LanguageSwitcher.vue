@@ -1,5 +1,11 @@
 <template>
-  <select class="mac-select" v-model="locale" @change="switchLang">
+  <select
+    class="mac-select"
+    v-model="locale"
+    aria-label="Language / 语言"
+    data-testid="language-switcher"
+    @change="switchLang"
+  >
     <option value="zh">简体中文</option>
     <option value="en">English</option>
   </select>

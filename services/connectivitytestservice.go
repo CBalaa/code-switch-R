@@ -201,17 +201,8 @@ func (cts *ConnectivityTestService) TestProvider(ctx context.Context, provider P
 	return result
 }
 
-// getEffectiveEndpoint 获取有效端点（含平台默认值）
-func (cts *ConnectivityTestService) getEffectiveEndpoint(provider *Provider, platform string) string {
-	endpoint := strings.TrimSpace(provider.ConnectivityTestEndpoint)
-	if endpoint != "" {
-		return endpoint
-	}
-
-	if strings.TrimSpace(provider.APIEndpoint) != "" {
-		return provider.GetEffectiveEndpoint("")
-	}
-	// 平台默认端点
+// defaultEndpointForPlatform 平台默认端点（供应商未覆盖时使用）
+func defaultEndpointForPlatform(platform string) string {
 	switch strings.ToLower(platform) {
 	case "claude":
 		return "/v1/messages"
@@ -222,6 +213,38 @@ func (cts *ConnectivityTestService) getEffectiveEndpoint(provider *Provider, pla
 	default:
 		return "/chat/completions"
 	}
+}
+
+// getEffectiveEndpoint 获取有效端点（含平台默认值）。
+//
+// 最终一律交给 Provider.GetEffectiveEndpoint 解析，与 relay 转发用的
+// resolveRelayEndpoint 走同一条路径：这样 responsesEndpoint / chatEndpoint
+// 才会像真实转发那样生效。曾经这里直接返回平台默认值，导致配了
+// responsesEndpoint 的供应商被探测到 /responses（很多网关这个路径返回门户
+// HTML 且状态码 200），探测结果和真实转发完全不是一回事。
+func (cts *ConnectivityTestService) getEffectiveEndpoint(provider *Provider, platform string) string {
+	if endpoint := strings.TrimSpace(provider.ConnectivityTestEndpoint); endpoint != "" {
+		return endpoint
+	}
+	return provider.GetEffectiveEndpoint(defaultEndpointForPlatform(platform))
+}
+
+// resolveConnectivityEndpoint 解析连通性/探测类请求应使用的端点。
+// 包级函数供 ConnectivityTestService 与 ModelTraceService 共用，避免两份实现漂移。
+func resolveConnectivityEndpoint(provider *Provider, platform string) string {
+	var cts ConnectivityTestService
+	return cts.getEffectiveEndpoint(provider, platform)
+}
+
+// connectivityPlatforms 需要做可用性巡检的平台列表
+var connectivityPlatforms = []string{"claude", "openai-responses", "openai-chat"}
+
+// loadProvidersForUser 按用户加载 provider；userID 为空时退回全局列表（后台巡检用）。
+func (cts *ConnectivityTestService) loadProvidersForUser(userID, platform string) ([]Provider, error) {
+	if strings.TrimSpace(userID) != "" {
+		return cts.providerService.LoadProvidersForUser(userID, platform)
+	}
+	return cts.providerService.LoadProviders(platform)
 }
 
 // getEffectiveAuthType 获取有效认证方式（含平台默认值）
@@ -409,9 +432,14 @@ func isTimeoutError(err error) bool {
 		strings.Contains(errMsg, "context canceled")
 }
 
-// TestAll 测试指定平台的所有启用检测的供应商
+// TestAll 测试全局（后台巡检）范围内指定平台的所有启用检测的供应商
 func (cts *ConnectivityTestService) TestAll(platform string) []ConnectivityResult {
-	providers, err := cts.providerService.LoadProviders(platform)
+	return cts.TestAllForUser("", platform)
+}
+
+// TestAllForUser 测试指定用户名下启用检测的供应商；userID 为空时等价于全局巡检。
+func (cts *ConnectivityTestService) TestAllForUser(userID, platform string) []ConnectivityResult {
+	providers, err := cts.loadProvidersForUser(userID, platform)
 	if err != nil {
 		log.Printf("[ConnectivityTest] 加载 %s 供应商失败: %v", platform, err)
 		return nil
@@ -490,9 +518,66 @@ func (cts *ConnectivityTestService) GetAllResults() map[string][]ConnectivityRes
 	return allResults
 }
 
-// RunSingleTest 手动触发单个供应商测试
+// GetResultsForUser 只返回属于该用户的测试结果。
+// 结果缓存里可能同时存在其他租户的 provider，因此按用户列表过滤。
+func (cts *ConnectivityTestService) GetResultsForUser(userID, platform string) ([]ConnectivityResult, error) {
+	results := cts.GetResults(platform)
+	if strings.TrimSpace(userID) == "" {
+		return results, nil
+	}
+	providers, err := cts.providerService.LoadProvidersForUser(userID, platform)
+	if err != nil {
+		return nil, err
+	}
+	return filterConnectivityResults(results, providers), nil
+}
+
+// GetAllResultsForUser 只返回属于该用户的所有平台测试结果。
+func (cts *ConnectivityTestService) GetAllResultsForUser(userID string) (map[string][]ConnectivityResult, error) {
+	if strings.TrimSpace(userID) == "" {
+		return cts.GetAllResults(), nil
+	}
+	filtered := make(map[string][]ConnectivityResult, len(connectivityPlatforms))
+	for _, platform := range connectivityPlatforms {
+		results, err := cts.GetResultsForUser(userID, platform)
+		if err != nil {
+			return nil, err
+		}
+		if len(results) == 0 {
+			continue
+		}
+		filtered[platform] = results
+	}
+	return filtered, nil
+}
+
+// filterConnectivityResults 按 provider 列表过滤结果（保持原顺序）
+func filterConnectivityResults(results []ConnectivityResult, providers []Provider) []ConnectivityResult {
+	if len(results) == 0 {
+		return nil
+	}
+	allowed := make(map[int64]struct{}, len(providers))
+	for _, provider := range providers {
+		allowed[provider.ID] = struct{}{}
+	}
+	filtered := make([]ConnectivityResult, 0, len(results))
+	for _, result := range results {
+		if _, ok := allowed[result.ProviderID]; ok {
+			filtered = append(filtered, result)
+		}
+	}
+	return filtered
+}
+
+// RunSingleTest 手动触发单个供应商测试（全局范围）
 func (cts *ConnectivityTestService) RunSingleTest(platform string, providerID int64) (*ConnectivityResult, error) {
-	providers, err := cts.providerService.LoadProviders(platform)
+	return cts.RunSingleTestForUser("", platform, providerID)
+}
+
+// RunSingleTestForUser 手动触发指定用户名下单个供应商的测试。
+// 按 userID 加载列表，因此 providerID 不属于该用户时一律"未找到"，不会跨租户探测。
+func (cts *ConnectivityTestService) RunSingleTestForUser(userID, platform string, providerID int64) (*ConnectivityResult, error) {
+	providers, err := cts.loadProvidersForUser(userID, platform)
 	if err != nil {
 		return nil, fmt.Errorf("加载供应商失败: %w", err)
 	}
@@ -595,8 +680,7 @@ func (cts *ConnectivityTestService) stopAutoTest() {
 
 // runAllPlatformTests 执行所有平台的测试
 func (cts *ConnectivityTestService) runAllPlatformTests() {
-	platforms := []string{"claude", "openai-responses", "openai-chat"}
-	for _, platform := range platforms {
+	for _, platform := range connectivityPlatforms {
 		cts.TestAll(platform)
 	}
 }

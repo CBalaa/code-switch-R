@@ -12,7 +12,8 @@
   --mac-sidebar: #f2f3f5;
   --mac-sidebar-border: rgba(15, 23, 42, 0.08);
   --mac-text: #1d1d1f;
-  --mac-text-secondary: #6e6e73;
+  /* #6e6e73 在 #f1f1f2 这类浅灰底上只有 4.49:1，压深 4/255 留出余量 */
+  --mac-text-secondary: #6a6a6f;
   --mac-accent: #0a84ff;
   --app-background: linear-gradient(180deg, #f6f7fb 0%, #eef1f7 50%, #e7ebf5 100%);
 
@@ -210,10 +211,30 @@ html.dark .mac-sidebar-item:hover {
   appearance: none;
   display: inline-block;
   cursor: pointer;
+  position: relative;
 }
 
+/* The switch is painted by the sibling <span>, but the checkbox itself must
+   stay in the accessibility tree, be keyboard-focusable, and be the element a
+   pointer actually hits: clipping it to a 1x1 corner made a synthetic click
+   activate both the input and the wrapping label, which cancelled out.
+   `opacity: 0` keeps it exposed while it covers the whole control. */
 .mac-switch input {
-  display: none;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 1;
+}
+
+.mac-switch input:focus-visible + span {
+  outline: 2px solid var(--mac-accent);
+  outline-offset: 2px;
 }
 
 .mac-switch span {
@@ -1348,7 +1369,8 @@ html.dark .ghost-icon:hover {
   flex: 1;
 }
 
-.form-field span {
+.form-field span,
+.form-field > label {
   font-size: 0.85rem;
   color: var(--mac-text-secondary);
 }
@@ -1450,9 +1472,10 @@ html.dark .btn-outline:focus-visible {
 }
 
 .btn-primary {
-  background: var(--mac-accent);
+  /* --mac-accent (#0a84ff) only reaches 3.65:1 with white text. */
+  background: #0a6ed1;
   color: #fff;
-  box-shadow: 0 6px 15px rgba(10, 132, 255, 0.35);
+  box-shadow: 0 6px 15px rgba(10, 110, 209, 0.35);
 }
 
 .btn-danger {
@@ -2002,7 +2025,10 @@ html.dark .secondary-btn:active:not(:disabled) {
   }
 }
 
-/* 全局按钮样式修复 - 防止 Tailwind Preflight 导致的布局问题 */
+/* 全局按钮样式修复 - 防止 Tailwind Preflight 导致的布局问题。
+   这条规则全是 !important：任何"长得不像按钮"的自定义按钮（卡片、磁贴之类）
+   都必须把类名加进下面的 :not() 列表，否则会被强行改成 inline-flex + 固定内边距。
+   反过来，能保持 <article>/<div> 的展示型卡片就别改成 <button>。 */
 button:where(:not(.ghost-icon):not(.mac-switch):not(.nav-item):not(.platform-tab):not(.tab-pill):not(.collapse-btn):not(.toggle-switch):not(.action-btn):not(.remove-btn):not(.icon-select-button):not(.level-select-button):not(.docs-toc-link):not(.docs-code-copy)) {
   display: inline-flex !important;
   flex-direction: row !important;

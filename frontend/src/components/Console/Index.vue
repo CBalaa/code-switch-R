@@ -212,13 +212,13 @@ onUnmounted(() => {
 <template>
   <div class="main-shell console-shell">
     <div class="global-actions">
-      <p class="global-eyebrow">控制台</p>
+      <h1 class="global-eyebrow">控制台</h1>
       <div class="actions-group">
-        <button class="secondary-btn" @click="clearLogs">清空日志</button>
-        <label class="auto-scroll-toggle">
-          <input type="checkbox" v-model="autoScroll" />
-          <span>自动滚动</span>
-        </label>
+        <button class="secondary-btn" type="button" data-testid="console-clear" @click="clearLogs">清空日志</button>
+        <div class="auto-scroll-toggle">
+          <input id="console-auto-scroll" type="checkbox" v-model="autoScroll" data-testid="console-autoscroll" />
+          <label for="console-auto-scroll">自动滚动</label>
+        </div>
         <button class="ghost-icon" aria-label="返回" @click="goBack">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path
@@ -235,12 +235,12 @@ onUnmounted(() => {
     </div>
 
     <div class="console-container">
-      <div v-if="loading" class="loading-state">
+      <div v-if="loading" class="loading-state" role="status">
         <div class="spinner"></div>
         <p>加载中...</p>
       </div>
 
-      <div v-else class="console-content" ref="logsContainer">
+      <div v-else class="console-content" ref="logsContainer" role="log" aria-live="polite" aria-relevant="additions" data-testid="console-log">
         <div v-if="logs.length === 0" class="empty-state">
           <p>暂无日志</p>
         </div>
@@ -365,7 +365,9 @@ html.dark .console-content {
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: var(--mac-text-secondary);
+  /* The console body is #1e1e1e; the light-theme secondary grey only reached
+     3.0:1 there. */
+  color: #9da3ad;
 }
 
 .spinner {

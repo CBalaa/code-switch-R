@@ -589,7 +589,7 @@ func TestProviderPoolServiceRejectsInvalidAccountPools(t *testing.T) {
 		mutate func(*ProviderPool)
 	}{
 		{name: "unknown pool type", mutate: func(pool *ProviderPool) { pool.PoolType = "unknown" }},
-		{name: "wrong platform", mutate: func(pool *ProviderPool) { pool.Platform = "openai-chat" }},
+		{name: "unsupported platform", mutate: func(pool *ProviderPool) { pool.Platform = "claude" }},
 		{name: "manual mode", mutate: func(pool *ProviderPool) { pool.Mode = ProviderPoolModeManual }},
 		{name: "normal member", mutate: func(pool *ProviderPool) { pool.Members = []ProviderPoolMember{{ProviderID: 1, Enabled: true}} }},
 		{name: "manual provider", mutate: func(pool *ProviderPool) { pool.ManualProviderID = int64Ptr(1) }},
@@ -604,6 +604,22 @@ func TestProviderPoolServiceRejectsInvalidAccountPools(t *testing.T) {
 		{name: "network path responses endpoint", mutate: func(pool *ProviderPool) { pool.AccountPoolConfig.ResponsesEndpoint = "//other.example.com/responses" }},
 		{name: "fragment responses endpoint", mutate: func(pool *ProviderPool) { pool.AccountPoolConfig.ResponsesEndpoint = "/responses#ignored" }},
 		{name: "empty responses endpoint", mutate: func(pool *ProviderPool) { pool.AccountPoolConfig.ResponsesEndpoint = " " }},
+		{name: "empty chat endpoint", mutate: func(pool *ProviderPool) {
+			pool.Platform = "openai-chat"
+			pool.AccountPoolConfig.ChatEndpoint = " "
+		}},
+		{name: "absolute chat endpoint", mutate: func(pool *ProviderPool) {
+			pool.Platform = "openai-chat"
+			pool.AccountPoolConfig.ChatEndpoint = "https://api.example.com/v1/chat/completions"
+		}},
+		{name: "network path chat endpoint", mutate: func(pool *ProviderPool) {
+			pool.Platform = "openai-chat"
+			pool.AccountPoolConfig.ChatEndpoint = "//other.example.com/v1/chat/completions"
+		}},
+		{name: "fragment chat endpoint", mutate: func(pool *ProviderPool) {
+			pool.Platform = "openai-chat"
+			pool.AccountPoolConfig.ChatEndpoint = "/v1/chat/completions#ignored"
+		}},
 		{name: "empty keys", mutate: func(pool *ProviderPool) { pool.AccountPoolConfig.Keys = []AccountPoolKey{{APIKey: " \t "}} }},
 		{name: "blacklist threshold too large", mutate: func(pool *ProviderPool) { pool.AutoBlacklistThreshold = maxAccountPoolBlacklistThreshold + 1 }},
 		{name: "blacklist duration too large", mutate: func(pool *ProviderPool) {
@@ -637,6 +653,95 @@ func validAccountPoolForTest() *ProviderPool {
 				{APIKey: "sk-second-secret-value"},
 			},
 		},
+	}
+}
+
+func validChatAccountPoolForTest() *ProviderPool {
+	return &ProviderPool{
+		Platform: "openai-chat",
+		Name:     "chat account pool",
+		PoolType: ProviderPoolTypeAccount,
+		Mode:     ProviderPoolModeManaged,
+		AccountPoolConfig: &AccountPoolConfig{
+			APIURL:       "https://api.example.com",
+			ChatEndpoint: "/v1/chat/completions",
+			Keys: []AccountPoolKey{
+				{APIKey: "sk-first-secret-value"},
+				{APIKey: "sk-second-secret-value"},
+			},
+		},
+	}
+}
+
+// TestProviderPoolServiceSaveChatAccountPoolNormalizesConfiguration verifies the
+// chat protocol is a first-class account-pool platform: the chat endpoint is
+// validated/normalized, the platform-foreign endpoint is dropped, and the
+// account-pool invariants (managed mode, forced blacklist settings) apply.
+func TestProviderPoolServiceSaveChatAccountPoolNormalizesConfiguration(t *testing.T) {
+	testHome := t.TempDir()
+	t.Setenv("HOME", testHome)
+
+	service := NewProviderPoolService()
+	pool := &ProviderPool{
+		Platform: "openai-chat",
+		Name:     "chat account pool",
+		PoolType: ProviderPoolTypeAccount,
+		AccountPoolConfig: &AccountPoolConfig{
+			APIURL:            "  https://api.example.com/v1/  ",
+			ResponsesEndpoint: "/v1/responses",
+			ChatEndpoint:      " v1/chat/completions ",
+			Keys: []AccountPoolKey{
+				{APIKey: "sk-chat-secret-value"},
+			},
+		},
+		AutoBlacklistEnabled:         false,
+		AutoBlacklistThreshold:       0,
+		AutoBlacklistDurationMinutes: -1,
+	}
+
+	id, err := service.SavePool(pool)
+	if err != nil {
+		t.Fatalf("SavePool failed: %v", err)
+	}
+	if id == "" {
+		t.Fatal("expected generated pool ID")
+	}
+	if pool.Mode != ProviderPoolModeManaged || !pool.AutoBlacklistEnabled {
+		t.Fatalf("account pool mode/blacklist = %q/%v", pool.Mode, pool.AutoBlacklistEnabled)
+	}
+	if pool.AutoBlacklistThreshold != defaultAccountPoolBlacklistThreshold || pool.AutoBlacklistDurationMinutes != defaultAccountPoolBlacklistDurationMinutes {
+		t.Fatalf("blacklist defaults = %d/%d", pool.AutoBlacklistThreshold, pool.AutoBlacklistDurationMinutes)
+	}
+	if pool.AccountPoolConfig.APIURL != "https://api.example.com/v1" {
+		t.Fatalf("normalized api url = %q", pool.AccountPoolConfig.APIURL)
+	}
+	if pool.AccountPoolConfig.ChatEndpoint != "/v1/chat/completions" {
+		t.Fatalf("normalized chat endpoint = %q", pool.AccountPoolConfig.ChatEndpoint)
+	}
+	if pool.AccountPoolConfig.ResponsesEndpoint != "" {
+		t.Fatalf("chat pool kept a Responses endpoint: %q", pool.AccountPoolConfig.ResponsesEndpoint)
+	}
+	if len(pool.AccountPoolConfig.Keys) != 1 || !isValidAccountPoolKeyID(pool.AccountPoolConfig.Keys[0].ID) {
+		t.Fatalf("normalized keys = %#v", pool.AccountPoolConfig.Keys)
+	}
+
+	savedPool, err := service.GetPool(id)
+	if err != nil || savedPool == nil {
+		t.Fatalf("read saved chat account pool: %#v, err = %v", savedPool, err)
+	}
+	if savedPool.Platform != "openai-chat" || savedPool.AccountPoolConfig == nil || savedPool.AccountPoolConfig.ChatEndpoint != "/v1/chat/completions" {
+		t.Fatalf("persisted chat account pool = %#v", savedPool)
+	}
+
+	// A Responses pool must keep only its own endpoint (round trip of the
+	// platform-foreign-field cleanup in the other direction).
+	responsesPool := validAccountPoolForTest()
+	responsesPool.AccountPoolConfig.ChatEndpoint = "/v1/chat/completions"
+	if _, err := service.SavePool(responsesPool); err != nil {
+		t.Fatalf("save responses account pool: %v", err)
+	}
+	if responsesPool.AccountPoolConfig.ResponsesEndpoint != "/v1/responses" || responsesPool.AccountPoolConfig.ChatEndpoint != "" {
+		t.Fatalf("responses pool endpoints = %#v", responsesPool.AccountPoolConfig)
 	}
 }
 
@@ -873,6 +978,58 @@ func TestSelectProvidersFromAccountPoolSynthesizesProviders(t *testing.T) {
 	}
 	if got := accountPoolModelsEndpoint("/v1/responses/"); got != "/v1/models" {
 		t.Fatalf("trailing-slash Responses sibling models endpoint = %q, want /v1/models", got)
+	}
+}
+
+// TestSelectProvidersFromChatAccountPoolSynthesizesChatEndpoint verifies chat
+// account keys become runtime providers that route /chat/completions through the
+// configured chat endpoint (and derive the sibling models endpoint from it).
+func TestSelectProvidersFromChatAccountPoolSynthesizesChatEndpoint(t *testing.T) {
+	pool := validChatAccountPoolForTest()
+	pool.AccountPoolConfig.Keys = []AccountPoolKey{
+		{ID: -101, APIKey: "sk-first-shared-suffix"},
+		{ID: -202, APIKey: "sk-second-shared-suffix"},
+	}
+
+	selected, err := SelectProvidersFromPool(pool, []Provider{{ID: 1, Name: "ignored"}})
+	if err != nil {
+		t.Fatalf("SelectProvidersFromPool failed: %v", err)
+	}
+	if len(selected) != 2 {
+		t.Fatalf("selected providers = %#v, want two", selected)
+	}
+	for i, provider := range selected {
+		key := pool.AccountPoolConfig.Keys[i]
+		if provider.APIURL != pool.AccountPoolConfig.APIURL || provider.APIKey != key.APIKey {
+			t.Fatalf("provider %d config = %#v", i, provider)
+		}
+		if provider.ChatEndpoint != pool.AccountPoolConfig.ChatEndpoint {
+			t.Fatalf("provider %d chat endpoint = %q, want %q", i, provider.ChatEndpoint, pool.AccountPoolConfig.ChatEndpoint)
+		}
+		if provider.ResponsesEndpoint != "" || provider.APIEndpoint != "" {
+			t.Fatalf("chat account provider leaked other endpoints: %#v", provider)
+		}
+		if provider.ModelsEndpoint != "/v1/models" {
+			t.Fatalf("provider %d models endpoint = %q, want /v1/models", i, provider.ModelsEndpoint)
+		}
+		if got := provider.GetEffectiveEndpoint("/chat/completions"); got != "/v1/chat/completions" {
+			t.Fatalf("provider %d effective chat endpoint = %q", i, got)
+		}
+	}
+
+	// A root-mounted chat endpoint derives its sibling models endpoint from the
+	// same base as /v1/chat/completions does.
+	pool.AccountPoolConfig.ChatEndpoint = "/chat/completions"
+	selected, err = SelectProvidersFromPool(pool, nil)
+	if err != nil || len(selected) != 2 || selected[0].ModelsEndpoint != "/models" {
+		t.Fatalf("root Chat sibling models endpoint = providers=%#v err=%v", selected, err)
+	}
+	if got := accountPoolModelsEndpoint("/openai/v1/chat/completions"); got != "/openai/v1/models" {
+		t.Fatalf("nested Chat sibling models endpoint = %q, want /openai/v1/models", got)
+	}
+	// Responses derivation must stay unchanged.
+	if got := accountPoolModelsEndpoint("/v1/responses"); got != "/v1/models" {
+		t.Fatalf("Responses sibling models endpoint = %q, want /v1/models", got)
 	}
 }
 

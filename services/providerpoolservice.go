@@ -95,9 +95,12 @@ type SpecialBlacklistRule struct {
 }
 
 // AccountPoolConfig 号池共享的上游配置及密钥列表。
+// ResponsesEndpoint 仅用于 openai-responses 号池，ChatEndpoint 仅用于
+// openai-chat 号池；保存时只会保留与 platform 匹配的那一个。
 type AccountPoolConfig struct {
 	APIURL            string           `json:"apiUrl"`
-	ResponsesEndpoint string           `json:"responsesEndpoint"`
+	ResponsesEndpoint string           `json:"responsesEndpoint,omitempty"`
+	ChatEndpoint      string           `json:"chatEndpoint,omitempty"`
 	Keys              []AccountPoolKey `json:"keys"`
 }
 
@@ -423,6 +426,63 @@ func normalizedProviderPoolType(poolType ProviderPoolType) ProviderPoolType {
 	return ProviderPoolType(strings.TrimSpace(string(poolType)))
 }
 
+// supportsAccountPoolPlatform 报告哪些协议平台可以使用号池。
+// 号池依赖"同一上游 + 多密钥"的合成 Provider 模型，OpenAI Responses 与
+// OpenAI Chat Completions 两种协议都满足；Claude Messages 暂不支持。
+func supportsAccountPoolPlatform(platform string) bool {
+	switch strings.TrimSpace(platform) {
+	case "openai-responses", "openai-chat":
+		return true
+	default:
+		return false
+	}
+}
+
+// accountPoolEndpointField 返回该 platform 号池使用的端点字段名（用于错误文案）。
+func accountPoolEndpointLabel(platform string) string {
+	if strings.TrimSpace(platform) == "openai-chat" {
+		return "Chat"
+	}
+	return "Responses"
+}
+
+// accountPoolEndpoint 返回该 platform 号池配置中实际生效的协议端点。
+func accountPoolEndpoint(pool *ProviderPool) string {
+	if pool == nil || pool.AccountPoolConfig == nil {
+		return ""
+	}
+	if strings.TrimSpace(pool.Platform) == "openai-chat" {
+		return strings.TrimSpace(pool.AccountPoolConfig.ChatEndpoint)
+	}
+	return strings.TrimSpace(pool.AccountPoolConfig.ResponsesEndpoint)
+}
+
+// setAccountPoolEndpoint 归一化地写入该 platform 对应的端点字段，并清空另一个
+// 协议的端点，保证落盘配置始终只有一个有效端点。
+func setAccountPoolEndpoint(config *AccountPoolConfig, platform string, endpoint string) {
+	if config == nil {
+		return
+	}
+	endpoint = strings.TrimSpace(endpoint)
+	if strings.TrimSpace(platform) == "openai-chat" {
+		config.ChatEndpoint = endpoint
+		config.ResponsesEndpoint = ""
+		return
+	}
+	config.ResponsesEndpoint = endpoint
+	config.ChatEndpoint = ""
+}
+
+// normalizeAccountPoolEndpoint 校验并归一化号池协议端点（必须是相对路径）。
+func normalizeAccountPoolEndpoint(endpoint string, platform string) (string, error) {
+	endpoint = strings.TrimSpace(endpoint)
+	parsedEndpoint, err := url.Parse(endpoint)
+	if err != nil || parsedEndpoint.IsAbs() || parsedEndpoint.Host != "" || parsedEndpoint.Path == "" || parsedEndpoint.Fragment != "" || strings.HasPrefix(endpoint, "//") {
+		return "", fmt.Errorf("号池 %s 端点必须是非空相对路径", accountPoolEndpointLabel(platform))
+	}
+	return "/" + strings.TrimLeft(endpoint, "/"), nil
+}
+
 func normalizeAndValidatePoolForSave(pool *ProviderPool, existing *ProviderPool, pools []ProviderPool) error {
 	if err := normalizeAndValidateFirstTextRetry(pool); err != nil {
 		return err
@@ -438,8 +498,8 @@ func normalizeAndValidatePoolForSave(pool *ProviderPool, existing *ProviderPool,
 		return nil
 	}
 
-	if pool.Platform != "openai-responses" {
-		return errors.New("号池仅支持 openai-responses platform")
+	if !supportsAccountPoolPlatform(pool.Platform) {
+		return errors.New("号池仅支持 openai-responses / openai-chat platform")
 	}
 	if pool.Mode != ProviderPoolModeManaged {
 		return errors.New("号池只能使用 managed 托管模式")
@@ -485,12 +545,11 @@ func normalizeAndValidatePoolForSave(pool *ProviderPool, existing *ProviderPool,
 	}
 	config.APIURL = strings.TrimRight(config.APIURL, "/")
 
-	config.ResponsesEndpoint = strings.TrimSpace(config.ResponsesEndpoint)
-	parsedEndpoint, err := url.Parse(config.ResponsesEndpoint)
-	if err != nil || parsedEndpoint.IsAbs() || parsedEndpoint.Host != "" || parsedEndpoint.Path == "" || parsedEndpoint.Fragment != "" || strings.HasPrefix(config.ResponsesEndpoint, "//") {
-		return errors.New("号池 Responses 端点必须是非空相对路径")
+	endpoint, err := normalizeAccountPoolEndpoint(accountPoolEndpoint(pool), pool.Platform)
+	if err != nil {
+		return err
 	}
-	config.ResponsesEndpoint = "/" + strings.TrimLeft(config.ResponsesEndpoint, "/")
+	setAccountPoolEndpoint(config, pool.Platform, endpoint)
 
 	keys, err := normalizeAccountPoolKeys(config.Keys, existing, pools)
 	if err != nil {
@@ -1064,8 +1123,8 @@ func SelectProvidersFromPool(pool *ProviderPool, allProviders []Provider) ([]Pro
 		return nil, fmt.Errorf("未知的池子类型: %s", pool.PoolType)
 	}
 	if poolType == ProviderPoolTypeAccount {
-		if pool.Platform != "openai-responses" {
-			return nil, errors.New("号池仅支持 openai-responses platform")
+		if !supportsAccountPoolPlatform(pool.Platform) {
+			return nil, errors.New("号池仅支持 openai-responses / openai-chat platform")
 		}
 		if pool.Mode != ProviderPoolModeManaged {
 			return nil, errors.New("号池只能使用 managed 托管模式")
@@ -1075,22 +1134,28 @@ func SelectProvidersFromPool(pool *ProviderPool, allProviders []Provider) ([]Pro
 		}
 
 		config := pool.AccountPoolConfig
+		endpoint := accountPoolEndpoint(pool)
 		selected := make([]Provider, 0, len(config.Keys))
 		for _, key := range config.Keys {
 			if !isValidAccountPoolKeyID(key.ID) || strings.TrimSpace(key.APIKey) == "" {
 				continue
 			}
-			selected = append(selected, Provider{
-				ID:                key.ID,
-				Name:              AccountPoolKeyDisplayName(key),
-				APIURL:            config.APIURL,
-				APIKey:            key.APIKey,
-				Enabled:           true,
-				ResponsesEndpoint: config.ResponsesEndpoint,
-				ModelsEndpoint:    accountPoolModelsEndpoint(config.ResponsesEndpoint),
-				Level:             1,
-				MaxConcurrency:    defaultProviderMaxConcurrency,
-			})
+			provider := Provider{
+				ID:             key.ID,
+				Name:           AccountPoolKeyDisplayName(key),
+				APIURL:         config.APIURL,
+				APIKey:         key.APIKey,
+				Enabled:        true,
+				ModelsEndpoint: accountPoolModelsEndpoint(endpoint),
+				Level:          1,
+				MaxConcurrency: defaultProviderMaxConcurrency,
+			}
+			if strings.TrimSpace(pool.Platform) == "openai-chat" {
+				provider.ChatEndpoint = endpoint
+			} else {
+				provider.ResponsesEndpoint = endpoint
+			}
+			selected = append(selected, provider)
 		}
 		return selected, nil
 	}
@@ -1164,12 +1229,26 @@ func maskAccountPoolAPIKey(apiKey string) string {
 	return "****" + apiKey[len(apiKey)-4:]
 }
 
-func accountPoolModelsEndpoint(responsesEndpoint string) string {
-	parsed, err := url.Parse(strings.TrimSpace(responsesEndpoint))
+// accountPoolModelsEndpoint derives the sibling models endpoint from the
+// account pool's configured protocol endpoint. A Responses endpoint lives in
+// the same directory as /models; Chat Completions is nested one level deeper
+// (/v1/chat/completions), so OpenAI-compatible gateways expose /v1/models next
+// to it rather than /v1/chat/models.
+func accountPoolModelsEndpoint(endpoint string) string {
+	parsed, err := url.Parse(strings.TrimSpace(endpoint))
 	if err != nil || strings.TrimSpace(parsed.Path) == "" {
 		return "/v1/models"
 	}
 	endpointPath := strings.TrimRight("/"+strings.TrimLeft(parsed.Path, "/"), "/")
+	if trimmed := strings.TrimSuffix(endpointPath, "/chat/completions"); trimmed != endpointPath {
+		// /v1/models sits at the Chat Completions API base, not one level above
+		// the endpoint.
+		base := strings.TrimRight(trimmed, "/")
+		if base == "" {
+			return "/models"
+		}
+		return base + "/models"
+	}
 	dir := pathpkg.Dir(endpointPath)
 	if dir == "/" || dir == "." {
 		return "/models"

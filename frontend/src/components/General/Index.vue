@@ -268,41 +268,54 @@ onUnmounted(() => {
     </div>
 
     <div class="general-page">
+      <h1 class="sr-only">{{ $t('sidebar.settings') }}</h1>
       <section>
         <h2 class="mac-section-title">{{ $t('components.general.title.application') }}</h2>
         <div class="mac-panel">
-          <ListItem :label="$t('components.general.label.homeTitle')">
+          <ListItem v-slot="{ labelId }" :label="$t('components.general.label.homeTitle')">
             <label class="mac-switch">
               <input
                 type="checkbox"
+                role="switch"
+                :aria-checked="homeTitleVisible"
+                :aria-labelledby="labelId"
                 :disabled="settingsLoading || saveBusy"
                 v-model="homeTitleVisible"
+                data-testid="setting-home-title"
                 @change="persistAppSettings"
               />
-              <span></span>
+              <span aria-hidden="true"></span>
             </label>
           </ListItem>
-          <ListItem v-if="!isWebRuntime" :label="$t('components.general.label.autoStart')">
+          <ListItem v-if="!isWebRuntime" v-slot="{ labelId }" :label="$t('components.general.label.autoStart')">
             <label class="mac-switch">
               <input
                 type="checkbox"
+                role="switch"
+                :aria-checked="autoStartEnabled"
+                :aria-labelledby="labelId"
                 :disabled="settingsLoading || saveBusy"
                 v-model="autoStartEnabled"
+                data-testid="setting-auto-start"
                 @change="persistAppSettings"
               />
-              <span></span>
+              <span aria-hidden="true"></span>
             </label>
           </ListItem>
-          <ListItem :label="$t('components.general.label.switchNotify')">
+          <ListItem v-slot="{ labelId }" :label="$t('components.general.label.switchNotify')">
             <div class="toggle-with-hint">
               <label class="mac-switch">
                 <input
                   type="checkbox"
+                  role="switch"
+                  :aria-checked="switchNotifyEnabled"
+                  :aria-labelledby="labelId"
                   :disabled="settingsLoading || saveBusy"
                   v-model="switchNotifyEnabled"
+                  data-testid="setting-switch-notify"
                   @change="persistAppSettings"
                 />
-                <span></span>
+                <span aria-hidden="true"></span>
               </label>
               <span class="hint-text">{{ $t('components.general.label.switchNotifyHint') }}</span>
             </div>
@@ -313,35 +326,43 @@ onUnmounted(() => {
       <section>
         <h2 class="mac-section-title">{{ $t('components.general.title.connectivity') }}</h2>
         <div class="mac-panel">
-          <ListItem :label="$t('components.general.label.autoConnectivityTest')">
+          <ListItem v-slot="{ labelId }" :label="$t('components.general.label.autoConnectivityTest')">
             <div class="toggle-with-hint">
               <label class="mac-switch">
                 <input
                   type="checkbox"
+                  role="switch"
+                  :aria-checked="autoConnectivityTestEnabled"
+                  :aria-labelledby="labelId"
                   :disabled="settingsLoading || saveBusy"
                   v-model="autoConnectivityTestEnabled"
+                  data-testid="setting-auto-connectivity"
                   @change="persistAppSettings"
                 />
-                <span></span>
+                <span aria-hidden="true"></span>
               </label>
               <span class="hint-text">{{ $t('components.general.label.autoConnectivityTestHint') }}</span>
             </div>
           </ListItem>
-          <ListItem :label="$t('components.general.label.proxyLatencyMultithreading')">
+          <ListItem v-slot="{ labelId }" :label="$t('components.general.label.proxyLatencyMultithreading')">
             <div class="toggle-with-hint">
               <label class="mac-switch">
                 <input
                   type="checkbox"
+                  role="switch"
+                  :aria-checked="proxyLatencyMultithreadingEnabled"
+                  :aria-labelledby="labelId"
                   :disabled="settingsLoading || saveBusy"
                   v-model="proxyLatencyMultithreadingEnabled"
+                  data-testid="setting-proxy-multithreading"
                   @change="persistAppSettings"
                 />
-                <span></span>
+                <span aria-hidden="true"></span>
               </label>
               <span class="hint-text">{{ $t('components.general.label.proxyLatencyMultithreadingHint') }}</span>
             </div>
           </ListItem>
-          <ListItem v-if="proxyLatencyMultithreadingEnabled" :label="$t('components.general.label.proxyLatencyMaxConcurrency')">
+          <ListItem v-if="proxyLatencyMultithreadingEnabled" v-slot="{ labelId }" :label="$t('components.general.label.proxyLatencyMaxConcurrency')">
             <input
               v-model.number="proxyLatencyMaxConcurrency"
               class="mac-input"
@@ -349,7 +370,9 @@ onUnmounted(() => {
               min="1"
               max="4"
               step="1"
+              :aria-labelledby="labelId"
               :disabled="settingsLoading || saveBusy"
+              data-testid="setting-proxy-max-concurrency"
               @change="persistAppSettings"
             />
           </ListItem>
@@ -475,7 +498,7 @@ onUnmounted(() => {
   border: 1px solid color-mix(in srgb, #ef4444 28%, var(--mac-border));
   border-radius: 10px;
   background: color-mix(in srgb, #ef4444 10%, var(--mac-surface));
-  color: #dc2626;
+  color: #b91c1c;
   font-size: 0.88rem;
   font-weight: 700;
   cursor: pointer;

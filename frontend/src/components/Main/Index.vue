@@ -4,8 +4,10 @@
       <p class="global-eyebrow">{{ t('components.main.hero.eyebrow') }}</p>
       <button
         class="ghost-icon"
+        type="button"
         :data-tooltip="t('components.main.docs.tooltip')"
         :aria-label="t('components.main.docs.tooltip')"
+        data-testid="action-docs"
         @click="openDocsModal"
       >
         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -29,7 +31,10 @@
       </button>
       <button
         class="ghost-icon"
+        type="button"
         :data-tooltip="t('components.main.controls.theme')"
+        :aria-label="t('components.main.controls.theme')"
+        data-testid="action-theme"
         @click="toggleTheme"
       >
         <svg v-if="themeIcon === 'sun'" viewBox="0 0 24 24" aria-hidden="true">
@@ -54,7 +59,10 @@
       </button>
       <button
         class="ghost-icon"
+        type="button"
         :data-tooltip="t('components.main.controls.settings')"
+        :aria-label="t('components.main.controls.settings')"
+        data-testid="action-settings"
         @click="goToSettings"
       >
         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -93,8 +101,12 @@
             :key="tab.id"
             class="tab-pill"
             :class="{ active: activeTab === tab.id, dragging: draggingTab === tab.id }"
+            :id="'tab-' + tab.id"
             role="tab"
             :aria-selected="activeTab === tab.id"
+            :aria-controls="'tabpanel-' + tab.id"
+            :data-tab="tab.id"
+            :data-testid="'tab-' + tab.id"
             type="button"
             draggable="true"
             @click="onTabChange(tab.id)"
@@ -109,6 +121,13 @@
         </div>
       </div>
 
+      <div
+        role="tabpanel"
+        :id="'tabpanel-' + activeTab"
+        :aria-labelledby="'tab-' + activeTab"
+        tabindex="0"
+        data-testid="tabpanel"
+      >
 	      <PoolPanel
 	        :platform="activeTab"
 	        :providers="activeCards"
@@ -123,9 +142,11 @@
 	        @edit="configure"
 	        @remove="requestRemove"
 	        @duplicate="handleDuplicate"
+	        @model-trace="openModelTrace"
 	        @add-provider="openCreateModal"
 	        @refresh="refreshAllData"
 	      />
+      </div>
       </section>
 
       <BaseModal
@@ -172,6 +193,9 @@
                     <button
                       class="docs-code-copy"
                       type="button"
+                      :aria-label="t('components.main.docs.copy') + ': ' + block.label"
+                      :data-block-label="block.label"
+                      data-testid="docs-copy"
                       @click="copyDocCode(block.code)"
                     >
                       {{ t('components.main.docs.copy') }}
@@ -188,119 +212,150 @@
       <BaseModal
       :open="modalState.open"
       :title="modalState.editingId ? t('components.main.form.editTitle') : t('components.main.form.createTitle')"
+      test-id="provider-modal"
       @close="closeModal()"
     >
-      <form class="vendor-form" @submit.prevent="submitModal()">
-                <label class="form-field">
-                  <span>{{ t('components.main.form.labels.name') }}</span>
+      <form class="vendor-form" data-testid="provider-form" @submit.prevent="submitModal()">
+                <div class="form-field">
+                  <label for="provider-name">{{ t('components.main.form.labels.name') }}</label>
                   <BaseInput
+                    id="provider-name"
                     v-model="modalState.form.name"
                     type="text"
                     :placeholder="t('components.main.form.placeholders.name')"
                     required
                     :disabled="Boolean(modalState.editingId)"
+                    data-testid="provider-name"
                   />
-                </label>
+                </div>
 
-                <label class="form-field">
-                  <span class="label-row">
-                    {{ t('components.main.form.labels.apiUrl') }}
-                    <span v-if="modalState.errors.apiUrl" class="field-error">
+                <div class="form-field">
+                  <div class="label-row">
+                    <label for="provider-api-url">{{ t('components.main.form.labels.apiUrl') }}</label>
+                    <span v-if="modalState.errors.apiUrl" class="field-error" role="alert">
                       {{ modalState.errors.apiUrl }}
                     </span>
-                  </span>
+                  </div>
                   <BaseInput
+                    id="provider-api-url"
                     v-model="modalState.form.apiUrl"
                     type="text"
                     :placeholder="t('components.main.form.placeholders.apiUrl')"
                     required
                     :class="{ 'has-error': !!modalState.errors.apiUrl, 'shake-error': shakeFields.apiUrl }"
+                    :aria-invalid="!!modalState.errors.apiUrl"
+                    data-testid="provider-api-url"
                   />
-                </label>
+                </div>
 
-                <label class="form-field">
-                  <span>{{ t('components.main.form.labels.officialSite') }}</span>
+                <div class="form-field">
+                  <label for="provider-official-site">{{ t('components.main.form.labels.officialSite') }}</label>
                   <BaseInput
+                    id="provider-official-site"
                     v-model="modalState.form.officialSite"
                     type="text"
                     :placeholder="t('components.main.form.placeholders.officialSite')"
+                    data-testid="provider-official-site"
                   />
-                </label>
+                </div>
 
-                <label class="form-field">
-                  <span>{{ t('components.main.form.labels.apiKey') }}</span>
+                <div class="form-field">
+                  <label for="provider-api-key">{{ t('components.main.form.labels.apiKey') }}</label>
                   <BaseInput
+                    id="provider-api-key"
                     v-model="modalState.form.apiKey"
                     type="text"
                     :placeholder="t('components.main.form.placeholders.apiKey')"
                     :class="{ 'has-error': !!modalState.errors.apiKey, 'shake-error': shakeFields.apiKey }"
+                    :aria-invalid="!!modalState.errors.apiKey"
+                    data-testid="provider-api-key"
                   />
-                </label>
+                </div>
 
-                <label class="form-field">
-                  <span class="label-row">
-                    {{ t('components.main.form.labels.maxConcurrency') }}
-                    <span v-if="modalState.errors.maxConcurrency" class="field-error">
+                <div class="form-field">
+                  <div class="label-row">
+                    <label for="provider-max-concurrency">{{ t('components.main.form.labels.maxConcurrency') }}</label>
+                    <span v-if="modalState.errors.maxConcurrency" class="field-error" role="alert">
                       {{ modalState.errors.maxConcurrency }}
                     </span>
-                  </span>
+                  </div>
                   <BaseInput
+                    id="provider-max-concurrency"
                     v-model="modalState.form.maxConcurrency"
                     type="number"
                     min="1"
                     step="1"
                     :placeholder="t('components.main.form.placeholders.maxConcurrency')"
                     :class="{ 'has-error': !!modalState.errors.maxConcurrency, 'shake-error': shakeFields.maxConcurrency }"
+                    :aria-invalid="!!modalState.errors.maxConcurrency"
+                    data-testid="provider-max-concurrency"
                   />
-                </label>
+                </div>
 
                 <!-- 协议端点（按平台互斥显示）-->
-                <label v-if="showMessagesEndpointField" class="form-field">
-                  <div class="label-with-hint">{{ t('components.main.form.labels.messagesEndpoint') }} <HelpHint :text="t('components.main.form.hints.messagesEndpoint')" /></div>
+                <div v-if="showMessagesEndpointField" class="form-field">
+                  <div class="label-with-hint"><label for="provider-messages-endpoint">{{ t('components.main.form.labels.messagesEndpoint') }}</label> <HelpHint :text="t('components.main.form.hints.messagesEndpoint')" /></div>
                   <BaseInput
+                    id="provider-messages-endpoint"
                     v-model="modalState.form.apiEndpoint"
                     type="text"
                     :placeholder="t('components.main.form.placeholders.messagesEndpoint')"
                     :class="{ 'has-error': !!modalState.errors.protocolEndpoint, 'shake-error': shakeFields.protocolEndpoint }"
+                    :aria-invalid="!!modalState.errors.protocolEndpoint"
+                    data-testid="provider-messages-endpoint"
                   />
-                </label>
+                </div>
 
-                <label v-if="showResponsesEndpointField" class="form-field">
-                  <div class="label-with-hint">{{ t('components.main.form.labels.responsesEndpoint') }} <HelpHint :text="t('components.main.form.hints.responsesEndpoint')" /></div>
+                <div v-if="showResponsesEndpointField" class="form-field">
+                  <div class="label-with-hint"><label for="provider-responses-endpoint">{{ t('components.main.form.labels.responsesEndpoint') }}</label> <HelpHint :text="t('components.main.form.hints.responsesEndpoint')" /></div>
                   <BaseInput
+                    id="provider-responses-endpoint"
                     v-model="modalState.form.responsesEndpoint"
                     type="text"
                     :placeholder="t('components.main.form.placeholders.responsesEndpoint')"
                     :class="{ 'has-error': !!modalState.errors.protocolEndpoint, 'shake-error': shakeFields.protocolEndpoint }"
+                    :aria-invalid="!!modalState.errors.protocolEndpoint"
+                    data-testid="provider-responses-endpoint"
                   />
-                </label>
+                </div>
 
-                <label v-if="showChatEndpointField" class="form-field">
-                  <div class="label-with-hint">{{ t('components.main.form.labels.chatEndpoint') }} <HelpHint :text="t('components.main.form.hints.chatEndpoint')" /></div>
+                <div v-if="showChatEndpointField" class="form-field">
+                  <div class="label-with-hint"><label for="provider-chat-endpoint">{{ t('components.main.form.labels.chatEndpoint') }}</label> <HelpHint :text="t('components.main.form.hints.chatEndpoint')" /></div>
                   <BaseInput
+                    id="provider-chat-endpoint"
                     v-model="modalState.form.chatEndpoint"
                     type="text"
                     :placeholder="t('components.main.form.placeholders.chatEndpoint')"
                     :class="{ 'has-error': !!modalState.errors.protocolEndpoint, 'shake-error': shakeFields.protocolEndpoint }"
+                    :aria-invalid="!!modalState.errors.protocolEndpoint"
+                    data-testid="provider-chat-endpoint"
                   />
-                </label>
+                </div>
 
-                <label class="form-field">
-                  <div class="label-with-hint">{{ t('components.main.form.labels.modelsEndpoint') }} <HelpHint :text="t('components.main.form.hints.modelsEndpoint')" /></div>
+                <div class="form-field">
+                  <div class="label-with-hint"><label for="provider-models-endpoint">{{ t('components.main.form.labels.modelsEndpoint') }}</label> <HelpHint :text="t('components.main.form.hints.modelsEndpoint')" /></div>
                   <BaseInput
+                    id="provider-models-endpoint"
                     v-model="modalState.form.modelsEndpoint"
                     type="text"
                     :placeholder="t('components.main.form.placeholders.modelsEndpoint')"
                     :class="{ 'has-error': !!modalState.errors.modelsEndpoint, 'shake-error': shakeFields.modelsEndpoint }"
+                    :aria-invalid="!!modalState.errors.modelsEndpoint"
+                    data-testid="provider-models-endpoint"
                   />
-                </label>
+                </div>
 
                 <!-- 认证方式 -->
                 <div class="form-field">
-                  <div class="label-with-hint">{{ t('components.main.form.labels.connectivityAuthType') }} <HelpHint :text="t('components.main.form.hints.connectivityAuthType')" /></div>
+                  <div class="label-with-hint"><label for="provider-auth-type">{{ t('components.main.form.labels.connectivityAuthType') }}</label> <HelpHint :text="t('components.main.form.hints.connectivityAuthType')" /></div>
                   <Listbox v-model="selectedAuthType" v-slot="{ open }">
                     <div class="level-select">
-                      <ListboxButton class="level-select-button">
+                      <ListboxButton
+                        id="provider-auth-type"
+                        class="level-select-button"
+                        :aria-label="t('components.main.form.labels.connectivityAuthType')"
+                        data-testid="auth-type-select"
+                      >
                         <span class="level-label">
                           {{ authTypeOptions.find((item) => item.value === selectedAuthType)?.label || selectedAuthType }}
                         </span>
@@ -323,10 +378,13 @@
                     </div>
                   </Listbox>
                   <BaseInput
+                    id="provider-custom-auth-header"
                     v-model="customAuthHeader"
                     type="text"
                     :placeholder="t('components.main.form.placeholders.customAuthHeader')"
+                    :aria-label="t('components.main.form.placeholders.customAuthHeader')"
                     class="mt-2"
+                    data-testid="provider-custom-auth-header"
                   />
                                   </div>
 
@@ -341,11 +399,18 @@
 
                 <!-- 可用性监控配置 -->
                 <div class="form-field switch-field">
-                  <div class="label-with-hint">{{ t('components.main.form.labels.availabilityMonitor') }} <HelpHint :text="t('components.main.form.hints.availabilityMonitor')" /></div>
+                  <div class="label-with-hint"><span id="availability-monitor-label">{{ t('components.main.form.labels.availabilityMonitor') }}</span> <HelpHint :text="t('components.main.form.hints.availabilityMonitor')" /></div>
                   <div class="switch-inline">
                     <label class="mac-switch">
-                      <input type="checkbox" v-model="modalState.form.availabilityMonitorEnabled" />
-                      <span></span>
+                      <input
+                        type="checkbox"
+                        role="switch"
+                        v-model="modalState.form.availabilityMonitorEnabled"
+                        :aria-checked="modalState.form.availabilityMonitorEnabled"
+                        aria-labelledby="availability-monitor-label"
+                        data-testid="availability-monitor"
+                      />
+                      <span aria-hidden="true"></span>
                     </label>
                     <span class="switch-text">
                       {{ modalState.form.availabilityMonitorEnabled ? t('components.main.form.switch.on') : t('components.main.form.switch.off') }}
@@ -358,21 +423,27 @@
                                   </div>
 
                 <section class="endpoint-test-panel">
-                  <label class="form-field">
-                    <span>{{ t('components.main.form.labels.testModel') }}</span>
+                  <div class="form-field">
+                    <label for="provider-test-model">{{ t('components.main.form.labels.testModel') }}</label>
                     <div class="field-with-action field-with-dropdown-action">
                       <div class="provider-model-combobox">
                         <input
+                          id="provider-test-model"
                           v-model.trim="providerTestModel"
                           class="base-input"
                           :class="{ 'has-error': !!modalState.errors.testModel, 'shake-error': shakeFields.testModel }"
                           :placeholder="providerModelsLoading ? t('components.main.form.connectivity.loadingModels') : t('components.main.form.placeholders.testModel')"
+                          :aria-invalid="!!modalState.errors.testModel"
+                          data-testid="provider-test-model"
                           @focus="providerModelDropdownOpen = true"
                           @blur="providerModelDropdownOpen = false"
                         />
                         <button
                           class="provider-model-toggle"
                           type="button"
+                          :aria-label="t('components.main.form.placeholders.testModel')"
+                          :aria-expanded="providerModelDropdownOpen"
+                          data-testid="provider-model-toggle"
                           @mousedown.prevent
                           @click="toggleProviderModelDropdown"
                         >
@@ -380,12 +451,14 @@
                             <path d="M6 8l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
                           </svg>
                         </button>
-                        <div v-if="providerModelDropdownOpen" class="provider-model-options">
+                        <div v-if="providerModelDropdownOpen" class="provider-model-options" role="listbox">
                           <button
                             v-for="model in combinedProviderModelOptions"
                             :key="model"
                             class="provider-model-option"
                             type="button"
+                            role="option"
+                            :aria-selected="providerTestModel === model"
                             @mousedown.prevent="selectProviderTestModel(model)"
                           >
                             {{ model }}
@@ -398,25 +471,39 @@
                           </div>
                         </div>
                       </div>
-                      <button class="field-test-btn field-test-btn-tight" type="button" :disabled="testingModelsEndpoint" @click="handleTestModelsEndpoint">
+                      <button
+                        class="field-test-btn field-test-btn-tight"
+                        type="button"
+                        :disabled="testingModelsEndpoint"
+                        data-testid="test-models-endpoint"
+                        @click="handleTestModelsEndpoint"
+                      >
                         {{ testingModelsEndpoint ? t('components.main.form.connectivity.testing') : t('components.main.form.connectivity.testModels') }}
                       </button>
                     </div>
-                  </label>
-                  <label class="form-field">
-                    <span>{{ t('components.main.form.labels.testMessage') }}</span>
+                  </div>
+                  <div class="form-field">
+                    <label for="provider-test-message">{{ t('components.main.form.labels.testMessage') }}</label>
                     <div class="field-with-action">
                       <BaseInput
+                        id="provider-test-message"
                         v-model="providerTestMessage"
                         type="text"
                         :placeholder="t('components.main.form.placeholders.testMessage')"
+                        data-testid="provider-test-message"
                       />
-                      <button class="field-test-btn" type="button" :disabled="testingProtocolEndpoint" @click="handleTestProtocolEndpoint">
+                      <button
+                        class="field-test-btn"
+                        type="button"
+                        :disabled="testingProtocolEndpoint"
+                        data-testid="send-test-message"
+                        @click="handleTestProtocolEndpoint"
+                      >
                         {{ testingProtocolEndpoint ? t('components.main.form.connectivity.testing') : t('components.main.form.connectivity.sendTestMessage') }}
                       </button>
                     </div>
-                  </label>
-                  <div v-if="protocolEndpointTestResult" class="field-test-output-group">
+                  </div>
+                  <div v-if="protocolEndpointTestResult" class="field-test-output-group" data-testid="test-output">
                     <div class="field-test-output">
                       <div class="field-test-output-title">{{ t('components.main.form.connectivity.httpResponse') }}</div>
                       <pre>{{ protocolEndpointTestResult.httpResponse || protocolEndpointTestResult.message }}</pre>
@@ -429,16 +516,21 @@
                       />
                     </div>
                   </div>
-                  <p v-if="modelsEndpointTestResult" :class="['field-test-result', modelsEndpointTestResult.success ? 'success' : 'error']">
+                  <p
+                    v-if="modelsEndpointTestResult"
+                    :class="['field-test-result', modelsEndpointTestResult.success ? 'success' : 'error']"
+                    role="status"
+                    data-testid="test-result"
+                  >
                     {{ modelsEndpointTestResult.message }}
                   </p>
                 </section>
 
                 <footer class="form-actions">
-                  <BaseButton variant="outline" type="button" @click="closeModal()">
+                  <BaseButton variant="outline" type="button" data-testid="modal-cancel" @click="closeModal()">
                     {{ t('components.main.form.actions.cancel') }}
                   </BaseButton>
-                  <BaseButton type="submit">
+                  <BaseButton type="submit" data-testid="modal-save">
                     {{ t('components.main.form.actions.save') }}
                   </BaseButton>
                 </footer>
@@ -456,14 +548,23 @@
         </p>
       </div>
       <footer class="form-actions confirm-actions">
-        <BaseButton variant="outline" type="button" @click="closeConfirm">
+        <BaseButton variant="outline" type="button" data-testid="confirm-cancel" @click="closeConfirm">
           {{ t('components.main.form.actions.cancel') }}
         </BaseButton>
-        <BaseButton variant="danger" type="button" @click="confirmRemove">
+        <BaseButton variant="danger" type="button" data-testid="confirm-delete" @click="confirmRemove">
           {{ t('components.main.form.actions.delete') }}
         </BaseButton>
       </footer>
       </BaseModal>
+
+      <!-- 模型真伪检测弹窗 -->
+      <ModelTraceModal
+        :open="modelTraceState.open"
+        :platform="modelTraceState.platform"
+        :provider-id="modelTraceState.providerId"
+        :provider-name="modelTraceState.providerName"
+        @close="closeModelTrace"
+      />
 
     </div>
   </div>
@@ -498,6 +599,7 @@ import ModelWhitelistEditor from '../common/ModelWhitelistEditor.vue'
 import HelpHint from '../common/HelpHint.vue'
 import ModelMappingEditor from '../common/ModelMappingEditor.vue'
 import PoolPanel from './PoolPanel.vue'
+import ModelTraceModal from './ModelTraceModal.vue'
 import { ListRelayKeys, type RelayKeyItem } from '../../services/providerPool'
 import { RELAY_KEYS_UPDATED_EVENT } from '../../events/relayKeys'
 import { LoadProviders, SaveProviders } from '../../../bindings/codeswitch/services/providerservice'
@@ -2047,6 +2149,26 @@ const closeModal = async (skipAutoSave = false) => {
 const closeConfirm = () => {
   confirmState.open = false
   confirmState.card = null
+}
+
+// 模型真伪检测弹窗状态。平台直接用当前标签页，
+// 我们的标签页就是协议平台（claude / openai-responses / openai-chat）。
+const modelTraceState = reactive({
+  open: false,
+  platform: tabs[0].id as string,
+  providerId: 0,
+  providerName: '',
+})
+
+const openModelTrace = (card: AutomationCard) => {
+  modelTraceState.platform = activeTab.value
+  modelTraceState.providerId = card.id
+  modelTraceState.providerName = card.name
+  modelTraceState.open = true
+}
+
+const closeModelTrace = () => {
+  modelTraceState.open = false
 }
 
 const submitModal = async (closeAfterSave = true): Promise<boolean> => {

@@ -558,6 +558,12 @@ func streamEvents(c *gin.Context, hub *services.EventHub, userID string) {
 }
 
 func eventVisibleToUser(payload any, userID string) bool {
+	// 结构化事件：载荷自己声明归属（services.UserScopedEvent）
+	if scoped, ok := payload.(services.UserScopedEvent); ok {
+		eventUserID := strings.TrimSpace(scoped.EventUserID())
+		return eventUserID == "" || eventUserID == strings.TrimSpace(userID)
+	}
+	// map 形态事件：沿用 "userID" 字段约定
 	data, ok := payload.(map[string]interface{})
 	if !ok {
 		return true

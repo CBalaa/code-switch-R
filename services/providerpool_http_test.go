@@ -3881,3 +3881,516 @@ func TestHTTPMissingCompletionDoesNotAppendFallbackAfterStreamStarts(t *testing.
 		t.Fatalf("second request hits = (%d,%d), want (1,1)", providerAHits, providerBHits)
 	}
 }
+
+// ========== openai-chat 号池 HTTP 集成测试 ==========
+
+func chatAccountRequest(router *gin.Engine, relayKey string, body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, "/chat/completions", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+relayKey)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	return w
+}
+
+func chatCompletionBody(id, label string) string {
+	return fmt.Sprintf(`{"id":%q,"object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":%q},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`, id, label)
+}
+
+// TestHTTPChatAccountPoolStickyKeysBearerEndpointAndBlacklist covers the chat
+// account pool end to end: the configured chat endpoint is used verbatim, every
+// key is injected as its own Bearer token, a rate-limited key is blacklisted and
+// silently replaced by the next key, and no raw key reaches the client.
+func TestHTTPChatAccountPoolStickyKeysBearerEndpointAndBlacklist(t *testing.T) {
+	const (
+		firstKey  = "sk-chat-account-first"
+		secondKey = "sk-chat-account-second"
+	)
+
+	var firstHits, secondHits int
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/custom/chat/completions" {
+			t.Errorf("chat account upstream path = %q, want /custom/chat/completions", r.URL.Path)
+		}
+		switch r.Header.Get("Authorization") {
+		case "Bearer " + firstKey:
+			firstHits++
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = fmt.Fprintf(w, `{"error":{"message":"rate limited for Bearer %s"}}`, firstKey)
+		case "Bearer " + secondKey:
+			secondHits++
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(chatCompletionBody("chatcmpl-chat-second", "from-second-key")))
+		default:
+			t.Errorf("unexpected chat account Authorization header %q", r.Header.Get("Authorization"))
+			w.WriteHeader(http.StatusUnauthorized)
+		}
+	}))
+	defer upstream.Close()
+
+	pool := &ProviderPool{
+		Platform:                     "openai-chat",
+		Name:                         "Chat Account Pool",
+		PoolType:                     ProviderPoolTypeAccount,
+		Mode:                         ProviderPoolModeManaged,
+		AutoBlacklistEnabled:         true,
+		AutoBlacklistThreshold:       2,
+		AutoBlacklistDurationMinutes: 10,
+		AccountPoolConfig: &AccountPoolConfig{
+			APIURL:       upstream.URL + "/",
+			ChatEndpoint: "custom/chat/completions",
+			Keys: []AccountPoolKey{
+				{APIKey: firstKey},
+				{APIKey: secondKey},
+			},
+		},
+	}
+	relay, router, relayKey, poolID := setupProviderPoolHTTPTest(t, "openai-chat", nil, pool)
+
+	savedPool, err := relay.poolService.ResolvePoolByID(poolID)
+	if err != nil || savedPool == nil {
+		t.Fatalf("resolve chat account pool: pool=%v err=%v", savedPool, err)
+	}
+	selected, err := relay.selectProvidersForRequest("openai-chat", savedPool, "gpt-4o-mini")
+	if err != nil {
+		t.Fatalf("select chat account keys: %v", err)
+	}
+	if len(selected) != 2 || selected[0].ChatEndpoint != "/custom/chat/completions" {
+		t.Fatalf("chat account providers = %#v", selected)
+	}
+	if got := selected[0].GetEffectiveEndpoint("/chat/completions"); got != "/custom/chat/completions" {
+		t.Fatalf("chat account effective endpoint = %q", got)
+	}
+
+	request := func() *httptest.ResponseRecorder {
+		return chatAccountRequest(router, relayKey, `{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hello"}],"stream":false}`)
+	}
+	assertNoRawKey := func(label, value string) {
+		t.Helper()
+		if strings.Contains(value, firstKey) || strings.Contains(value, secondKey) {
+			t.Fatalf("%s exposes a raw account key: %q", label, value)
+		}
+	}
+
+	w1 := request()
+	if w1.Code != http.StatusOK || !strings.Contains(w1.Body.String(), "from-second-key") {
+		t.Fatalf("first chat account request status = %d, want fallback success: %s", w1.Code, w1.Body.String())
+	}
+	if firstHits != 2 || secondHits != 1 {
+		t.Fatalf("first chat account request hits = (%d, %d), want (2, 1)", firstHits, secondHits)
+	}
+	assertNoRawKey("first chat fallback response", w1.Body.String())
+
+	statuses := relay.ListProviderBlacklistStatus("openai-chat", poolID)
+	if len(statuses) != 1 || statuses[0].ProviderID != selected[0].ID {
+		t.Fatalf("chat account blacklist status = %+v, want first key ID %d", statuses, selected[0].ID)
+	}
+	assertNoRawKey("chat account blacklist status", fmt.Sprint(statuses))
+
+	// While the first key is blacklisted, later requests start directly on the
+	// second key.
+	w2 := request()
+	if w2.Code != http.StatusOK || !strings.Contains(w2.Body.String(), "from-second-key") {
+		t.Fatalf("second chat account request should use key B, got %d: %s", w2.Code, w2.Body.String())
+	}
+	if firstHits != 2 || secondHits != 2 {
+		t.Fatalf("second chat account request hits = (%d, %d), want (2, 2)", firstHits, secondHits)
+	}
+	assertNoRawKey("successful chat response", w2.Body.String())
+}
+
+// TestHTTPChatAccountPoolEmptyStreamBlacklistsAndSwitchesKey verifies the shared
+// preflight guard treats a content-free chat SSE stream as a provider failure:
+// the client never sees HTTP 200 without output, the key is blacklisted, and the
+// request silently continues on the next key.
+func TestHTTPChatAccountPoolEmptyStreamBlacklistsAndSwitchesKey(t *testing.T) {
+	const (
+		firstKey  = "sk-chat-empty-first"
+		secondKey = "sk-chat-empty-second"
+	)
+
+	var firstHits, secondHits int
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/chat/completions" {
+			t.Errorf("chat empty-stream endpoint = %q, want /v1/chat/completions", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		switch r.Header.Get("Authorization") {
+		case "Bearer " + firstKey:
+			firstHits++
+			// A 200 chat stream with only a role chunk and no model output.
+			_, _ = w.Write([]byte("data: {\"id\":\"chatcmpl-empty\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"}}]}\n\n"))
+			_, _ = w.Write([]byte("data: {\"id\":\"chatcmpl-empty\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n"))
+			_, _ = w.Write([]byte("data: [DONE]\n\n"))
+		case "Bearer " + secondKey:
+			secondHits++
+			_, _ = w.Write([]byte("data: {\"id\":\"chatcmpl-ok\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"}}]}\n\n"))
+			_, _ = w.Write([]byte("data: {\"id\":\"chatcmpl-ok\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"from-second-key\"}}]}\n\n"))
+			_, _ = w.Write([]byte("data: {\"id\":\"chatcmpl-ok\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n"))
+			_, _ = w.Write([]byte("data: [DONE]\n\n"))
+		default:
+			t.Errorf("unexpected chat account Authorization header %q", r.Header.Get("Authorization"))
+		}
+	}))
+	defer upstream.Close()
+
+	pool := &ProviderPool{
+		Platform:                     "openai-chat",
+		Name:                         "Chat Empty Stream Pool",
+		PoolType:                     ProviderPoolTypeAccount,
+		Mode:                         ProviderPoolModeManaged,
+		AutoBlacklistEnabled:         true,
+		AutoBlacklistThreshold:       1,
+		AutoBlacklistDurationMinutes: 10,
+		AccountPoolConfig: &AccountPoolConfig{
+			APIURL:       upstream.URL,
+			ChatEndpoint: "/v1/chat/completions",
+			Keys:         []AccountPoolKey{{APIKey: firstKey}, {APIKey: secondKey}},
+		},
+	}
+	relay, router, relayKey, poolID := setupProviderPoolHTTPTest(t, "openai-chat", nil, pool)
+
+	w := chatAccountRequest(router, relayKey, `{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hello"}],"stream":true}`)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "from-second-key") {
+		t.Fatalf("chat empty-stream request should switch to key B, got %d: %s", w.Code, w.Body.String())
+	}
+	if firstHits != 1 || secondHits != 1 {
+		t.Fatalf("chat empty-stream request hits = (%d, %d), want (1, 1)", firstHits, secondHits)
+	}
+	statuses := relay.ListProviderBlacklistStatus("openai-chat", poolID)
+	if len(statuses) != 1 {
+		t.Fatalf("chat empty-stream blacklist status = %+v, want one key", statuses)
+	}
+	if strings.Contains(w.Body.String(), firstKey) || strings.Contains(w.Body.String(), secondKey) {
+		t.Fatalf("chat empty-stream response exposes a raw key: %s", w.Body.String())
+	}
+}
+
+// TestHTTPChatAccountPoolPromptCacheKeyKeepsKeyAffinity verifies the chat sticky
+// identity: prompt_cache_key binds a conversation to one account key, and a
+// different conversation is free to use the other key.
+func TestHTTPChatAccountPoolPromptCacheKeyKeepsKeyAffinity(t *testing.T) {
+	const (
+		firstKey  = "sk-chat-sticky-first"
+		secondKey = "sk-chat-sticky-second"
+	)
+
+	var firstHits, secondHits int
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		key := r.Header.Get("Authorization")
+		label := ""
+		switch key {
+		case "Bearer " + firstKey:
+			firstHits++
+			label = "key-a"
+		case "Bearer " + secondKey:
+			secondHits++
+			label = "key-b"
+		default:
+			t.Errorf("unexpected chat account Authorization header %q", key)
+			return
+		}
+		_, _ = fmt.Fprintf(w, "data: {\"id\":\"chatcmpl-%s\",\"choices\":[{\"index\":0,\"delta\":{\"content\":%q}}]}\n\n", label, label)
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer upstream.Close()
+
+	pool := &ProviderPool{
+		Platform:                     "openai-chat",
+		Name:                         "Chat Sticky Pool",
+		PoolType:                     ProviderPoolTypeAccount,
+		Mode:                         ProviderPoolModeManaged,
+		AutoBlacklistEnabled:         true,
+		AutoBlacklistThreshold:       3,
+		AutoBlacklistDurationMinutes: 10,
+		AccountPoolConfig: &AccountPoolConfig{
+			APIURL:       upstream.URL,
+			ChatEndpoint: "/v1/chat/completions",
+			Keys:         []AccountPoolKey{{APIKey: firstKey}, {APIKey: secondKey}},
+		},
+	}
+	_, router, relayKey, _ := setupProviderPoolHTTPTest(t, "openai-chat", nil, pool)
+
+	request := func(promptCacheKey string) string {
+		body := fmt.Sprintf(`{"model":"gpt-4o-mini","prompt_cache_key":%q,"messages":[{"role":"user","content":"hello"}],"stream":true}`, promptCacheKey)
+		w := chatAccountRequest(router, relayKey, body)
+		if w.Code != http.StatusOK {
+			t.Fatalf("chat sticky request status = %d: %s", w.Code, w.Body.String())
+		}
+		return w.Body.String()
+	}
+
+	if body := request("sess-1"); !strings.Contains(body, "key-a") {
+		t.Fatalf("first chat sticky request = %q, want key-a", body)
+	}
+	if body := request("sess-1"); !strings.Contains(body, "key-a") {
+		t.Fatalf("continuation chat sticky request = %q, want key-a", body)
+	}
+	if body := request("sess-2"); !strings.Contains(body, "key-b") {
+		t.Fatalf("new conversation chat sticky request = %q, want key-b", body)
+	}
+	if firstHits != 2 || secondHits != 1 {
+		t.Fatalf("chat sticky key hits = (%d, %d), want (2, 1)", firstHits, secondHits)
+	}
+}
+
+// TestHTTPChatAccountPoolModelsUsesChatSiblingEndpoint verifies /v1/models is
+// derived from the chat endpoint's API base and that a failing key is blacklisted
+// while the next key serves the list.
+func TestHTTPChatAccountPoolModelsUsesChatSiblingEndpoint(t *testing.T) {
+	const (
+		firstKey  = "sk-chat-models-first"
+		secondKey = "sk-chat-models-second"
+	)
+
+	var firstHits, secondHits int
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			t.Errorf("chat account models path = %q, want /v1/models", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Header.Get("Authorization") {
+		case "Bearer " + firstKey:
+			firstHits++
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = fmt.Fprintf(w, `{"error":{"message":"rate limited: %s"}}`, firstKey)
+		case "Bearer " + secondKey:
+			secondHits++
+			_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"gpt-4o-mini","object":"model"}]}`))
+		default:
+			t.Errorf("unexpected chat models Authorization header %q", r.Header.Get("Authorization"))
+			w.WriteHeader(http.StatusUnauthorized)
+		}
+	}))
+	defer upstream.Close()
+
+	pool := &ProviderPool{
+		Platform:                     "openai-chat",
+		Name:                         "Chat Models Pool",
+		PoolType:                     ProviderPoolTypeAccount,
+		Mode:                         ProviderPoolModeManaged,
+		AutoBlacklistEnabled:         true,
+		AutoBlacklistThreshold:       1,
+		AutoBlacklistDurationMinutes: 10,
+		AccountPoolConfig: &AccountPoolConfig{
+			APIURL:       upstream.URL + "/v1",
+			ChatEndpoint: "/chat/completions",
+			Keys:         []AccountPoolKey{{APIKey: firstKey}, {APIKey: secondKey}},
+		},
+	}
+	relay, router, relayKey, poolID := setupProviderPoolHTTPTest(t, "openai-chat", nil, pool)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	req.Header.Set("Authorization", "Bearer "+relayKey)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "gpt-4o-mini") {
+		t.Fatalf("chat account models request = %d: %s", w.Code, w.Body.String())
+	}
+	if firstHits != 1 || secondHits != 1 {
+		t.Fatalf("chat account models hits = (%d, %d), want (1, 1)", firstHits, secondHits)
+	}
+	if strings.Contains(w.Body.String(), firstKey) || strings.Contains(w.Body.String(), secondKey) {
+		t.Fatalf("chat account models response exposes a raw key: %s", w.Body.String())
+	}
+	if statuses := relay.ListProviderBlacklistStatus("openai-chat", poolID); len(statuses) != 1 {
+		t.Fatalf("chat account models blacklist status = %+v, want one key", statuses)
+	}
+}
+
+// TestHTTPChatAccountPoolClient4xxDoesNotFailOverOrBlacklist verifies a
+// deterministic chat request error is returned verbatim instead of being replayed
+// through every account key.
+func TestHTTPChatAccountPoolClient4xxDoesNotFailOverOrBlacklist(t *testing.T) {
+	const (
+		firstKey  = "sk-chat-4xx-first"
+		secondKey = "sk-chat-4xx-second"
+	)
+
+	var firstHits, secondHits int
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Header.Get("Authorization") {
+		case "Bearer " + firstKey:
+			firstHits++
+		case "Bearer " + secondKey:
+			secondHits++
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Upstream-Debug", "should-not-leak")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":{"message":"invalid request payload","type":"invalid_request_error"}}`))
+	}))
+	defer upstream.Close()
+
+	pool := &ProviderPool{
+		Platform:                     "openai-chat",
+		Name:                         "Chat Client Error Pool",
+		PoolType:                     ProviderPoolTypeAccount,
+		Mode:                         ProviderPoolModeManaged,
+		AutoBlacklistEnabled:         true,
+		AutoBlacklistThreshold:       1,
+		AutoBlacklistDurationMinutes: 10,
+		AccountPoolConfig: &AccountPoolConfig{
+			APIURL:       upstream.URL,
+			ChatEndpoint: "/v1/chat/completions",
+			Keys:         []AccountPoolKey{{APIKey: firstKey}, {APIKey: secondKey}},
+		},
+	}
+	relay, router, relayKey, poolID := setupProviderPoolHTTPTest(t, "openai-chat", nil, pool)
+
+	w := chatAccountRequest(router, relayKey, `{"model":"gpt-4o-mini","messages":[],"stream":false}`)
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "invalid request payload") {
+		t.Fatalf("chat account client error = %d: %s", w.Code, w.Body.String())
+	}
+	if firstHits+secondHits != 1 {
+		t.Fatalf("chat account client error attempts = (%d, %d), want a single key attempt", firstHits, secondHits)
+	}
+	if w.Header().Get("X-Upstream-Debug") != "" {
+		t.Fatal("chat account client error leaked an upstream debug header")
+	}
+	if statuses := relay.ListProviderBlacklistStatus("openai-chat", poolID); len(statuses) != 0 {
+		t.Fatalf("chat account client error blacklisted a key: %+v", statuses)
+	}
+}
+
+// TestHTTPChatAccountPoolModelNotFound503DoesNotBlacklistKeys reproduces the
+// ISRC/new-api behavior that motivated isRequestScopedUpstreamResponse: an
+// unknown model is answered with HTTP 503 plus error.code=model_not_found.
+// Such an answer describes the caller's request, so it must be returned
+// verbatim after a single attempt instead of burning every account key.
+func TestHTTPChatAccountPoolModelNotFound503DoesNotBlacklistKeys(t *testing.T) {
+	const (
+		firstKey  = "sk-chat-503-notfound-first"
+		secondKey = "sk-chat-503-notfound-second"
+	)
+	const upstreamError = `{"error":{"code":"model_not_found","message":"No available channel for model typo-model under group default (distributor)","type":"new_api_error"}}`
+
+	var firstHits, secondHits int
+	var firstKeySeen, secondKeySeen bool
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = r.Body.Close()
+		switch r.Header.Get("Authorization") {
+		case "Bearer " + firstKey:
+			firstHits++
+			firstKeySeen = true
+		case "Bearer " + secondKey:
+			secondHits++
+			secondKeySeen = true
+		}
+		w.Header().Set("Content-Type", "application/json")
+		// A good model works on every key; only the typo is rejected.
+		if strings.Contains(string(body), "typo-model") {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(upstreamError))
+			return
+		}
+		_, _ = w.Write([]byte(chatCompletionBody("chatcmpl-503-ok", "hello from a healthy key")))
+	}))
+	defer upstream.Close()
+
+	pool := &ProviderPool{
+		Platform:                     "openai-chat",
+		Name:                         "Chat Model Not Found Pool",
+		PoolType:                     ProviderPoolTypeAccount,
+		Mode:                         ProviderPoolModeManaged,
+		AutoBlacklistEnabled:         true,
+		AutoBlacklistThreshold:       1,
+		AutoBlacklistDurationMinutes: 10,
+		AccountPoolConfig: &AccountPoolConfig{
+			APIURL:       upstream.URL,
+			ChatEndpoint: "/v1/chat/completions",
+			Keys:         []AccountPoolKey{{APIKey: firstKey}, {APIKey: secondKey}},
+		},
+	}
+	relay, router, relayKey, poolID := setupProviderPoolHTTPTest(t, "openai-chat", nil, pool)
+
+	// 1) The typo must be returned verbatim...
+	w := chatAccountRequest(router, relayKey, `{"model":"typo-model","messages":[{"role":"user","content":"hi"}],"stream":false}`)
+	if w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "model_not_found") {
+		t.Fatalf("model-not-found response = %d: %s (want the upstream 503 body verbatim)", w.Code, w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), "号池暂无可用账号") {
+		t.Fatalf("model-not-found collapsed into a pool-level error: %s", w.Body.String())
+	}
+	// 2) ...after exactly one upstream attempt (not one per account key)...
+	if firstHits+secondHits != 1 {
+		t.Fatalf("model-not-found attempts = (first=%d, second=%d), want exactly one", firstHits, secondHits)
+	}
+	// 3) ...and without poisoning the pool.
+	if statuses := relay.ListProviderBlacklistStatus("openai-chat", poolID); len(statuses) != 0 {
+		t.Fatalf("model-not-found blacklisted account keys: %+v", statuses)
+	}
+
+	// 4) A valid model immediately after the typo still works on a healthy key.
+	ok := chatAccountRequest(router, relayKey, `{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}],"stream":false}`)
+	if ok.Code != http.StatusOK || !strings.Contains(ok.Body.String(), "hello from a healthy key") {
+		t.Fatalf("valid request after the typo = %d: %s", ok.Code, ok.Body.String())
+	}
+	if !firstKeySeen || !secondKeySeen {
+		// Only the first key is exercised by these two requests; the second is
+		// included so a failover would be visible in the hit counts.
+		t.Logf("key coverage: first=%v second=%v", firstKeySeen, secondKeySeen)
+	}
+	if statuses := relay.ListProviderBlacklistStatus("openai-chat", poolID); len(statuses) != 0 {
+		t.Fatalf("healthy follow-up request left blacklist entries: %+v", statuses)
+	}
+}
+
+// TestHTTPChatAccountPoolGeneric503StillFailsOver keeps the classification
+// narrow: a real upstream outage (no request-scoped error code) must still be
+// blamed on the key and fail over to the next one.
+func TestHTTPChatAccountPoolGeneric503StillFailsOver(t *testing.T) {
+	const (
+		firstKey  = "sk-chat-503-generic-first"
+		secondKey = "sk-chat-503-generic-second"
+	)
+
+	var firstHits, secondHits int
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Header.Get("Authorization") {
+		case "Bearer " + firstKey:
+			firstHits++
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"error":{"code":"server_error","message":"upstream temporarily unavailable"}}`))
+		case "Bearer " + secondKey:
+			secondHits++
+			_, _ = w.Write([]byte(chatCompletionBody("chatcmpl-generic-ok", "from second key")))
+		default:
+			w.WriteHeader(http.StatusUnauthorized)
+		}
+	}))
+	defer upstream.Close()
+
+	pool := &ProviderPool{
+		Platform:                     "openai-chat",
+		Name:                         "Chat Generic 503 Pool",
+		PoolType:                     ProviderPoolTypeAccount,
+		Mode:                         ProviderPoolModeManaged,
+		AutoBlacklistEnabled:         true,
+		AutoBlacklistThreshold:       1,
+		AutoBlacklistDurationMinutes: 10,
+		AccountPoolConfig: &AccountPoolConfig{
+			APIURL:       upstream.URL,
+			ChatEndpoint: "/v1/chat/completions",
+			Keys:         []AccountPoolKey{{APIKey: firstKey}, {APIKey: secondKey}},
+		},
+	}
+	relay, router, relayKey, poolID := setupProviderPoolHTTPTest(t, "openai-chat", nil, pool)
+
+	w := chatAccountRequest(router, relayKey, `{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}],"stream":false}`)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "from second key") {
+		t.Fatalf("generic 503 should fail over to the next key, got %d: %s", w.Code, w.Body.String())
+	}
+	if firstHits == 0 || secondHits != 1 {
+		t.Fatalf("generic 503 hits = (%d, %d), want the failing key attempted then failover to the second", firstHits, secondHits)
+	}
+	statuses := relay.ListProviderBlacklistStatus("openai-chat", poolID)
+	if len(statuses) != 1 {
+		t.Fatalf("generic 503 should blacklist the failing key, got %+v", statuses)
+	}
+}

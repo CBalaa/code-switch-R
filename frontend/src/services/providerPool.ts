@@ -74,7 +74,10 @@ export function accountPoolKeyDisplayName(key: AccountPoolKey): string {
 
 export interface AccountPoolConfig {
   apiUrl: string
-  responsesEndpoint: string
+  /** openai-responses 号池的协议端点（仅 responses 号池使用） */
+  responsesEndpoint?: string
+  /** openai-chat 号池的协议端点（仅 chat 号池使用） */
+  chatEndpoint?: string
   keys: AccountPoolKey[]
 }
 

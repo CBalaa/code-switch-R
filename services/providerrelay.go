@@ -167,58 +167,92 @@ func newUpstreamProtocolError(upstreamStatus int, code, message string, cause er
 	}
 }
 
-func newEmptyStreamProtocolError(upstreamStatus int) *upstreamProtocolError {
+func newEmptyStreamProtocolError(upstreamStatus int, kind string) *upstreamProtocolError {
 	return newUpstreamProtocolError(
 		upstreamStatus,
 		emptyStreamErrorCode,
-		errCodexEmptyStream.Error(),
+		streamGuardProtocolMessage(kind, errCodexEmptyStream),
 		errCodexEmptyStream,
 	)
 }
 
-func newCodexStreamPreflightProtocolError(upstreamStatus int, cause error) *upstreamProtocolError {
+// streamGuardProtocolMessage renders the client-visible message for a preflight
+// guard failure. Responses and Chat Completions share the same guard state
+// machine, but a chat stream must not be described with Responses terminology
+// (and vice versa). The error sentinels keep their historical identity, and the
+// Responses wording is unchanged for compatibility with existing deployments.
+func streamGuardProtocolMessage(kind string, cause error) string {
+	chat := strings.EqualFold(strings.TrimSpace(kind), "openai-chat")
+	subject := "codex"
+	completionEvent := "response.completed"
+	if chat {
+		subject = "chat"
+		completionEvent = "the terminal SSE event"
+	}
 	switch {
 	case errors.Is(cause, errCodexEmptyStream):
-		return newEmptyStreamProtocolError(upstreamStatus)
+		return fmt.Sprintf("%s upstream stream closed before useful content", subject)
+	case errors.Is(cause, errCodexMissingCompletion):
+		return fmt.Sprintf("%s upstream stream closed before %s", subject, completionEvent)
+	case errors.Is(cause, errCodexTerminalStreamFailure):
+		return fmt.Sprintf("%s upstream stream ended failed or incomplete before useful content", subject)
+	case errors.Is(cause, errCodexInitialBufferLimit):
+		return fmt.Sprintf("%s upstream stream exceeded the preflight buffer before useful content", subject)
+	default:
+		return cause.Error()
+	}
+}
+
+func newCodexStreamPreflightProtocolError(upstreamStatus int, cause error, kind string) *upstreamProtocolError {
+	switch {
+	case errors.Is(cause, errCodexEmptyStream):
+		return newEmptyStreamProtocolError(upstreamStatus, kind)
 	case errors.Is(cause, errCodexMissingCompletion):
 		return newUpstreamProtocolError(
 			upstreamStatus,
 			missingCompletionErrorCode,
-			errCodexMissingCompletion.Error(),
+			streamGuardProtocolMessage(kind, errCodexMissingCompletion),
 			errCodexMissingCompletion,
 		)
 	case errors.Is(cause, errCodexTerminalStreamFailure):
 		return newUpstreamProtocolError(
 			upstreamStatus,
 			terminalStreamFailureErrorCode,
-			errCodexTerminalStreamFailure.Error(),
+			streamGuardProtocolMessage(kind, errCodexTerminalStreamFailure),
 			errCodexTerminalStreamFailure,
 		)
 	case errors.Is(cause, errCodexInitialBufferLimit):
 		return newUpstreamProtocolError(
 			upstreamStatus,
 			initialBufferLimitErrorCode,
-			errCodexInitialBufferLimit.Error(),
+			streamGuardProtocolMessage(kind, errCodexInitialBufferLimit),
 			errCodexInitialBufferLimit,
 		)
 	default:
 		return newUpstreamProtocolError(
 			upstreamStatus,
 			streamPreflightErrorCode,
-			"codex upstream stream failed before useful content",
+			fmt.Sprintf("%s upstream stream failed before useful content", streamGuardSubject(kind)),
 			cause,
 		)
 	}
 }
 
-func committedCodexStreamProtocolError(upstreamStatus int, responseWritten bool, copyErr error, requestLog *ReqeustLog) *upstreamProtocolError {
+func streamGuardSubject(kind string) string {
+	if strings.EqualFold(strings.TrimSpace(kind), "openai-chat") {
+		return "chat"
+	}
+	return "codex"
+}
+
+func committedCodexStreamProtocolError(upstreamStatus int, responseWritten bool, copyErr error, requestLog *ReqeustLog, kind string) *upstreamProtocolError {
 	if !responseWritten || copyErr == nil {
 		return nil
 	}
 	if !errors.Is(copyErr, errCodexMissingCompletion) {
 		return nil
 	}
-	protocolErr := newCodexStreamPreflightProtocolError(upstreamStatus, copyErr)
+	protocolErr := newCodexStreamPreflightProtocolError(upstreamStatus, copyErr, kind)
 	setRequestLogProtocolError(requestLog, protocolErr)
 	return protocolErr
 }
@@ -314,6 +348,134 @@ func isRequestScopedUpstream4xx(status int) bool {
 	default:
 		return true
 	}
+}
+
+// upstreamErrorPeekLimit bounds how much of a 5xx body is inspected when
+// classifying the error. The consumed prefix is put back afterwards.
+const upstreamErrorPeekLimit = 8 << 10
+
+// isRequestScopedUpstreamErrorCode reports whether a structured upstream error
+// code/type names a problem with the caller's request.
+//
+// OpenAI-compatible gateways built on new-api/one-api answer an unknown or
+// unsupported model with HTTP 503 plus one of these codes. Blaming the account
+// key for that would blacklist every key in a pool after a single typo, so the
+// code — not the status class — decides.
+func isRequestScopedUpstreamErrorCode(value string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	if normalized == "" {
+		return false
+	}
+	normalized = strings.ReplaceAll(normalized, "-", "_")
+	normalized = strings.ReplaceAll(normalized, " ", "_")
+	switch normalized {
+	case "model_not_found",
+		"model_not_available",
+		"model_not_supported",
+		"model_does_not_exist",
+		"unknown_model",
+		"invalid_model",
+		"unsupported_model",
+		"unsupported_value",
+		"invalid_request",
+		"invalid_request_error",
+		"invalid_parameter",
+		"invalid_api_parameter",
+		"context_length_exceeded",
+		"string_above_max_length",
+		"content_policy_violation",
+		"content_filter":
+		return true
+	default:
+		return false
+	}
+}
+
+// upstreamErrorBodyIsRequestScoped inspects a structured upstream error payload
+// for a request-scoped code/type. Unknown shapes never match, so genuine
+// upstream outages still fail over and still count against the key.
+func upstreamErrorBodyIsRequestScoped(body []byte) bool {
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) == 0 {
+		return false
+	}
+	errorNode := gjson.GetBytes(trimmed, "error")
+	if !errorNode.Exists() {
+		return false
+	}
+	for _, candidate := range []string{
+		errorNode.Get("code").String(),
+		errorNode.Get("type").String(),
+	} {
+		if isRequestScopedUpstreamErrorCode(candidate) {
+			return true
+		}
+	}
+	return false
+}
+
+// peekReadCloserPrefix reads a bounded prefix of body and returns it together
+// with a reader that replays those bytes before the remaining stream, so the
+// caller can inspect a payload without consuming it.
+func peekReadCloserPrefix(body io.ReadCloser) ([]byte, io.ReadCloser) {
+	if body == nil {
+		return nil, nil
+	}
+	prefix, err := io.ReadAll(io.LimitReader(body, upstreamErrorPeekLimit))
+	if len(prefix) == 0 {
+		return nil, body
+	}
+	if err != nil {
+		// Keep whatever arrived; the replayed reader will surface the rest.
+		_ = err
+	}
+	return prefix, &prefixedReadCloser{
+		Reader: io.MultiReader(bytes.NewReader(prefix), body),
+		Closer: body,
+	}
+}
+
+// peekUpstreamErrorBody reads a bounded prefix of the upstream body and puts it
+// back so the shared error-extraction path still sees the whole payload.
+func peekUpstreamErrorBody(resp *xrequest.Response) []byte {
+	if resp == nil || resp.RawResponse == nil {
+		return nil
+	}
+	prefix, restored := peekReadCloserPrefix(resp.RawResponse.Body)
+	if restored != nil {
+		resp.RawResponse.Body = restored
+	}
+	return prefix
+}
+
+// isRequestScopedUpstreamResponse reports whether an upstream error response
+// describes the caller's request rather than the selected provider/key. Such a
+// response is returned to the caller verbatim: it must not fail over to other
+// account keys and must not count towards provider blacklisting.
+func isRequestScopedUpstreamResponse(resp *xrequest.Response) bool {
+	if resp == nil {
+		return false
+	}
+	status := resp.StatusCode()
+	if isRequestScopedUpstream4xx(status) {
+		return true
+	}
+	if status < http.StatusInternalServerError {
+		return false
+	}
+	return upstreamErrorBodyIsRequestScoped(peekUpstreamErrorBody(resp))
+}
+
+// isRequestScopedUpstreamStatusBody is the body-in-hand variant used by the
+// models endpoint, which reads the upstream body before classifying it.
+func isRequestScopedUpstreamStatusBody(status int, body []byte) bool {
+	if isRequestScopedUpstream4xx(status) {
+		return true
+	}
+	if status < http.StatusInternalServerError {
+		return false
+	}
+	return upstreamErrorBodyIsRequestScoped(body)
 }
 
 func clientErrorResponseHeaders(header http.Header) http.Header {
@@ -988,8 +1150,9 @@ func (prs *ProviderRelayService) commitAccountPoolStickyResponse(c *gin.Context,
 	prs.accountPoolStickyStore().commit(request, provider.ID, responseID)
 }
 
-func (prs *ProviderRelayService) responseStreamGuardOptions(c *gin.Context, provider Provider, firstUsefulContentTimeout time.Duration) codexStreamGuardOptions {
+func (prs *ProviderRelayService) responseStreamGuardOptions(c *gin.Context, kind string, provider Provider, firstUsefulContentTimeout time.Duration) codexStreamGuardOptions {
 	options := codexStreamGuardOptions{
+		kind:                         kind,
 		firstUsefulContentTimeout:    firstUsefulContentTimeout,
 		deferInitialKeepAlive:        true,
 		disableKeepAliveUntilRelease: true,
@@ -998,10 +1161,11 @@ func (prs *ProviderRelayService) responseStreamGuardOptions(c *gin.Context, prov
 		return options
 	}
 	return codexStreamGuardOptions{
+		kind:                      kind,
 		firstUsefulContentTimeout: options.firstUsefulContentTimeout,
-		// Every guarded Responses stream stays uncommitted until useful content
-		// arrives. Account pools additionally commit the successful response ID
-		// for sticky continuation routing.
+		// Every guarded stream stays uncommitted until useful content arrives.
+		// Account pools additionally commit the successful response ID for
+		// sticky continuation routing.
 		deferInitialKeepAlive:        options.deferInitialKeepAlive,
 		disableKeepAliveUntilRelease: options.disableKeepAliveUntilRelease,
 		onSuccessfulCompleted: func(responseID string) {
@@ -2711,7 +2875,7 @@ func (prs *ProviderRelayService) forwardRequestWithLog(
 			fmt.Printf("[INFO] Provider %s 响应存在但状态码为0，判定为客户端中断\n", provider.Name)
 			return false, fmt.Errorf("%w: %v", errClientAbort, err)
 		}
-		if resp != nil && isAccountPool(providerPoolFromContext(c.Request.Context())) && isRequestScopedUpstream4xx(resp.StatusCode()) {
+		if resp != nil && isAccountPool(providerPoolFromContext(c.Request.Context())) && isRequestScopedUpstreamResponse(resp) {
 			clientErr, readErr := newUpstreamClientRequestError(resp, provider)
 			if readErr != nil {
 				return false, readErr
@@ -2747,7 +2911,7 @@ func (prs *ProviderRelayService) forwardRequestWithLog(
 			fmt.Printf("[INFO] Provider %s 响应错误但状态码为0，判定为客户端中断\n", provider.Name)
 			return false, fmt.Errorf("%w: %v", errClientAbort, resp.Error())
 		}
-		if isAccountPool(providerPoolFromContext(c.Request.Context())) && isRequestScopedUpstream4xx(status) {
+		if isAccountPool(providerPoolFromContext(c.Request.Context())) && isRequestScopedUpstreamResponse(resp) {
 			clientErr, readErr := newUpstreamClientRequestError(resp, provider)
 			if readErr != nil {
 				return false, readErr
@@ -2782,7 +2946,7 @@ func (prs *ProviderRelayService) forwardRequestWithLog(
 		if isStreamResponse(resp, isStream) {
 			if prs.shouldUseResponseStreamGuard(c, kind, endpoint) {
 				var responseWritten bool
-				_, responseWritten, copyErr = writeCodexGuardedStreamingResponseWithOptions(c.Writer, resp, requestLog, prs.responseStreamGuardOptions(c, provider, remainingFirstTextTimeout), ReqeustLogHook(c, kind, requestLog))
+				_, responseWritten, copyErr = writeCodexGuardedStreamingResponseWithOptions(c.Writer, resp, requestLog, prs.responseStreamGuardOptions(c, kind, provider, remainingFirstTextTimeout), ReqeustLogHook(c, kind, requestLog))
 				if firstTextAttempt != nil && firstTextAttempt.timedOut.Load() {
 					requestLog.HttpCode = http.StatusGatewayTimeout
 					requestLog.ErrorMessage = firstTextTimeoutErrorBody
@@ -2807,11 +2971,11 @@ func (prs *ProviderRelayService) forwardRequestWithLog(
 						requestLog.markRetryRequested()
 						return false, errActiveRequestRetryRequested
 					}
-					protocolErr := newCodexStreamPreflightProtocolError(status, copyErr)
+					protocolErr := newCodexStreamPreflightProtocolError(status, copyErr, kind)
 					setRequestLogProtocolError(requestLog, protocolErr)
 					return false, protocolErr
 				}
-				if protocolErr := committedCodexStreamProtocolError(status, responseWritten, copyErr, requestLog); protocolErr != nil {
+				if protocolErr := committedCodexStreamProtocolError(status, responseWritten, copyErr, requestLog, kind); protocolErr != nil {
 					return false, protocolErr
 				}
 			} else {
@@ -2901,7 +3065,11 @@ func (prs *ProviderRelayService) forwardRequestWithLog(
 				requestLog.markRetryRequested()
 				return false, errActiveRequestRetryRequested
 			}
-			if kind == "openai-responses" {
+			if kind == "openai-responses" || kind == "openai-chat" {
+				// Both OpenAI protocols expose a top-level response/chunk id that
+				// can alias the sticky account-key session. For chat the primary
+				// identity is still the client's prompt_cache_key; this alias only
+				// refreshes the binding's last-seen time.
 				prs.commitAccountPoolStickyResponse(c, provider, gjson.GetBytes(finalBody, "id").String())
 			}
 			defaultActiveRequestTracker.MarkResponseStarted(requestLog.ActiveRequestID)
@@ -2916,7 +3084,7 @@ func (prs *ProviderRelayService) forwardRequestWithLog(
 		if isStreamResponse(resp, isStream) {
 			if prs.shouldUseResponseStreamGuard(c, kind, endpoint) {
 				var responseWritten bool
-				_, responseWritten, copyErr = writeCodexGuardedStreamingResponseWithOptions(c.Writer, resp, requestLog, prs.responseStreamGuardOptions(c, provider, remainingFirstTextTimeout), ReqeustLogHook(c, kind, requestLog))
+				_, responseWritten, copyErr = writeCodexGuardedStreamingResponseWithOptions(c.Writer, resp, requestLog, prs.responseStreamGuardOptions(c, kind, provider, remainingFirstTextTimeout), ReqeustLogHook(c, kind, requestLog))
 				if firstTextAttempt != nil && firstTextAttempt.timedOut.Load() {
 					requestLog.HttpCode = http.StatusGatewayTimeout
 					requestLog.ErrorMessage = firstTextTimeoutErrorBody
@@ -2941,11 +3109,11 @@ func (prs *ProviderRelayService) forwardRequestWithLog(
 						requestLog.markRetryRequested()
 						return false, errActiveRequestRetryRequested
 					}
-					protocolErr := newCodexStreamPreflightProtocolError(status, copyErr)
+					protocolErr := newCodexStreamPreflightProtocolError(status, copyErr, kind)
 					setRequestLogProtocolError(requestLog, protocolErr)
 					return false, protocolErr
 				}
-				if protocolErr := committedCodexStreamProtocolError(status, responseWritten, copyErr, requestLog); protocolErr != nil {
+				if protocolErr := committedCodexStreamProtocolError(status, responseWritten, copyErr, requestLog, kind); protocolErr != nil {
 					return false, protocolErr
 				}
 			} else {
@@ -2968,7 +3136,7 @@ func (prs *ProviderRelayService) forwardRequestWithLog(
 		return true, nil
 	}
 
-	if isAccountPool(providerPoolFromContext(c.Request.Context())) && isRequestScopedUpstream4xx(status) {
+	if isAccountPool(providerPoolFromContext(c.Request.Context())) && isRequestScopedUpstreamResponse(resp) {
 		clientErr, readErr := newUpstreamClientRequestError(resp, provider)
 		if readErr != nil {
 			return false, readErr
@@ -3067,6 +3235,16 @@ func (prs *ProviderRelayService) doProviderRequestWithAttemptStart(
 			return nil, requestAttempt, context.Canceled
 		}
 		if resp != nil && resp.StatusCode >= http.StatusInternalServerError && attempt+1 < maxAttempts {
+			// An unknown model or invalid request will be rejected the same way on
+			// a retry, so hand it to the caller immediately instead of spending a
+			// second upstream call (and another failure count) on it.
+			prefix, restored := peekReadCloserPrefix(resp.Body)
+			if restored != nil {
+				resp.Body = restored
+			}
+			if upstreamErrorBodyIsRequestScoped(prefix) {
+				return xrequest.NewResponse(resp), requestAttempt, nil
+			}
 			_, _ = io.Copy(io.Discard, resp.Body)
 			_ = resp.Body.Close()
 			requestAttempt.close()
@@ -3321,11 +3499,22 @@ const (
 var codexStreamGuardKeepAliveComment = ":" + strings.Repeat(" ", 1024) + "\n\n"
 
 type codexStreamGuardState struct {
+	// kind selects the SSE dialect observed by this guard. The empty string and
+	// any Responses/Codex kind use the Responses event vocabulary; "openai-chat"
+	// uses Chat Completions chunks (choices[].delta, finish_reason, [DONE]).
+	kind             string
 	sawCompleted     bool
 	sawFailed        bool
 	sawIncomplete    bool
 	sawUsefulContent bool
 	responseID       string
+}
+
+func (s *codexStreamGuardState) observesChatCompletions() bool {
+	if s == nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(s.kind), "openai-chat")
 }
 
 func (s *codexStreamGuardState) observeLine(line []byte) {
@@ -3334,6 +3523,10 @@ func (s *codexStreamGuardState) observeLine(line []byte) {
 		return
 	}
 	data := strings.TrimSpace(strings.TrimPrefix(trimmed, "data:"))
+	if s.observesChatCompletions() {
+		s.observeChatCompletionsData(data)
+		return
+	}
 	if data == "" || data == "[DONE]" || !json.Valid([]byte(data)) {
 		return
 	}
@@ -3365,6 +3558,89 @@ func (s *codexStreamGuardState) observeLine(line []byte) {
 		s.responseID = responseID
 	}
 
+}
+
+// observeChatCompletionsData observes one Chat Completions SSE data payload.
+// The guard's contract is protocol-shaped but identical in spirit: HTTP 200 is
+// not committed until the upstream has produced usable model output, and a
+// stream that ends without any usable output is a provider failure.
+func (s *codexStreamGuardState) observeChatCompletionsData(data string) {
+	if data == "" {
+		return
+	}
+	if data == "[DONE]" {
+		// [DONE] is the conventional terminal sentinel of the Chat Completions
+		// streaming protocol. Some gateways omit finish_reason entirely.
+		s.sawCompleted = true
+		return
+	}
+	if !json.Valid([]byte(data)) {
+		return
+	}
+	if errorResult := gjson.Get(data, "error"); errorResult.Exists() && errorResult.Type != gjson.Null {
+		// Chat Completions reports mid-stream failures as an error object on the
+		// stream instead of a terminal choice.
+		s.sawFailed = true
+		return
+	}
+	if responseID := strings.TrimSpace(gjson.Get(data, "id").String()); responseID != "" {
+		s.responseID = responseID
+	}
+
+	choices := gjson.Get(data, "choices")
+	if !choices.IsArray() {
+		// A payload that is neither a chunk nor an error cannot establish usable
+		// output; stay conservative so metadata-only events do not commit 200.
+		return
+	}
+	for _, choice := range choices.Array() {
+		if strings.TrimSpace(choice.Get("finish_reason").String()) != "" {
+			s.sawCompleted = true
+		}
+		if chatCompletionPayloadHasUsefulContent(choice.Get("delta")) ||
+			chatCompletionPayloadHasUsefulContent(choice.Get("message")) {
+			s.sawUsefulContent = true
+		}
+		if text := strings.TrimSpace(choice.Get("text").String()); text != "" {
+			s.sawUsefulContent = true
+		}
+	}
+}
+
+// chatCompletionPayloadHasUsefulContent reports whether a chat delta/message
+// carries model output (text, reasoning, or a tool call).
+func chatCompletionPayloadHasUsefulContent(payload gjson.Result) bool {
+	if !payload.Exists() {
+		return false
+	}
+	for _, field := range []string{"content", "reasoning_content", "reasoning"} {
+		value := payload.Get(field)
+		if value.Exists() && value.Type != gjson.Null && strings.TrimSpace(value.String()) != "" {
+			return true
+		}
+	}
+	for _, field := range []string{"tool_calls", "function_call"} {
+		calls := payload.Get(field)
+		if !calls.Exists() || calls.Type == gjson.Null {
+			continue
+		}
+		if calls.IsArray() {
+			for _, call := range calls.Array() {
+				if strings.TrimSpace(call.Get("id").String()) != "" {
+					return true
+				}
+				function := call.Get("function")
+				if strings.TrimSpace(function.Get("name").String()) != "" || strings.TrimSpace(function.Get("arguments").String()) != "" {
+					return true
+				}
+			}
+			continue
+		}
+		if strings.TrimSpace(calls.Get("name").String()) != "" || strings.TrimSpace(calls.Get("arguments").String()) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func (s codexStreamGuardState) completedSuccessfully() bool {
@@ -3425,6 +3701,10 @@ func responseOutputItemHasUsefulContent(item gjson.Result, final bool) bool {
 }
 
 type codexStreamGuardOptions struct {
+	// kind selects the SSE dialect this guard observes. "" and Responses/Codex
+	// kinds keep the Responses event vocabulary; "openai-chat" switches the guard
+	// to Chat Completions chunks.
+	kind                         string
 	deferInitialKeepAlive        bool
 	disableKeepAliveUntilRelease bool
 	firstUsefulContentTimeout    time.Duration
@@ -3466,7 +3746,7 @@ func writeCodexGuardedStreamingResponseWithOptions(w http.ResponseWriter, resp *
 	var firstUsefulContentTimedOut atomic.Bool
 	var terminalEventSeen atomic.Bool
 	totalBytes := int64(0)
-	state := codexStreamGuardState{}
+	state := codexStreamGuardState{kind: options.kind}
 	completionCommitted := false
 	var initialBuffer bytes.Buffer
 
@@ -5327,9 +5607,9 @@ candidateLoop:
 					return nil
 				}
 
-				if accountPool && fetchErr == nil && response != nil && isRequestScopedUpstream4xx(response.statusCode) {
-					// This status describes the caller's request, not this account
-					// key. Do not fail over or add an account-pool penalty.
+				if accountPool && fetchErr == nil && response != nil && isRequestScopedUpstreamStatusBody(response.statusCode, response.body) {
+					// This status/error code describes the caller's request, not this
+					// account key. Do not fail over or add an account-pool penalty.
 					response, _ = sanitizeModelsFailure(response, nil, provider)
 					response.header = clientErrorResponseHeaders(response.header)
 					writeModelsProviderResponse(c, response)
