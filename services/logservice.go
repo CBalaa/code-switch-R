@@ -97,9 +97,11 @@ func (ls *LogService) ListCompletedRequestLogsForUser(userID string, afterID int
 			UserID:                  record.GetString("user_id"),
 			Platform:                record.GetString("platform"),
 			Model:                   record.GetString("model"),
+			RequestedModel:          record.GetString("requested_model"),
+			ResponseModel:           record.GetString("response_model"),
+			RelayKeyName:            strings.TrimSpace(record.GetString("relay_key_name")),
 			Provider:                record.GetString("provider"),
 			RelayKeyID:              relayKeyID,
-			RelayKeyName:            relayKeyDisplayName(relayKeyID, keyNames),
 			HttpCode:                record.GetInt("http_code"),
 			ErrorMessage:            errorMessage,
 			InputTokens:             record.GetInt("input_tokens"),
@@ -131,6 +133,9 @@ func (ls *LogService) ListCompletedRequestLogsForUser(userID string, afterID int
 			PublicEgressBytes:       record.GetInt64("public_egress_bytes"),
 			LocalIngressBytes:       record.GetInt64("local_ingress_bytes"),
 			LocalEgressBytes:        record.GetInt64("local_egress_bytes"),
+		}
+		if logEntry.RelayKeyName == "" {
+			logEntry.RelayKeyName = relayKeyDisplayName(relayKeyID, keyNames)
 		}
 		logs = append(logs, logEntry)
 	}

@@ -23,38 +23,39 @@ func (a *AppService) SetTrayWindowHeight(_ int) {}
 func (a *AppService) OpenSecondWindow() {}
 
 type appRuntime struct {
-	adminAddr          string
-	staticDir          string
-	eventHub           *services.EventHub
-	appService         *AppService
-	providerService    *services.ProviderService
-	settingsService    *services.SettingsService
-	claudeSettings     *services.ClaudeSettingsService
-	codexSettings      *services.CodexSettingsService
-	cliConfigService   *services.CliConfigService
-	logService         *services.LogService
-	trafficService     *services.TrafficService
-	costService        *services.CostService
-	appSettings        *services.AppSettingsService
-	adminAuth          *services.AdminAuthService
-	adminSecurity      *adminSecurity
-	codexRelayKeys     *services.CodexRelayKeyService
-	mcpService         *services.MCPService
-	skillService       *services.SkillService
-	promptService      *services.PromptService
-	envCheckService    *services.EnvCheckService
-	deeplinkService    *services.DeepLinkService
-	speedTestService   *services.SpeedTestService
-	connectivityTest   *services.ConnectivityTestService
-	healthCheckService *services.HealthCheckService
-	modelTraceService  *services.ModelTraceService
-	modelMonitor       *services.ModelMonitorService
-	versionService     *VersionService
-	consoleService     *services.ConsoleService
-	poolAttemptLogs    *services.PoolAttemptLogService
-	providerRelay      *services.ProviderRelayService
-	poolService        *services.ProviderPoolService
-	proxyService       *services.ProxyService
+	adminAddr           string
+	staticDir           string
+	eventHub            *services.EventHub
+	appService          *AppService
+	providerService     *services.ProviderService
+	providerInfoService *services.ProviderInfoService
+	settingsService     *services.SettingsService
+	claudeSettings      *services.ClaudeSettingsService
+	codexSettings       *services.CodexSettingsService
+	cliConfigService    *services.CliConfigService
+	logService          *services.LogService
+	trafficService      *services.TrafficService
+	costService         *services.CostService
+	appSettings         *services.AppSettingsService
+	adminAuth           *services.AdminAuthService
+	adminSecurity       *adminSecurity
+	codexRelayKeys      *services.CodexRelayKeyService
+	mcpService          *services.MCPService
+	skillService        *services.SkillService
+	promptService       *services.PromptService
+	envCheckService     *services.EnvCheckService
+	deeplinkService     *services.DeepLinkService
+	speedTestService    *services.SpeedTestService
+	connectivityTest    *services.ConnectivityTestService
+	healthCheckService  *services.HealthCheckService
+	modelTraceService   *services.ModelTraceService
+	modelMonitor        *services.ModelMonitorService
+	versionService      *VersionService
+	consoleService      *services.ConsoleService
+	poolAttemptLogs     *services.PoolAttemptLogService
+	providerRelay       *services.ProviderRelayService
+	poolService         *services.ProviderPoolService
+	proxyService        *services.ProxyService
 }
 
 func newAppRuntime() (*appRuntime, error) {
@@ -65,6 +66,7 @@ func newAppRuntime() (*appRuntime, error) {
 		return nil, fmt.Errorf("初始化数据库队列失败: %w", err)
 	}
 	providerService := services.NewProviderService()
+	providerInfoService := services.NewProviderInfoService(providerService)
 	settingsService := services.NewSettingsService()
 	appSettings := services.NewAppSettingsService(nil)
 	adminAuth := services.NewAdminAuthService(appSettings)
@@ -150,38 +152,39 @@ func newAppRuntime() (*appRuntime, error) {
 	}()
 
 	return &appRuntime{
-		adminAddr:          getenvDefault("CODE_SWITCH_WEB_ADDR", defaultAdminAddr),
-		staticDir:          getenvDefault("CODE_SWITCH_STATIC_DIR", defaultStaticDir),
-		eventHub:           eventHub,
-		appService:         &AppService{},
-		providerService:    providerService,
-		settingsService:    settingsService,
-		claudeSettings:     claudeSettings,
-		codexSettings:      codexSettings,
-		cliConfigService:   cliConfigService,
-		logService:         logService,
-		trafficService:     trafficService,
-		costService:        costService,
-		appSettings:        appSettings,
-		adminAuth:          adminAuth,
-		adminSecurity:      adminSecurity,
-		codexRelayKeys:     codexRelayKeys,
-		mcpService:         mcpService,
-		skillService:       skillService,
-		promptService:      promptService,
-		envCheckService:    envCheckService,
-		deeplinkService:    deeplinkService,
-		speedTestService:   speedTestService,
-		connectivityTest:   connectivityTestService,
-		healthCheckService: healthCheckService,
-		modelTraceService:  modelTraceService,
-		modelMonitor:       modelMonitor,
-		versionService:     versionService,
-		consoleService:     consoleService,
-		poolAttemptLogs:    poolAttemptLogs,
-		providerRelay:      providerRelay,
-		poolService:        poolService,
-		proxyService:       proxyService,
+		adminAddr:           getenvDefault("CODE_SWITCH_WEB_ADDR", defaultAdminAddr),
+		staticDir:           getenvDefault("CODE_SWITCH_STATIC_DIR", defaultStaticDir),
+		eventHub:            eventHub,
+		appService:          &AppService{},
+		providerService:     providerService,
+		providerInfoService: providerInfoService,
+		settingsService:     settingsService,
+		claudeSettings:      claudeSettings,
+		codexSettings:       codexSettings,
+		cliConfigService:    cliConfigService,
+		logService:          logService,
+		trafficService:      trafficService,
+		costService:         costService,
+		appSettings:         appSettings,
+		adminAuth:           adminAuth,
+		adminSecurity:       adminSecurity,
+		codexRelayKeys:      codexRelayKeys,
+		mcpService:          mcpService,
+		skillService:        skillService,
+		promptService:       promptService,
+		envCheckService:     envCheckService,
+		deeplinkService:     deeplinkService,
+		speedTestService:    speedTestService,
+		connectivityTest:    connectivityTestService,
+		healthCheckService:  healthCheckService,
+		modelTraceService:   modelTraceService,
+		modelMonitor:        modelMonitor,
+		versionService:      versionService,
+		consoleService:      consoleService,
+		poolAttemptLogs:     poolAttemptLogs,
+		providerRelay:       providerRelay,
+		poolService:         poolService,
+		proxyService:        proxyService,
 	}, nil
 }
 
@@ -214,6 +217,7 @@ func (rt *appRuntime) registerServices(registry *rpcRegistry) {
 	registry.Register("main.AppService", rt.appService)
 	registry.Register("main.VersionService", rt.versionService)
 	registry.Register("codeswitch/services.ProviderService", &userScopedProviderService{base: rt.providerService})
+	registry.Register("codeswitch/services.ProviderInfoService", &userScopedProviderInfoService{base: rt.providerInfoService})
 	registry.Register("codeswitch/services.SettingsService", rt.settingsService)
 	registry.Register("codeswitch/services.ClaudeSettingsService", &userScopedClaudeSettingsService{base: rt.claudeSettings})
 	registry.Register("codeswitch/services.CodexSettingsService", &userScopedCodexSettingsService{base: rt.codexSettings})

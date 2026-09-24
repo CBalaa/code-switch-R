@@ -1,4 +1,7 @@
+import type { UpstreamInfoConfig } from '../services/providerInfo'
+
 export type AutomationCard = {
+  upstreamInfo?: UpstreamInfoConfig
   id: number
   name: string
   apiUrl: string
@@ -122,5 +125,13 @@ export function createAutomationCards(data: AutomationCard[] = []): AutomationCa
     ...item,
     officialSite: item.officialSite ?? '',
     maxConcurrency: normalizeProviderMaxConcurrency(item.maxConcurrency),
+    upstreamInfo: item.upstreamInfo?.type === 'sub2api' || item.upstreamInfo?.type === 'newapi'
+      ? {
+          type: item.upstreamInfo.type,
+          baseUrl: item.upstreamInfo.baseUrl || '',
+          accountToken: item.upstreamInfo.type === 'newapi' ? item.upstreamInfo.accountToken || '' : '',
+          accountUserId: item.upstreamInfo.type === 'newapi' ? item.upstreamInfo.accountUserId || '' : '',
+        }
+      : undefined,
   }))
 }

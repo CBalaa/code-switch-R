@@ -1927,6 +1927,7 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 
 		isStream := gjson.GetBytes(bodyBytes, "stream").Bool()
 		requestedModel := gjson.GetBytes(bodyBytes, "model").String()
+		c.Set(requestedModelContextKey, requestedModel)
 
 		// 如果未指定模型，记录警告但不拦截
 		if requestedModel == "" {
@@ -2396,6 +2397,7 @@ func (prs *ProviderRelayService) startActiveRequestLog(c *gin.Context, kind stri
 	requestLog := &ReqeustLog{
 		Platform:                kind,
 		Model:                   model,
+		RequestedModel:          model,
 		UserID:                  relayUserIDFromContext(c),
 		IsStream:                isStream,
 		RelayKeyID:              relayKeyIDFromContext(c),
@@ -2403,6 +2405,7 @@ func (prs *ProviderRelayService) startActiveRequestLog(c *gin.Context, kind stri
 		ExcludeFromTotalTraffic: isAccountPool(pool) && pool.ExcludeFromTotalTraffic,
 		startedAt:               start,
 	}
+	populateRequestLogIdentity(c, requestLog)
 	requestLog.initializeTraffic(c)
 	activeRequestID := defaultActiveRequestTracker.Start(requestLog, start)
 	requestLog.ActiveRequestID = activeRequestID
@@ -2441,7 +2444,7 @@ func (prs *ProviderRelayService) persistCompletedRequestLog(requestLog *ReqeustL
 
 	err := GlobalDBQueueLogs.ExecBatchCtx(ctx, `
 		INSERT INTO request_log (
-			user_id, platform, model, provider, relay_key_id, http_code,
+			user_id, platform, model, requested_model, response_model, relay_key_name, provider, relay_key_id, http_code,
 			input_tokens, output_tokens, cache_create_tokens, cache_read_tokens,
 			reasoning_tokens, is_stream, duration_sec, first_token_duration_sec, client_ip,
 			upstream_header_sec, first_event_sec, first_text_sec, error_message, exclude_from_total,
@@ -2449,11 +2452,14 @@ func (prs *ProviderRelayService) persistCompletedRequestLog(requestLog *ReqeustL
 			upstream_request_bytes, upstream_response_bytes, retry_request_bytes, retry_response_bytes,
 			upstream_attempts, public_ingress_bytes, public_egress_bytes, local_ingress_bytes,
 			local_egress_bytes, created_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		requestLog.UserID,
 		requestLog.Platform,
 		requestLog.Model,
+		requestLog.RequestedModel,
+		requestLog.ResponseModel,
+		requestLog.RelayKeyName,
 		requestLog.Provider,
 		requestLog.RelayKeyID,
 		requestLog.HttpCode,
@@ -2515,6 +2521,7 @@ func (r *ReqeustLog) prepareProviderAttempt(c *gin.Context, kind string, provide
 	r.Platform = kind
 	r.Provider = provider.Name
 	r.Model = model
+	r.ResponseModel = ""
 	r.UserID = relayUserIDFromContext(c)
 	r.IsStream = isStream
 	r.RelayKeyID = relayKeyIDFromContext(c)
@@ -2779,6 +2786,7 @@ func (prs *ProviderRelayService) forwardRequestWithLog(
 		requestLog = prs.startActiveRequestLog(c, kind, model, isStream)
 		defer prs.finishActiveRequestLog(requestLog)
 	}
+	populateRequestLogIdentity(c, requestLog)
 	requestLog.prepareProviderAttempt(c, kind, provider, model, isStream)
 	activeRequestID := requestLog.ActiveRequestID
 	defer func() {
@@ -4274,6 +4282,9 @@ func ensureRequestLogTableWithDB(db *sql.DB) error {
 		user_id TEXT,
 		platform TEXT,
 		model TEXT,
+		requested_model TEXT,
+		response_model TEXT,
+		relay_key_name TEXT,
 		provider TEXT,
 		relay_key_id TEXT,
 		http_code INTEGER,
@@ -4316,6 +4327,15 @@ func ensureRequestLogTableWithDB(db *sql.DB) error {
 		return err
 	}
 	if err := ensureRequestLogColumn(db, "relay_key_id", "TEXT"); err != nil {
+		return err
+	}
+	if err := ensureRequestLogColumn(db, "requested_model", "TEXT"); err != nil {
+		return err
+	}
+	if err := ensureRequestLogColumn(db, "response_model", "TEXT"); err != nil {
+		return err
+	}
+	if err := ensureRequestLogColumn(db, "relay_key_name", "TEXT"); err != nil {
 		return err
 	}
 	if err := ensureRequestLogColumn(db, "is_stream", "INTEGER DEFAULT 0"); err != nil {
@@ -4483,11 +4503,19 @@ func ReqeustLogHook(c *gin.Context, kind string, usage *ReqeustLog) func(data []
 }
 
 func parseEventPayload(payload string, parser func(string, *ReqeustLog), usage *ReqeustLog) {
+	if parser == nil || usage == nil {
+		return
+	}
 	lines := strings.Split(payload, "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "data:") {
-			parser(strings.TrimPrefix(line, "data: "), usage)
+			// SSE permits both `data: payload` and `data:payload`; trim the
+			// optional whitespace instead of requiring one exact spelling.
+			data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+			if data != "" && data != "[DONE]" {
+				parser(data, usage)
+			}
 		}
 	}
 }
@@ -4665,7 +4693,9 @@ type ReqeustLog struct {
 	ID                          int64   `json:"id"`
 	UserID                      string  `json:"user_id"`
 	Platform                    string  `json:"platform"` // claude、openai-responses 或 openai-chat
-	Model                       string  `json:"model"`
+	Model                       string  `json:"model"`    // Model sent upstream after mapping.
+	RequestedModel              string  `json:"requested_model,omitempty"`
+	ResponseModel               string  `json:"response_model,omitempty"`
 	Provider                    string  `json:"provider"` // provider name
 	RelayKeyID                  string  `json:"relay_key_id"`
 	RelayKeyName                string  `json:"relay_key_name"`
@@ -4806,6 +4836,7 @@ func parseNonStreamingTokens(body []byte, kind string, requestLog *ReqeustLog) {
 	if requestLog == nil || len(body) == 0 {
 		return
 	}
+	captureResponseModel(string(body), requestLog)
 	result := gjson.ParseBytes(body)
 
 	// Try common usage paths
@@ -4939,6 +4970,10 @@ func (r *ReqeustLog) syncActiveRequest() {
 
 // claude code usage parser
 func ClaudeCodeParseTokenUsageFromResponse(data string, usage *ReqeustLog) {
+	if usage == nil {
+		return
+	}
+	captureResponseModel(data, usage)
 	usage.InputTokens += int(gjson.Get(data, "message.usage.input_tokens").Int())
 	usage.OutputTokens += int(gjson.Get(data, "message.usage.output_tokens").Int())
 	usage.CacheCreateTokens += int(gjson.Get(data, "message.usage.cache_creation_input_tokens").Int())
@@ -4960,6 +4995,10 @@ func ClaudeCodeParseTokenUsageFromResponse(data string, usage *ReqeustLog) {
 
 // codex usage parser
 func CodexParseTokenUsageFromResponse(data string, usage *ReqeustLog) {
+	if usage == nil {
+		return
+	}
+	captureResponseModel(data, usage)
 	usage.InputTokens += int(gjson.Get(data, "response.usage.input_tokens").Int())
 	usage.OutputTokens += int(gjson.Get(data, "response.usage.output_tokens").Int())
 	usage.CacheReadTokens += int(gjson.Get(data, "response.usage.input_tokens_details.cached_tokens").Int())
@@ -4973,6 +5012,7 @@ func OpenAIChatParseTokenUsageFromResponse(data string, usage *ReqeustLog) {
 	if usage == nil {
 		return
 	}
+	captureResponseModel(data, usage)
 	usageResult := gjson.Get(data, "usage")
 	if !usageResult.Exists() {
 		return

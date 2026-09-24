@@ -36,6 +36,37 @@ type userScopedProviderService struct {
 	base *services.ProviderService
 }
 
+// Provider information reads credentials from the authenticated user's
+// provider file. Preview queries still require an authenticated session even
+// though they receive credentials explicitly from the form.
+type userScopedProviderInfoService struct {
+	base *services.ProviderInfoService
+}
+
+func (s *userScopedProviderInfoService) GetInfo(
+	ctx context.Context,
+	ref services.ProviderInfoRef,
+	forceRefresh bool,
+	timezone string,
+) (*services.ProviderInfoResult, error) {
+	user, err := authenticatedUserFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.base.GetInfoForUser(user.ID, ref, forceRefresh, timezone)
+}
+
+func (s *userScopedProviderInfoService) TestConnection(
+	ctx context.Context,
+	draft services.ProviderInfoDraft,
+	timezone string,
+) (*services.ProviderInfoResult, error) {
+	if _, err := authenticatedUserFromContext(ctx); err != nil {
+		return nil, err
+	}
+	return s.base.TestConnection(draft, timezone)
+}
+
 func (s *userScopedProviderService) LoadProviders(ctx context.Context, kind string) ([]services.Provider, error) {
 	user, err := authenticatedUserFromContext(ctx)
 	if err != nil {

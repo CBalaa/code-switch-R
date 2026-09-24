@@ -272,6 +272,11 @@
                   />
                 </div>
 
+                <ProviderInfoSettings
+                  :form="modalState.form"
+                  :open="modalState.open"
+                />
+
                 <div class="form-field">
                   <div class="label-row">
                     <label for="provider-max-concurrency">{{ t('components.main.form.labels.maxConcurrency') }}</label>
@@ -600,6 +605,8 @@ import HelpHint from '../common/HelpHint.vue'
 import ModelMappingEditor from '../common/ModelMappingEditor.vue'
 import PoolPanel from './PoolPanel.vue'
 import ModelTraceModal from './ModelTraceModal.vue'
+import ProviderInfoSettings from './ProviderInfoSettings.vue'
+import type { UpstreamInfoConfig } from '../../services/providerInfo'
 import { ListRelayKeys, type RelayKeyItem } from '../../services/providerPool'
 import { RELAY_KEYS_UPDATED_EVENT } from '../../events/relayKeys'
 import { LoadProviders, SaveProviders } from '../../../bindings/codeswitch/services/providerservice'
@@ -981,6 +988,30 @@ const cacheProviders = (tabId: ProviderTab, providers: AutomationCard[]) => {
   saveProviderCache(cache)
 }
 
+// Keep provider information credentials separate from relay credentials and
+// persist only a normalized, explicitly selected configuration. An empty
+// selector disables the feature and removes the optional object from disk.
+const normalizeUpstreamInfo = (value?: UpstreamInfoConfig): UpstreamInfoConfig | undefined => {
+  const type = value?.type === 'sub2api' || value?.type === 'newapi' ? value.type : ''
+  if (!type) return undefined
+  return {
+    type,
+    baseUrl: value?.baseUrl?.trim() || '',
+    // Account credentials are meaningful only for New API. Dropping them when
+    // the selector is changed prevents an unused secret from being persisted
+    // in a sub2api provider file.
+    accountToken: type === 'newapi' ? value?.accountToken?.trim() || '' : '',
+    accountUserId: type === 'newapi' ? value?.accountUserId?.trim() || '' : '',
+  }
+}
+
+const cloneUpstreamInfo = (value?: UpstreamInfoConfig): UpstreamInfoConfig => ({
+  type: value?.type === 'sub2api' || value?.type === 'newapi' ? value.type : '',
+  baseUrl: value?.baseUrl || '',
+  accountToken: value?.type === 'newapi' ? value?.accountToken || '' : '',
+  accountUserId: value?.type === 'newapi' ? value?.accountUserId || '' : '',
+})
+
 const loadInitialProviders = (tabId: ProviderTab): AutomationCard[] => {
   const cached = loadProviderCache()[tabId]
   if (Array.isArray(cached)) {
@@ -992,6 +1023,7 @@ const loadInitialProviders = (tabId: ProviderTab): AutomationCard[] => {
 const serializeProviders = (providers: AutomationCard[]) =>
   providers.map((provider) => ({
     ...provider,
+    upstreamInfo: normalizeUpstreamInfo(provider.upstreamInfo),
     maxConcurrency: normalizeProviderMaxConcurrency(provider.maxConcurrency),
     // 确保可用性配置正确序列化
     availabilityMonitorEnabled: !!provider.availabilityMonitorEnabled,
@@ -1870,6 +1902,7 @@ const syncDefaultTestEndpoint = (
 }
 
 type VendorForm = {
+  upstreamInfo?: UpstreamInfoConfig
   name: string
   apiUrl: string
   apiKey: string
@@ -1920,6 +1953,12 @@ const markFaviconFailed = (site?: string) => {
 }
 
 const defaultFormValues = (platform?: string): VendorForm => ({
+  upstreamInfo: {
+    type: '',
+    baseUrl: '',
+    accountToken: '',
+    accountUserId: '',
+  },
   name: '',
   apiUrl: '',
   apiKey: '',
@@ -2069,6 +2108,7 @@ const openEditModal = (card: AutomationCard) => {
   modalState.editingId = card.id
   editingCard.value = card
   Object.assign(modalState.form, {
+    upstreamInfo: cloneUpstreamInfo(card.upstreamInfo),
     name: card.name,
     apiUrl: card.apiUrl,
     apiKey: card.apiKey,
@@ -2178,6 +2218,7 @@ const submitModal = async (closeAfterSave = true): Promise<boolean> => {
   const apiUrl = modalState.form.apiUrl.trim()
   const apiKey = modalState.form.apiKey.trim()
   const officialSite = modalState.form.officialSite.trim()
+  const upstreamInfo = normalizeUpstreamInfo(modalState.form.upstreamInfo)
   modalState.errors.apiUrl = ''
   modalState.errors.maxConcurrency = ''
   try {
@@ -2186,6 +2227,17 @@ const submitModal = async (closeAfterSave = true): Promise<boolean> => {
   } catch {
     modalState.errors.apiUrl = t('components.main.form.errors.invalidUrl')
     return false
+  }
+  if (upstreamInfo?.baseUrl) {
+    try {
+      const parsed = new URL(upstreamInfo.baseUrl)
+      if (!/^https?:$/.test(parsed.protocol) || parsed.username || parsed.password || parsed.search || parsed.hash) {
+        throw new Error('protocol')
+      }
+    } catch {
+      showToast(t('upstreamInfo.invalidUrl'), 'error')
+      return false
+    }
   }
   const maxConcurrency = parseMaxConcurrencyInput(modalState.form.maxConcurrency)
   if (maxConcurrency === null) {
@@ -2198,6 +2250,7 @@ const submitModal = async (closeAfterSave = true): Promise<boolean> => {
 
   if (editingCard.value) {
     Object.assign(editingCard.value, {
+      upstreamInfo,
       name: name || editingCard.value.name,
       apiUrl: apiUrl || editingCard.value.apiUrl,
       apiKey,
@@ -2234,6 +2287,7 @@ const submitModal = async (closeAfterSave = true): Promise<boolean> => {
   } else {
     const newCard: AutomationCard = {
       id: Date.now(),
+      upstreamInfo,
       name: name || 'Untitled vendor',
       apiUrl,
       apiKey,
@@ -2343,6 +2397,7 @@ const handleDuplicate = (card: AutomationCard) => {
 
   const sourceName = card.name?.trim() || '未命名供应商'
   Object.assign(modalState.form, {
+    upstreamInfo: cloneUpstreamInfo(card.upstreamInfo),
     name: `${sourceName}（副本）`,
     apiUrl: card.apiUrl,
     apiKey: card.apiKey,

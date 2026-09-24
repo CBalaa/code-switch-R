@@ -68,7 +68,25 @@
             <td :data-label="t('components.logs.table.platform')">{{ item.platform || '—' }}</td>
             <td :data-label="t('components.logs.table.provider')" class="provider-cell">{{ item.provider || '—' }}</td>
             <td :data-label="t('components.logs.table.relayKey')" class="relay-key-cell">{{ formatRelayKey(item) }}</td>
-            <td :data-label="t('components.logs.table.model')">{{ item.model || '—' }}</td>
+            <td :data-label="t('components.logs.table.requestedModel')" class="model-cell">
+              <div>{{ item.requested_model || item.model || '—' }}</div>
+              <small
+                v-if="item.requested_model && item.model && item.requested_model !== item.model"
+                class="model-secondary"
+              >
+                {{ t('components.logs.modelComparison.mappedTo', { model: item.model }) }}
+              </small>
+            </td>
+            <td
+              :data-label="t('components.logs.table.responseModel')"
+              class="response-model-cell"
+              :title="t('components.logs.modelComparison.hint')"
+            >
+              <div>{{ item.response_model || t('components.logs.modelComparison.unknown') }}</div>
+              <small :class="['model-comparison', modelComparison(item)]">
+                {{ t(`components.logs.modelComparison.${modelComparison(item)}`) }}
+              </small>
+            </td>
             <td :data-label="t('components.logs.table.clientIp')" class="client-ip-cell">{{ item.client_ip || '—' }}</td>
             <td :data-label="t('components.logs.table.httpCode')" :class="['code', httpCodeClassForLog(item)]">
               <span v-if="isQueuedLog(item)" class="processing-tag queued-tag">{{ formatQueueStatus(item) }}</span>
@@ -121,7 +139,7 @@
             </td>
           </tr>
           <tr v-if="!pagedLogs.length && !loading">
-            <td colspan="11" class="empty">{{ t('components.logs.empty') }}</td>
+            <td colspan="12" class="empty">{{ t('components.logs.empty') }}</td>
           </tr>
         </tbody>
       </table>
@@ -241,20 +259,21 @@ const page = ref(1)
 const PAGE_SIZE = 15
 const hiddenLogProviderKeys = ref<Set<string>>(new Set())
 const statsSeries = computed<LogStatsSeries[]>(() => stats.value?.series ?? [])
-const LOG_COLUMN_WIDTH_STORAGE_KEY = 'code-switch-r:logs-table-column-widths:v1'
+const LOG_COLUMN_WIDTH_STORAGE_KEY = 'code-switch-r:logs-table-column-widths:v2'
 
 const logTableColumns = [
-  { id: 'time', className: 'col-time', labelKey: 'components.logs.table.time', defaultWidth: 11, minWidth: 120 },
-  { id: 'platform', className: 'col-platform', labelKey: 'components.logs.table.platform', defaultWidth: 7, minWidth: 78 },
-  { id: 'provider', className: 'col-provider', labelKey: 'components.logs.table.provider', defaultWidth: 12, minWidth: 96 },
-  { id: 'relayKey', className: 'col-relay-key', labelKey: 'components.logs.table.relayKey', defaultWidth: 12, minWidth: 96 },
-  { id: 'model', className: 'col-model', labelKey: 'components.logs.table.model', defaultWidth: 10, minWidth: 92 },
-  { id: 'clientIp', className: 'col-client-ip', labelKey: 'components.logs.table.clientIp', defaultWidth: 8, minWidth: 86 },
-  { id: 'http', className: 'col-http', labelKey: 'components.logs.table.httpCode', defaultWidth: 6, minWidth: 68 },
-  { id: 'stream', className: 'col-stream', labelKey: 'components.logs.table.stream', defaultWidth: 6, minWidth: 72 },
-  { id: 'firstToken', className: 'col-first-token', labelKey: 'components.logs.table.firstToken', defaultWidth: 7, minWidth: 82 },
-  { id: 'duration', className: 'col-duration', labelKey: 'components.logs.table.duration', defaultWidth: 7, minWidth: 82 },
-  { id: 'tokens', className: 'col-tokens', labelKey: 'components.logs.table.tokens', defaultWidth: 14, minWidth: 128 },
+  { id: 'time', className: 'col-time', labelKey: 'components.logs.table.time', defaultWidth: 10, minWidth: 120 },
+  { id: 'platform', className: 'col-platform', labelKey: 'components.logs.table.platform', defaultWidth: 6, minWidth: 78 },
+  { id: 'provider', className: 'col-provider', labelKey: 'components.logs.table.provider', defaultWidth: 9, minWidth: 96 },
+  { id: 'relayKey', className: 'col-relay-key', labelKey: 'components.logs.table.relayKey', defaultWidth: 9, minWidth: 96 },
+  { id: 'requestedModel', className: 'col-model', labelKey: 'components.logs.table.requestedModel', defaultWidth: 9, minWidth: 110 },
+  { id: 'responseModel', className: 'col-response-model', labelKey: 'components.logs.table.responseModel', defaultWidth: 12, minWidth: 130 },
+  { id: 'clientIp', className: 'col-client-ip', labelKey: 'components.logs.table.clientIp', defaultWidth: 7, minWidth: 86 },
+  { id: 'http', className: 'col-http', labelKey: 'components.logs.table.httpCode', defaultWidth: 5, minWidth: 68 },
+  { id: 'stream', className: 'col-stream', labelKey: 'components.logs.table.stream', defaultWidth: 5, minWidth: 72 },
+  { id: 'firstToken', className: 'col-first-token', labelKey: 'components.logs.table.firstToken', defaultWidth: 6, minWidth: 82 },
+  { id: 'duration', className: 'col-duration', labelKey: 'components.logs.table.duration', defaultWidth: 6, minWidth: 82 },
+  { id: 'tokens', className: 'col-tokens', labelKey: 'components.logs.table.tokens', defaultWidth: 16, minWidth: 128 },
 ] as const
 
 type LogTableColumnId = (typeof logTableColumns)[number]['id']
@@ -809,6 +828,16 @@ const formatDuration = (value?: number) => {
   return `${value.toFixed(2)}s`
 }
 
+const modelComparison = (item: RequestLog): 'same' | 'different' | 'unavailable' => {
+  // `model` is the name sent to the selected upstream after any provider
+  // mapping. Compare that actual request with the upstream declaration; the
+  // original client name is only a fallback for legacy records.
+  const requested = String(item.model || item.requested_model || '').trim()
+  const returned = String(item.response_model || '').trim()
+  if (!requested || !returned) return 'unavailable'
+  return requested === returned ? 'same' : 'different'
+}
+
 const showRetryButton = (item: RequestLog) => {
   return isProcessingLog(item) && !isRetryingLog(item) && !hasFirstResponse(item)
 }
@@ -1209,6 +1238,42 @@ html.dark .token-detail-item__name {
   font-weight: 600;
   color: #34d399;
   font-variant-numeric: tabular-nums;
+}
+
+.model-cell,
+.response-model-cell {
+  min-width: 0;
+  max-width: 320px;
+  overflow-wrap: anywhere;
+}
+
+.model-secondary {
+  display: block;
+  color: #64748b;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.model-comparison {
+  display: block;
+  font-size: 0.75rem;
+}
+
+.model-comparison.same {
+  color: #16a34a;
+}
+
+.model-comparison.different {
+  color: #d97706;
+}
+
+.model-comparison.unavailable {
+  color: #64748b;
+}
+
+html.dark .model-secondary,
+html.dark .model-comparison.unavailable {
+  color: #94a3b8;
 }
 
 </style>

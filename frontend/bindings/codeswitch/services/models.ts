@@ -1055,6 +1055,16 @@ export class Prompt {
 
 export class Provider {
     /**
+     * Optional read-only upstream balance/usage configuration.
+     */
+    "upstreamInfo"?: {
+        "type": string;
+        "baseUrl"?: string;
+        "accountToken"?: string;
+        "accountUserId"?: string;
+    } | null;
+
+    /**
      * 修复：使用 int64 支持大 ID 值
      */
     "id": number;
@@ -1346,6 +1356,8 @@ export class ReqeustLog {
      */
     "platform": string;
     "model": string;
+    "requested_model"?: string;
+    "response_model"?: string;
 
     /**
      * provider name

@@ -19,6 +19,10 @@ type AvailabilityConfig struct {
 }
 
 type Provider struct {
+	// Optional read-only upstream information configuration. It is used only
+	// for the explicit balance/quota panel and never by the relay itself.
+	UpstreamInfo *UpstreamInfoConfig `json:"upstreamInfo,omitempty"`
+
 	ID      int64  `json:"id"` // 修复：使用 int64 支持大 ID 值
 	Name    string `json:"name"`
 	APIURL  string `json:"apiUrl"`
@@ -270,6 +274,13 @@ func (ps *ProviderService) saveProvidersToPathLocked(path string, kind string, p
 	}
 
 	tmp := path + ".tmp"
+	// os.WriteFile preserves the mode of an existing file. A stale temporary
+	// file from an interrupted write could therefore keep broader permissions
+	// while it contains API keys or optional account tokens; tighten it before
+	// replacing its contents.
+	if err := os.Chmod(tmp, 0o600); err != nil && !os.IsNotExist(err) {
+		return err
+	}
 	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
@@ -545,6 +556,7 @@ func (ps *ProviderService) DuplicateProvider(kind string, sourceID int64) (*Prov
 	// 5. 克隆配置（深拷贝）
 	cloned := &Provider{
 		ID:                   newID,
+		UpstreamInfo:         cloneUpstreamInfo(source.UpstreamInfo),
 		Name:                 source.Name + " (副本)",
 		APIURL:               source.APIURL,
 		APIKey:               source.APIKey,
@@ -630,6 +642,7 @@ func (ps *ProviderService) DuplicateProviderForUser(userID string, kind string, 
 	newID := maxID + 1
 	cloned := &Provider{
 		ID:                         newID,
+		UpstreamInfo:               cloneUpstreamInfo(source.UpstreamInfo),
 		Name:                       source.Name + " (副本)",
 		APIURL:                     source.APIURL,
 		APIKey:                     source.APIKey,

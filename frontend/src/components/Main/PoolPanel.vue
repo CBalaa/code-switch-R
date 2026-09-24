@@ -170,6 +170,13 @@
               </svg>
             </button>
           </div>
+          <ProviderInfoPanel
+            v-if="card.upstreamInfo?.type"
+            :card="card"
+            :provider-ref="{ kind: platform, id: String(card.id) }"
+            :revision="0"
+            :theme="resolvedTheme"
+          />
         </article>
       </div>
     </div>
@@ -1255,6 +1262,7 @@ import {
 import { fetchAppSettings } from '../../services/appSettings'
 import type { AutomationCard } from '../../data/cards'
 import { showToast } from '../../utils/toast'
+import ProviderInfoPanel from './ProviderInfoPanel.vue'
 
 const { t } = useI18n()
 

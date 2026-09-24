@@ -6,6 +6,8 @@ export type RequestLog = {
   id: number
   platform: LogPlatform | ''
   model: string
+  requested_model?: string
+  response_model?: string
   provider: string
   relay_key_id?: string
   relay_key_name?: string

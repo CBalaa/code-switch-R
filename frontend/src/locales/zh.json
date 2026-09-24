@@ -668,12 +668,22 @@
         "provider": "供应商",
         "relayKey": "调用密钥",
         "model": "模型",
+        "requestedModel": "请求模型",
+        "responseModel": "上游返回模型",
         "clientIp": "客户端 IP",
         "httpCode": "HTTP",
         "stream": "传输",
         "firstToken": "首 Token",
         "duration": "耗时",
         "tokens": "Token 汇总"
+      },
+      "modelComparison": {
+        "same": "名称一致",
+        "different": "名称不一致",
+        "unknown": "未返回",
+        "unavailable": "无法比较",
+        "mappedTo": "映射后：{model}",
+        "hint": "这里比较发送给上游的模型（已应用映射）与上游响应声明的模型名。它只读取上游返回的元数据，不会额外发起请求，也不能证明模型内部实际运行的版本；历史记录或上游未返回模型时显示无法比较。"
       },
       "status": {
         "processing": "处理中",
@@ -972,5 +982,6 @@
       "invalidCustomRange": "请选择有效的开始和结束时间"
     },
     "chartLabel": "用量趋势图"
-  }
+  },
+  "upstreamInfo": {"averageDuration":"平均请求耗时","title":"上游信息","service":"信息来源","off":"关闭","baseUrl":"查询服务地址（可选）","baseHint":"留空复用 API 地址并移除末尾 /v1 或 /v1beta；独立面板或子路径部署可填写服务根地址。","settingsHint":"复用当前 API Key，仅查询信息。接口不完整时仍可保存。不会更改本地计费或转发策略。","test":"测试获取","loading":"获取中…","testFailed":"获取失败，请检查查询地址和 API Key。","usage":"额度与用量","billing":"计费倍率","remaining":"剩余额度","wallet":"账户钱包余额","keyQuota":"Key 剩余额度","subscription":"套餐剩余额度","unlimited":"不限额","refresh":"刷新","details":"详情","todayActual":"今日实扣","effectiveRate":"当前倍率","updated":"更新于","fetchFailed":"刷新失败；如有旧数据，请参考其更新时间。","stale":"刷新失败，显示上次成功数据","partial":"部分信息不可用，查看详情可重试","pending":"等待获取","scopeHint":"钱包余额属于账户，用量统计属于当前 API Key。相同账户的余额不可重复相加。","retryAt":"可重试时间","keyStatus":"Key 状态","recognized":"可查询（不代表可调用）","invalidKey":"无效","expires":"到期时间","quotas":"额度与周期","window":"周期","daily":"每日额度","weekly":"每周额度","monthly":"每月额度","used":"已用","resets":"重置于","keyUsage":"当前 Key 用量","today":"今日","total":"累计","todayHint":"“今日”按上游统计口径；累计用量不受下方近 30 天范围限制。","metric":"指标","requests":"请求数","input":"输入 Token","output":"输出 Token","cacheRead":"缓存读取 Token","cacheWrite":"缓存写入 Token","tokens":"总 Token","originalCost":"上游原始费用","actualCost":"上游实扣费用","costHint":"费用来自上游记录（USD），不使用当前倍率重算历史费用，也不等同于 CodeSwitch 本地估算。","trend":"近 30 天实扣费用","dailyTimezone":"每日统计时区：","dailyDetails":"每日明细","date":"日期","models":"模型用量","model":"模型","modelPeriod":"上游默认近 30 天范围，按实扣费用降序。","noData":"上游未提供此项数据","groupRate":"分组倍率","userRate":"个人倍率","resolvedRate":"基础生效倍率","peak":"高峰时段","peakRate":"高峰倍率","appliedPeak":"当前高峰倍率","observed":"上游观测时间","pricingHint":"倍率仅适用于上游声明的 Token 计费范围。本期未接入模型单价，不据此推算单价或历史费用。","invalidUrl":"查询服务地址须为 HTTP/HTTPS，且不含用户名、密码、查询参数或片段。","status":{"ready":"已获取","auth":"认证失败或无访问权限","unsupported":"上游未提供该接口","rate_limited":"上游限流，请稍后重试","network":"网络错误或请求超时","invalid_response":"上游响应格式不受支持","upstream_error":"上游服务异常","requires_user_id":"请填写账户用户 ID 后重试","invalid_user_id":"用户 ID 必须为正整数","missing_key":"未填写 API Key"},"keyState":{"active":"正常","expired":"已过期","quota_exhausted":"额度已耗尽","disabled":"已停用"},"site":"额度换算","pricing":"公开参考价格","rawUnit":"额度单位","noExpiry":"永不过期","newapiScope":"Key 额度与账户余额独立展示。无限 Key 不代表账户余额充足；模型限制仅供查看，不修改本地白名单。","keyName":"Key 名称","quotaTotal":"总额度","modelLimits":"上游模型限制","noModelLimits":"未启用","conversionHint":"美元数值为站点计费额度：原始额度 ÷ quota_per_unit，不包含充值折扣或汇率换算。","rawFallback":"站点未提供有效换算参数，显示原始额度单位。","rawRemaining":"原始剩余额度","rawUsed":"原始已用额度","rawTotal":"原始总额度","publicPriceHint":"价格按公开分组展示，不代表当前 Key 的实际分组或专属倍率。复杂计费请以站点说明为准；— 表示未知或不适用。","searchModel":"搜索模型","group":"分组","allGroups":"全部分组","priceUnits":"输入、输出及缓存价格：USD / 百万 tokens；按次价格：USD / 请求。","priceMode":"计费方式","perRequest":"按次价格","free":"免费","priceModes":{"tokens":"按 token","request":"按次","complex":"复杂计费"},"noPrices":"没有匹配的公开价格","priceUnavailable":"公开价格不可访问或需要登录；额度查询和保存不受影响。","previous":"上一页","next":"下一页","priceRows":"条","accountToken":"账户访问令牌（可选）","accountTokenPlaceholder":"留空则仅查询 Key 额度","accountTokenHint":"填写上游个人设置中的访问令牌，用于只读查询账户余额；不是调用模型的 API Key。令牌不可用时仍显示 Key 额度。","accountUserId":"账户用户 ID（部分站点必填）","accountUserIdPlaceholder":"上游个人资料中的数字 ID","accountUserIdHint":"如果测试提示缺少 New-Api-User，请填写对应账户的用户 ID。","accountFallback":"账户余额不可用，按 Key 额度展示","accountScope":"余额属于该访问令牌对应的账户，请确认与当前 API Key 属于同一账户。同一账户的余额不要跨卡片累加。","keyUsed":"Key 已用额度"}
 }
