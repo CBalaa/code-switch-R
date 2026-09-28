@@ -115,7 +115,7 @@ type Sub2Billing struct {
 	ObservedAt    string   `json:"observed_at,omitempty"`
 }
 type ProviderInfoSection struct {
-	Status    string `json:"status"` // ready, auth, unsupported, rate_limited, network, invalid_response
+	Status    string `json:"status"` // ready, auth, auth_required, unsupported, rate_limited, network, invalid_response
 	UpdatedAt string `json:"updatedAt,omitempty"`
 	RetryAt   string `json:"retryAt,omitempty"`
 	Stale     bool   `json:"stale"`

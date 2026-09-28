@@ -6,6 +6,9 @@
 遵循其 MIT 许可证，原始许可证全文如下。本仓库整体使用 Apache-2.0 许可证，
 本目录的移植部分同时受下列 MIT 条款约束（保留原始版权声明）。
 
+当前指纹库取自上游 commit df3a0f9d3e054c0dc02d6d586686db8daf8fa7c8 的
+data/unified_bank.json（built_at: 2026-09-23T06:17:08.081468+00:00）。
+
 本项目对上游做的改动（详见各文件顶部注释）：
   - 移植为 Go 实现（原实现为 Python / JavaScript），解析、特征与打分逐位对齐；
   - 指纹库以 unified_bank.json 形式通过 go:embed 内嵌进二进制，去掉运行时文件依赖；

@@ -35,6 +35,8 @@ func TestResolveModelNormalization(t *testing.T) {
 		{"gpt-5.4-20260131", "gpt-5.4"},
 		{"gpt-5.4-2026", "gpt-5.4"},
 		{"gpt-5.4-latest", "gpt-5.4"},
+		{"openai/gpt-6-sol-2026-09-23", "gpt-6-sol"},
+		{"GPT-6-LUNA", "gpt-6-luna"},
 		{"claude-opus-5", "claude-opus-5"},
 		{"anthropic/claude-opus-5", "claude-opus-5"},
 		// 库内 ID 是候选的前缀扩展：唯一命中即接受
@@ -60,6 +62,8 @@ func TestResolveModelRejectsLookalikes(t *testing.T) {
 		"gpt-5.4-nano",
 		"gpt-5.4-pro",   // 更强的同族型号
 		"gpt-5.6",       // 有 3 个候选，歧义
+		"gpt-6",         // 有 3 个候选，歧义
+		"gpt-6-terra",   // 上游尚无独立指纹，不能借用其他型号
 		"claude-opus-4", // 有 3 个候选，歧义
 		"gpt-4o",
 		"deepseek-v3",

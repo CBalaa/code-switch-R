@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   Chart,
@@ -27,6 +27,7 @@ import {
 import { extractErrorMessage } from '../../utils/error'
 import { showToast } from '../../utils/toast'
 import { notifyRelayKeysUpdated } from '../../events/relayKeys'
+import BaseModal from '../common/BaseModal.vue'
 
 Chart.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend)
 
@@ -72,6 +73,7 @@ const createName = ref('')
 const createdKey = ref<CodexRelayKeyCreateResult | null>(null)
 const renameKeyId = ref('')
 const renameName = ref('')
+const deleteConfirmState = reactive({ open: false, key: null as CodexRelayKeyListItem | null })
 const usageRange = ref<CodexRelayKeyUsageRange>('1h')
 const usageMetric = ref<UsageMetric>('tokens')
 const usageLoading = ref(false)
@@ -266,9 +268,21 @@ const handleRenameKey = async (key: CodexRelayKeyListItem) => {
   }
 }
 
-const handleDeleteKey = async (key: CodexRelayKeyListItem) => {
-  if (!window.confirm(t('auth.security.deleteConfirm', { name: key.name }))) return
+const requestDeleteKey = (key: CodexRelayKeyListItem) => {
+  if (keyBusyId.value) return
+  deleteConfirmState.key = key
+  deleteConfirmState.open = true
+}
 
+const closeDeleteConfirm = () => {
+  deleteConfirmState.open = false
+  deleteConfirmState.key = null
+}
+
+const confirmDeleteKey = async () => {
+  const key = deleteConfirmState.key
+  if (!key) return
+  closeDeleteConfirm()
   keyBusyId.value = key.id
   try {
     await deleteCodexRelayKey(key.id)
@@ -502,7 +516,7 @@ onMounted(async () => {
                   :aria-label="t('auth.security.delete') + ': ' + key.name"
                   :data-key-id="key.id"
                   data-testid="key-delete"
-                  @click="handleDeleteKey(key)"
+                  @click="requestDeleteKey(key)"
                 >
                   {{ t('auth.security.delete') }}
                 </button>
@@ -592,6 +606,26 @@ onMounted(async () => {
         </div>
       </div>
     </section>
+
+    <BaseModal
+      :open="deleteConfirmState.open"
+      :title="t('auth.security.delete')"
+      variant="confirm"
+      test-id="keys-remove-dialog"
+      @close="closeDeleteConfirm"
+    >
+      <div class="confirm-body">
+        <p>{{ t('auth.security.deleteConfirm', { name: deleteConfirmState.key?.name ?? '' }) }}</p>
+      </div>
+      <footer class="form-actions confirm-actions">
+        <button class="ghost-btn" type="button" data-testid="keys-remove-cancel" @click="closeDeleteConfirm">
+          {{ t('common.cancel') }}
+        </button>
+        <button class="danger-btn" type="button" data-testid="keys-remove-submit" @click="confirmDeleteKey">
+          {{ t('auth.security.delete') }}
+        </button>
+      </footer>
+    </BaseModal>
   </div>
 </template>
 

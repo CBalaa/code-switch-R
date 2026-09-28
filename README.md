@@ -72,12 +72,13 @@ Code Switch 是适合 Linux 服务器运行的 Web 管理界面 + 本地代理�
 ### 模型真伪检测（指纹归因）
 
 供应商卡片上的盾牌按钮可以对某个供应商做一次"模型真伪检测"：后端发一条数值生成挑战
-（凭第一反应给出约 300 个 1~355 的整数），从回答的数字分布做指纹归因，得到 13 个候选模型的
+（凭第一反应给出约 300 个 1~355 的整数），从回答的数字分布做指纹归因，得到 16 个候选模型的
 概率分布；top-1 与用户声称的模型不一致时给出"疑似偷换"。
 
 - **覆盖范围**：`gpt-5.4`、`gpt-5.5`、`gpt-5.6-sol`、`gpt-5.6-terra`、`gpt-5.6-luna`、
-  `gpt-6-astra`、`claude-haiku-4-5-20251001`、`claude-sonnet-4-6`、`claude-sonnet-5`、
-  `claude-opus-4-6`、`claude-opus-4-7`、`claude-opus-4-8`、`claude-opus-5`。
+  `gpt-6-astra`、`gpt-6-sol`、`gpt-6-luna`、`claude-haiku-4-5-20251001`、`claude-sonnet-4-6`、
+  `claude-sonnet-5`、`claude-opus-4-6`、`claude-opus-4-7`、`claude-opus-4-8`、`claude-opus-5`、
+  `claude-opus-5-5`。上游指纹库暂不包含 `gpt-6-terra`。
 - **模型名归一化**：容忍大小写、vendor 前缀（`openai/gpt-5.4`）与日期/版本后缀
   （`gpt-5.4-2026-01-31`）。**刻意不剥离** `-mini` / `-nano` / `-pro` 这类后缀——它们代表另一个
   型号，剥离后会把"偷换成了更弱的型号"误判成身份一致。歧义（如 `gpt-5.6` 有 3 个候选）一律拒绝。

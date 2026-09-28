@@ -9,6 +9,7 @@ import {
 } from 'vue'
 import { useRouter } from 'vue-router'
 import { Call } from '@wailsio/runtime'
+import { showToast } from '../../utils/toast'
 
 interface ConsoleLog {
   timestamp: string
@@ -146,7 +147,7 @@ const clearLogs = async () => {
     logCursor = emptyCursor()
   } catch (error) {
     console.error('清空日志失败:', error)
-    alert('清空失败：' + (error as Error).message)
+    showToast('清空失败：' + (error as Error).message, 'error')
   } finally {
     clearInProgress = false
     syncPollingState()

@@ -8,8 +8,8 @@ import (
 	"testing"
 )
 
-// goldenFile 由参考 Python 实现（ModelTrace fingerprint.py）生成的对拍基准。
-// 数据来自 data/*_reference.jsonl 中的真实模型回答。
+// goldenFile 由上游 ModelTrace 的 JavaScript 参考评分器生成的对拍基准。
+// 新增模型的数据来自 data/*_reference.jsonl 中的真实模型回答。
 type goldenCase struct {
 	Name          string    `json:"name"`
 	ExpectedModel string    `json:"expected_model"`
@@ -41,15 +41,22 @@ func TestAnalyzeAgainstGolden(t *testing.T) {
 	if err != nil {
 		t.Fatalf("加载指纹库失败: %v", err)
 	}
-	if len(bank.Models) != 13 {
-		t.Fatalf("指纹库模型数 = %d, 期望 13", len(bank.Models))
+	if len(bank.Models) != 16 {
+		t.Fatalf("指纹库模型数 = %d, 期望 16", len(bank.Models))
 	}
 
 	for _, testCase := range loadGolden(t) {
 		t.Run(testCase.Name, func(t *testing.T) {
+			if len(testCase.Probabilities) != len(bank.ModelOrder) || len(testCase.Scores) != len(bank.ModelOrder) {
+				t.Fatalf("golden 向量维度不匹配：概率 %d、分数 %d、模型 %d",
+					len(testCase.Probabilities), len(testCase.Scores), len(bank.ModelOrder))
+			}
 			result, err := Analyze(testCase.Outputs, testCase.ExpectedModel, bank)
 			if err != nil {
 				t.Fatalf("Analyze 失败: %v", err)
+			}
+			if len(result.Results) != len(bank.ModelOrder) {
+				t.Fatalf("结果模型数 = %d, 期望 %d", len(result.Results), len(bank.ModelOrder))
 			}
 			if result.Prediction != testCase.Prediction {
 				t.Errorf("prediction = %s, 期望 %s", result.Prediction, testCase.Prediction)
@@ -62,7 +69,10 @@ func TestAnalyzeAgainstGolden(t *testing.T) {
 				byModel[item.Model] = item
 			}
 			for i, modelID := range bank.ModelOrder {
-				got := byModel[modelID]
+				got, ok := byModel[modelID]
+				if !ok {
+					t.Fatalf("结果缺少模型 %s", modelID)
+				}
 				if diff := math.Abs(got.Probability - testCase.Probabilities[i]); diff > 1e-9 {
 					t.Errorf("model %s probability = %.12f, 期望 %.12f (diff %.2e)",
 						modelID, got.Probability, testCase.Probabilities[i], diff)
@@ -127,12 +137,12 @@ func TestBankContains(t *testing.T) {
 	if err != nil {
 		t.Fatalf("加载指纹库失败: %v", err)
 	}
-	for _, id := range []string{"gpt-5.4", "gpt-6-astra", "claude-opus-4-8", "claude-haiku-4-5-20251001"} {
+	for _, id := range []string{"gpt-5.4", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "claude-opus-4-8", "claude-opus-5-5", "claude-haiku-4-5-20251001"} {
 		if !bank.ContainsModel(id) {
 			t.Errorf("指纹库应包含 %s", id)
 		}
 	}
-	for _, id := range []string{"gpt-4o", "gemini-2.5-pro", "claude-opus-4-5"} {
+	for _, id := range []string{"gpt-4o", "gpt-6-terra", "gemini-2.5-pro", "claude-opus-4-5"} {
 		if bank.ContainsModel(id) {
 			t.Errorf("指纹库不应包含 %s", id)
 		}

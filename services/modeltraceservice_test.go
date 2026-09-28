@@ -268,7 +268,7 @@ func TestModelTraceVerifyValidation(t *testing.T) {
 		t.Errorf("不存在的 provider 应报错, got %v", r.Verdict)
 	}
 	// 归一化：vendor 前缀与日期后缀都应被接受，最终走到"未找到供应商"而不是"不在覆盖范围"
-	for _, model := range []string{"openai/gpt-5.4", "gpt-5.4-2026-01-31", "GPT-5.4", "claude-haiku-4-5"} {
+	for _, model := range []string{"openai/gpt-5.4", "gpt-5.4-2026-01-31", "GPT-5.4", "openai/gpt-6-sol", "claude-haiku-4-5"} {
 		r := svc.VerifyProviderModel("", "claude", 99999, model)
 		if strings.Contains(r.Message, "不在指纹库覆盖范围内") {
 			t.Errorf("%s 应能归一化到指纹库模型, got %v (%s)", model, r.Verdict, r.Message)
@@ -278,6 +278,10 @@ func TestModelTraceVerifyValidation(t *testing.T) {
 	r := svc.VerifyProviderModel("", "claude", 99999, "gpt-5.4-mini")
 	if !strings.Contains(r.Message, "不在指纹库覆盖范围内") {
 		t.Errorf("gpt-5.4-mini 不应被当成 gpt-5.4, got %v (%s)", r.Verdict, r.Message)
+	}
+	r = svc.VerifyProviderModel("", "claude", 99999, "gpt-6-terra")
+	if !strings.Contains(r.Message, "不在指纹库覆盖范围内") {
+		t.Errorf("gpt-6-terra 尚无上游指纹，不应被当成其他 gpt-6 型号, got %v (%s)", r.Verdict, r.Message)
 	}
 }
 
@@ -321,8 +325,20 @@ func TestModelTraceSupportedModels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetSupportedModels 失败: %v", err)
 	}
-	if len(models) != 13 {
-		t.Fatalf("模型数 = %d, 期望 13", len(models))
+	if len(models) != 16 {
+		t.Fatalf("模型数 = %d, 期望 16", len(models))
+	}
+	ids := make(map[string]bool, len(models))
+	for _, model := range models {
+		ids[model.ID] = true
+	}
+	for _, id := range []string{"gpt-6-sol", "gpt-6-luna", "claude-opus-5-5"} {
+		if !ids[id] {
+			t.Errorf("模型列表缺少 %s", id)
+		}
+	}
+	if ids["gpt-6-terra"] {
+		t.Error("上游指纹库没有 gpt-6-terra，模型列表不应展示")
 	}
 }
 

@@ -61,6 +61,7 @@
           class="automation-card pool-provider-card"
           :class="{
             'is-highlighted': highlightedProvider === card.name,
+            'has-upstream': !!card.upstreamInfo?.type,
           }"
           :data-provider-id="card.id"
           :data-provider-name="card.name"
@@ -86,37 +87,77 @@
             </div>
             <div class="card-text">
               <div class="card-title-row">
-                <p class="card-title">{{ card.name }}</p>
+                <!-- 名称即官网链接：点击跳转供应商官网 -->
                 <button
                   v-if="card.officialSite"
-                  class="card-site"
+                  class="card-title card-title-link"
                   type="button"
+                  :title="formatOfficialSite(card.officialSite)"
+                  :aria-label="`${t('components.main.providers.openOfficialSite')}: ${card.name}`"
+                  data-testid="provider-site"
                   @click.stop="openOfficialSite(card.officialSite)"
                 >
-                  {{ formatOfficialSite(card.officialSite) }}
+                  {{ card.name }}
                 </button>
+                <p v-else class="card-title">{{ card.name }}</p>
               </div>
-              <p
-                v-for="stats in [providerStatDisplay(card.name)]"
-                :key="`metrics-${card.id}`"
-                class="card-metrics"
-              >
-                <template v-if="stats.state !== 'ready'">
-                  {{ stats.message }}
-                </template>
-                <template v-else>
-                  <span v-if="stats.successRateLabel" class="card-success-rate" :class="stats.successRateClass">
-                    {{ stats.successRateLabel }}
-                  </span>
-                  <span class="card-metric-separator" aria-hidden="true">·</span>
-                  <span>{{ stats.requests }}</span>
-                  <span class="card-metric-separator" aria-hidden="true">·</span>
-                  <span>{{ stats.tokens }}</span>
-                </template>
-              </p>
             </div>
           </div>
+
+          <!-- 中间：上游信息在上，今日数据在下 -->
+          <div v-if="card.upstreamInfo?.type" class="card-upstream">
+            <ProviderInfoPanel
+              :card="card"
+              :provider-ref="{ kind: platform, id: String(card.id) }"
+              :revision="0"
+              :theme="resolvedTheme"
+            />
+          </div>
+          <p
+            v-for="stats in [providerStatDisplay(card.name)]"
+            :key="`metrics-${card.id}`"
+            class="card-metrics"
+          >
+            <template v-if="stats.state !== 'ready'">
+              {{ stats.message }}
+            </template>
+            <template v-else>
+              <span v-if="stats.successRateLabel" class="card-success-rate" :class="stats.successRateClass">
+                {{ stats.successRateLabel }}
+              </span>
+              <span class="card-metric-separator" aria-hidden="true">·</span>
+              <span>{{ stats.requests }}</span>
+              <span class="card-metric-separator" aria-hidden="true">·</span>
+              <span>{{ stats.tokens }}</span>
+            </template>
+          </p>
+
+          <!-- 右侧：两行两列的操作按钮（复制、删除 / 模型检测、编辑） -->
           <div class="card-actions">
+            <button
+              class="ghost-icon"
+              type="button"
+              :data-tooltip="t('components.main.controls.duplicate')"
+              :aria-label="t('components.main.controls.duplicate')"
+              data-testid="provider-duplicate"
+              @click.stop="$emit('duplicate', card)"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </button>
+            <button
+              class="ghost-icon"
+              type="button"
+              :data-tooltip="t('components.main.form.actions.delete')"
+              :aria-label="t('components.main.form.actions.delete')"
+              data-testid="provider-remove"
+              @click.stop="$emit('remove', card)"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M9 3h6m-7 4h8m-6 0v11m4-11v11M5 7h14l-.867 12.138A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.862L5 7z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </button>
             <!-- 模型真伪检测：走数字分布指纹归因，判断渠道是否偷换了模型 -->
             <button
               class="ghost-icon"
@@ -145,38 +186,7 @@
                 <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
             </button>
-            <button
-              class="ghost-icon"
-              type="button"
-              :data-tooltip="t('components.main.controls.duplicate')"
-              :aria-label="t('components.main.controls.duplicate')"
-              data-testid="provider-duplicate"
-              @click.stop="$emit('duplicate', card)"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-            </button>
-            <button
-              class="ghost-icon"
-              type="button"
-              :data-tooltip="t('components.main.form.actions.delete')"
-              :aria-label="t('components.main.form.actions.delete')"
-              data-testid="provider-remove"
-              @click.stop="$emit('remove', card)"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M9 3h6m-7 4h8m-6 0v11m4-11v11M5 7h14l-.867 12.138A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.862L5 7z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-            </button>
           </div>
-          <ProviderInfoPanel
-            v-if="card.upstreamInfo?.type"
-            :card="card"
-            :provider-ref="{ kind: platform, id: String(card.id) }"
-            :revision="0"
-            :theme="resolvedTheme"
-          />
         </article>
       </div>
     </div>
@@ -1189,6 +1199,94 @@
             </BaseButton>
           </footer>
         </form>
+        <!--
+          These dialogs are declared inside the pool dialog's slot so Headless UI
+          can see them as descendants through StackContext while they are open.
+          Their panels are still portaled by BaseModal, but the parent focus trap
+          is downgraded correctly instead of reclaiming focus from the child.
+        -->
+        <!-- 代理与拉黑操作确认框。使用页面弹窗，避免原生 confirm 阻塞 WebView。 -->
+        <BaseModal
+          :open="poolActionConfirmState.open"
+          :title="t('common.confirm')"
+          variant="confirm"
+          test-id="pool-action-dialog"
+          @close="closePoolActionConfirm"
+        >
+          <div class="confirm-body">
+            <p>{{ poolActionConfirmState.message }}</p>
+          </div>
+          <footer class="form-actions confirm-actions">
+            <BaseButton variant="outline" type="button" data-testid="pool-action-cancel" @click="closePoolActionConfirm">
+              {{ t('common.cancel') }}
+            </BaseButton>
+            <BaseButton type="button" data-testid="pool-action-submit" @click="confirmPoolAction">
+              {{ t('common.confirm') }}
+            </BaseButton>
+          </footer>
+        </BaseModal>
+
+        <!-- 订阅输入框同样使用页面弹窗，避免阻塞自动化。 -->
+        <BaseModal
+          :open="subscriptionInputState.open"
+          :title="t('components.main.pool.importProxySubscription')"
+          test-id="pool-subscription-dialog"
+          @close="closeSubscriptionInput"
+        >
+          <form class="vendor-form" @submit.prevent="submitSubscriptionInput">
+            <div class="form-field">
+              <label for="proxy-subscription-url">{{ t('components.main.pool.proxySubscriptionURLPrompt') }}</label>
+              <input
+                id="proxy-subscription-url"
+                v-model="subscriptionInputState.url"
+                class="mac-input"
+                type="text"
+                autocomplete="off"
+                data-testid="proxy-subscription-url"
+              />
+            </div>
+            <div class="form-field">
+              <label for="proxy-subscription-name">{{ t('components.main.pool.proxySubscriptionNamePrompt') }}</label>
+              <input
+                id="proxy-subscription-name"
+                v-model="subscriptionInputState.name"
+                class="mac-input"
+                type="text"
+                autocomplete="off"
+                data-testid="proxy-subscription-name"
+              />
+            </div>
+            <footer class="form-actions">
+              <BaseButton variant="outline" type="button" data-testid="pool-subscription-cancel" @click="closeSubscriptionInput">
+                {{ t('common.cancel') }}
+              </BaseButton>
+              <BaseButton type="submit" data-testid="pool-subscription-submit">
+                {{ t('common.continue') }}
+              </BaseButton>
+            </footer>
+          </form>
+        </BaseModal>
+      </BaseModal>
+
+      <!-- 父弹窗关闭时，池子卡片上的清除拉黑操作仍需独立确认框。 -->
+      <BaseModal
+        :open="poolActionConfirmState.open && !poolModalState.open"
+        :title="t('common.confirm')"
+        variant="confirm"
+        test-id="pool-action-dialog"
+        @close="closePoolActionConfirm"
+      >
+        <div class="confirm-body">
+          <p>{{ poolActionConfirmState.message }}</p>
+        </div>
+        <footer class="form-actions confirm-actions">
+          <BaseButton variant="outline" type="button" data-testid="pool-action-cancel" @click="closePoolActionConfirm">
+            {{ t('common.cancel') }}
+          </BaseButton>
+          <BaseButton type="button" data-testid="pool-action-submit" @click="confirmPoolAction">
+            {{ t('common.confirm') }}
+          </BaseButton>
+        </footer>
       </BaseModal>
 
       <!-- 删除池子确认框 -->
@@ -1397,6 +1495,20 @@ const proxyConfigExpanded = ref<Record<string, boolean>>({})
 const proxyConfigActionLoading = ref<string | null>(null)
 const poolSaveLoading = ref(false)
 const maxProxyConfigSize = 4 * 1024 * 1024
+
+type PoolActionConfirmType = 'upload' | 'subscription' | 'deleteProxyConfig' | 'hideProxyConfig' | 'clearBlacklists'
+
+const poolActionConfirmState = reactive({
+  open: false,
+  message: '',
+  action: null as PoolActionConfirmType | null,
+})
+const pendingProxyUploadFile = ref<File | null>(null)
+const pendingProxySubscription = reactive({ url: '', name: '' })
+const pendingProxyConfig = ref<ProxyConfigSummary | null>(null)
+const pendingBlacklistPool = ref<ProviderPool | null>(null)
+const subscriptionInputState = reactive({ open: false, url: '', name: '' })
+
 let proxyBulkTestGeneration = 0
 let proxyBulkTestAbortController: AbortController | null = null
 let proxyConfigLoadGeneration = 0
@@ -1657,25 +1769,47 @@ const loadSharedProxySpeedTests = async (isCurrent = () => true) => {
   }
 }
 
-const uploadProxyConfig = async (event: Event) => {
-  if (proxyBulkTestLoading.value || proxySubscriptionImportLoading.value) return
+const openPoolActionConfirm = (action: PoolActionConfirmType, message: string) => {
+  poolActionConfirmState.action = action
+  poolActionConfirmState.message = message
+  poolActionConfirmState.open = true
+}
+
+const closePoolActionConfirm = () => {
+  poolActionConfirmState.open = false
+  poolActionConfirmState.action = null
+  poolActionConfirmState.message = ''
+  pendingProxyUploadFile.value = null
+  pendingProxySubscription.url = ''
+  pendingProxySubscription.name = ''
+  pendingProxyConfig.value = null
+  pendingBlacklistPool.value = null
+}
+
+const uploadProxyConfig = (event: Event) => {
+  if (proxyBulkTestLoading.value || proxySubscriptionImportLoading.value || proxyUploadLoading.value) return
   const input = event.target as HTMLInputElement
-	const file = input.files?.[0]
-	input.value = ''
-	if (!file) return
-	if (file.size === 0 || file.size > maxProxyConfigSize) {
-		showToast(t('components.main.pool.proxyUploadTooLarge', { size: 4 }), 'error')
-		return
-	}
-	if (!window.confirm(t('components.main.pool.proxyUploadWarning'))) return
-	invalidateAllProxyTests()
-	proxyUploadLoading.value = true
-	try {
-		const content = await file.text()
-		await UploadProxyConfig(file.name, content)
-		showToast(t('components.main.pool.proxyUploadSuccess'), 'success')
-			await listProxyConfigs()
-	} catch (error: any) {
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  if (file.size === 0 || file.size > maxProxyConfigSize) {
+    showToast(t('components.main.pool.proxyUploadTooLarge', { size: 4 }), 'error')
+    return
+  }
+
+  pendingProxyUploadFile.value = file
+  openPoolActionConfirm('upload', t('components.main.pool.proxyUploadWarning'))
+}
+
+const performProxyUpload = async (file: File) => {
+  invalidateAllProxyTests()
+  proxyUploadLoading.value = true
+  try {
+    const content = await file.text()
+    await UploadProxyConfig(file.name, content)
+    showToast(t('components.main.pool.proxyUploadSuccess'), 'success')
+    await listProxyConfigs()
+  } catch (error: any) {
     console.error('Failed to upload proxy config:', error)
     showToast(error?.message || t('components.main.pool.proxyUploadFailed'), 'error')
   } finally {
@@ -1683,18 +1817,37 @@ const uploadProxyConfig = async (event: Event) => {
   }
 }
 
-const importProxySubscription = async () => {
+const importProxySubscription = () => {
   if (proxyBulkTestLoading.value || proxyUploadLoading.value || proxySubscriptionImportLoading.value || proxyConfigActionLoading.value !== null) return
-  const subscriptionURL = window.prompt(t('components.main.pool.proxySubscriptionURLPrompt'))
-  if (!subscriptionURL?.trim()) return
-  const subscriptionName = window.prompt(t('components.main.pool.proxySubscriptionNamePrompt'))
-  if (subscriptionName === null) return
-  if (!window.confirm(t('components.main.pool.proxySubscriptionWarning'))) return
+  subscriptionInputState.url = ''
+  subscriptionInputState.name = ''
+  subscriptionInputState.open = true
+}
 
+const closeSubscriptionInput = () => {
+  subscriptionInputState.open = false
+  subscriptionInputState.url = ''
+  subscriptionInputState.name = ''
+}
+
+const submitSubscriptionInput = () => {
+  const url = subscriptionInputState.url.trim()
+  if (!url) {
+    showToast(t('components.main.pool.proxySubscriptionURLRequired'), 'warning')
+    return
+  }
+
+  pendingProxySubscription.url = url
+  pendingProxySubscription.name = subscriptionInputState.name.trim()
+  closeSubscriptionInput()
+  openPoolActionConfirm('subscription', t('components.main.pool.proxySubscriptionWarning'))
+}
+
+const performProxySubscriptionImport = async (url: string, name: string) => {
   invalidateAllProxyTests()
   proxySubscriptionImportLoading.value = true
   try {
-    await ImportProxySubscription(subscriptionURL.trim(), subscriptionName.trim())
+    await ImportProxySubscription(url, name)
     showToast(t('components.main.pool.proxySubscriptionImportSuccess'), 'success')
     await listProxyConfigs()
   } catch (error: any) {
@@ -1705,11 +1858,16 @@ const importProxySubscription = async () => {
   }
 }
 
-const deleteProxyConfig = async (config: ProxyConfigSummary) => {
+const deleteProxyConfig = (config: ProxyConfigSummary) => {
   if (proxyBulkTestLoading.value || proxyUploadLoading.value || proxySubscriptionImportLoading.value) return
-  const name = proxyConfigFileName(config)
-  if (!window.confirm(t('components.main.pool.deleteProxyConfigConfirm', { name }))) return
+  pendingProxyConfig.value = config
+  openPoolActionConfirm(
+    'deleteProxyConfig',
+    t('components.main.pool.deleteProxyConfigConfirm', { name: proxyConfigFileName(config) }),
+  )
+}
 
+const performDeleteProxyConfig = async (config: ProxyConfigSummary) => {
   invalidateAllProxyTests()
   proxyConfigActionLoading.value = config.id
   try {
@@ -1724,11 +1882,16 @@ const deleteProxyConfig = async (config: ProxyConfigSummary) => {
   }
 }
 
-const hideProxyConfig = async (config: ProxyConfigSummary) => {
+const hideProxyConfig = (config: ProxyConfigSummary) => {
   if (proxyBulkTestLoading.value || proxyUploadLoading.value || proxySubscriptionImportLoading.value) return
-  const name = proxyConfigFileName(config)
-  if (!window.confirm(t('components.main.pool.hideProxyConfigConfirm', { name }))) return
+  pendingProxyConfig.value = config
+  openPoolActionConfirm(
+    'hideProxyConfig',
+    t('components.main.pool.hideProxyConfigConfirm', { name: proxyConfigFileName(config) }),
+  )
+}
 
+const performHideProxyConfig = async (config: ProxyConfigSummary) => {
   invalidateAllProxyTests()
   proxyConfigActionLoading.value = config.id
   try {
@@ -1740,6 +1903,28 @@ const hideProxyConfig = async (config: ProxyConfigSummary) => {
     showToast(error?.message || t('components.main.pool.proxyConfigHideFailed'), 'error')
   } finally {
     proxyConfigActionLoading.value = null
+  }
+}
+
+const confirmPoolAction = async () => {
+  const action = poolActionConfirmState.action
+  const file = pendingProxyUploadFile.value
+  const subscriptionURL = pendingProxySubscription.url
+  const subscriptionName = pendingProxySubscription.name
+  const config = pendingProxyConfig.value
+  const pool = pendingBlacklistPool.value
+  closePoolActionConfirm()
+
+  if (action === 'upload' && file) {
+    await performProxyUpload(file)
+  } else if (action === 'subscription' && subscriptionURL) {
+    await performProxySubscriptionImport(subscriptionURL, subscriptionName)
+  } else if (action === 'deleteProxyConfig' && config) {
+    await performDeleteProxyConfig(config)
+  } else if (action === 'hideProxyConfig' && config) {
+    await performHideProxyConfig(config)
+  } else if (action === 'clearBlacklists' && pool) {
+    await performClearAllAccountPoolBlacklists(pool)
   }
 }
 
@@ -2447,9 +2632,13 @@ const unblacklistProvider = async (poolID: string, providerID: number) => {
 
 const isClearingAllBlacklists = (poolID: string): boolean => clearingAllBlacklistsPoolIDs.value.has(poolID)
 
-const clearAllAccountPoolBlacklists = async (pool: ProviderPool) => {
-  if (!window.confirm(t('components.main.pool.clearAllBlacklistsConfirm'))) return
+const clearAllAccountPoolBlacklists = (pool: ProviderPool) => {
+  if (isClearingAllBlacklists(pool.id)) return
+  pendingBlacklistPool.value = pool
+  openPoolActionConfirm('clearBlacklists', t('components.main.pool.clearAllBlacklistsConfirm'))
+}
 
+const performClearAllAccountPoolBlacklists = async (pool: ProviderPool) => {
   const pending = new Set(clearingAllBlacklistsPoolIDs.value)
   pending.add(pool.id)
   clearingAllBlacklistsPoolIDs.value = pending
@@ -3971,15 +4160,180 @@ watch(
   font-size: 12px;
 }
 
-/* 供应商子标签页内的卡片（去掉开关/直接应用按钮） */
+/* 供应商子标签页内的卡片：左侧图标与名称（名称为官网链接）、中间上游信息与今日数据、右侧 2×2 操作按钮 */
+.pool-provider-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: "lead metrics actions";
+  align-items: center;
+  column-gap: 20px;
+  row-gap: 8px;
+  padding: 12px 16px;
+}
+
+/* 有上游信息时：上游信息占中间主行，今日数据落在其下方一行 */
+.pool-provider-card.has-upstream {
+  grid-template-areas:
+    "lead upstream actions"
+    "lead metrics  actions";
+}
+
+.pool-provider-card .card-leading {
+  grid-area: lead;
+  justify-self: start;
+  align-self: center;
+  gap: 12px;
+}
+
+.pool-provider-card.has-upstream .card-leading {
+  align-self: start;
+  padding-top: 2px;
+}
+
+.pool-provider-card .card-upstream {
+  grid-area: upstream;
+  min-width: 0;
+  align-self: start;
+}
+
+.pool-provider-card .card-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+}
+
+.pool-provider-card .card-icon .provider-favicon {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+}
+
+.pool-provider-card .card-text {
+  min-width: 0;
+}
+
+.pool-provider-card .card-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--mac-text);
+  overflow-wrap: anywhere;
+}
+
+.pool-provider-card .card-title-link {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pool-provider-card .card-title-link:hover,
+.pool-provider-card .card-title-link:focus-visible {
+  color: var(--mac-accent);
+  text-decoration: underline;
+}
+
+.pool-provider-card .card-metrics {
+  grid-area: metrics;
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--mac-text-secondary);
+  text-align: left;
+}
+
 .pool-provider-card .card-actions {
-  gap: 2px;
+  grid-area: actions;
+  justify-self: end;
+  align-self: start;
+  display: grid;
+  grid-template-columns: repeat(2, 38px);
+  gap: 10px 14px;
+  align-items: center;
+  justify-items: center;
+}
+
+.pool-provider-card .ghost-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+}
+
+.pool-provider-card .ghost-icon svg {
+  width: 20px;
+  height: 20px;
 }
 
 @media (max-width: 1100px) {
+  .pool-provider-card {
+    column-gap: 12px;
+  }
+
+  .pool-provider-card .card-actions {
+    gap: 8px 12px;
+  }
 }
 
 @media (max-width: 760px) {
+  /* 窄屏下卡片恢复纵向堆叠，按钮回到一行 */
+  .pool-provider-card,
+  .pool-provider-card.has-upstream {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .pool-provider-card .card-leading,
+  .pool-provider-card.has-upstream .card-leading {
+    align-self: stretch;
+    padding-top: 0;
+  }
+
+  .pool-provider-card .card-upstream {
+    align-self: stretch;
+  }
+
+  .pool-provider-card .card-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+  }
+
+  .pool-provider-card .card-icon .provider-favicon {
+    width: 22px;
+    height: 22px;
+  }
+
+  .pool-provider-card .card-title,
+  .pool-provider-card .card-title-link {
+    font-size: 1rem;
+  }
+
+  .pool-provider-card .card-metrics {
+    text-align: left;
+  }
+
+  .pool-provider-card .card-actions {
+    justify-self: stretch;
+    align-self: stretch;
+    grid-template-columns: repeat(4, 38px);
+    gap: 8px;
+    justify-content: end;
+  }
+
+  .pool-provider-card .ghost-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+  }
+
   .account-log-options {
     grid-template-columns: minmax(0, 1fr);
   }

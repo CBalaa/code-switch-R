@@ -77,14 +77,23 @@ func (s *ProviderInfoService) queryNewAPI(cacheKey, base, key string, force bool
 		}
 		quota = s.section(cacheKey+":usage", base+"/api/usage/token/", key, force, "newapi_key", "")
 	}()
-	// Public endpoints deliberately receive no credentials, even on the same host.
 	go func() {
 		defer wg.Done()
 		site = s.section(cacheKey+":site", base+"/api/status", "", force, "newapi_site", "")
 	}()
 	go func() {
 		defer wg.Done()
+		// Price data is normally public, so try anonymously first. Some sites
+		// protect this read-only endpoint and return 401/403; in that case use
+		// the optional account token, scoped to this same base URL, once.
 		prices = s.section(cacheKey+":pricing", base+"/api/pricing", "", force, "newapi_pricing", "")
+		if prices.state.Status == "auth" {
+			if accountToken == "" {
+				prices.state.Status = "auth_required"
+			} else if !strings.ContainsAny(accountToken, "\r\n") {
+				prices = s.section(cacheKey+":pricing_account", base+"/api/pricing", accountToken, force, "newapi_pricing", "")
+			}
+		}
 	}()
 	if accountToken != "" {
 		wg.Add(1)

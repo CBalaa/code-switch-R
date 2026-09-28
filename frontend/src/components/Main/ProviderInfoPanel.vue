@@ -87,10 +87,10 @@ onUnmounted(() => { active = false; generation++; stop(); document.removeEventLi
   </div>
 </template>
 <style scoped>
-.upstream-panel { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--mac-border); border-radius: 10px; background: var(--mac-surface-strong); color: var(--mac-text); }
-.upstream-head, .upstream-metrics, .upstream-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-.upstream-head { justify-content: space-between; }.upstream-label { font-size: 12px; font-weight: 600; }.upstream-label small { color: var(--mac-text-secondary); font-weight: 400; margin-left: 4px; }
-.upstream-metrics { margin-top: 8px; column-gap: 18px; font-size: 12px; color: var(--mac-text-secondary); }.upstream-metrics strong { font-variant-numeric: tabular-nums; margin-left: 4px; color: var(--mac-text); }.upstream-metrics .exhausted { color: #dc5a50; }
-.upstream-caption { display: flex; flex-wrap: wrap; gap: 8px; color: var(--mac-text-secondary); font-size: 11px; margin: 7px 0 0; }
-button { border: 0; background: transparent; color: var(--mac-accent, #0a84ff); padding: 2px; cursor: pointer; font-size: 12px; }button:disabled { opacity: .5; cursor: wait; }
+.upstream-panel { padding: 8px 10px; border: 1px solid var(--mac-border); border-radius: 8px; background: var(--mac-surface-strong); color: var(--mac-text); }
+.upstream-head, .upstream-metrics, .upstream-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.upstream-head { justify-content: space-between; }.upstream-label { font-size: 12px; font-weight: 600; }.upstream-label small { color: var(--mac-text-secondary); font-weight: 400; margin-left: 3px; }
+.upstream-metrics { margin-top: 6px; column-gap: 12px; row-gap: 4px; justify-content: flex-start; font-size: 12px; color: var(--mac-text-secondary); }.upstream-metrics strong { font-variant-numeric: tabular-nums; margin-left: 3px; color: var(--mac-text); }.upstream-metrics .exhausted { color: #dc5a50; }
+.upstream-caption { display: flex; flex-wrap: wrap; gap: 6px; color: var(--mac-text-secondary); font-size: 11px; line-height: 1.3; margin: 6px 0 0; }
+button { border: 0; background: transparent; color: var(--mac-accent, #0a84ff); padding: 1px; cursor: pointer; font-size: 12px; }button:disabled { opacity: .5; cursor: wait; }
 </style>
