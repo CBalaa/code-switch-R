@@ -2,6 +2,8 @@ package services
 
 import (
 	"encoding/json"
+	"io"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -134,6 +136,87 @@ func TestVerifyProviderModelMappingOutOfBank(t *testing.T) {
 	if result.Verdict != "error" {
 		t.Errorf("映射目标不在库内应报 error, got %v (msg=%s)", result.Verdict, result.Message)
 	}
+}
+
+func TestVerifyProviderModelRejectsModelOutsideProviderWhitelist(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	ps := NewProviderService()
+	if err := ps.SaveProviders("openai-chat", []Provider{
+		{
+			ID: 21, Name: "whitelist-only", APIURL: "http://127.0.0.1:1", APIKey: "test-key",
+			MaxConcurrency:  1,
+			SupportedModels: map[string]bool{"gpt-6-sol": true},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	result := NewModelTraceService(ps).VerifyProviderModel("", "openai-chat", 21, "gpt-6-astra")
+	if result.Verdict != "error" {
+		t.Fatalf("白名单外模型应在发起请求前报错，got verdict=%s message=%s", result.Verdict, result.Message)
+	}
+	if result.ExpectedModel != "gpt-6-astra" {
+		t.Fatalf("错误结果应保留待检测模型，got %q", result.ExpectedModel)
+	}
+	if !strings.Contains(result.Message, "不在模型白名单") {
+		t.Fatalf("错误信息应说明模型未配置，got %q", result.Message)
+	}
+}
+
+func TestVerifyProviderModelSendsMappedUpstreamModel(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	ps := NewProviderService()
+	if err := ps.SaveProviders("openai-chat", []Provider{
+		{
+			ID: 22, Name: "mapped-provider", APIURL: "https://upstream.example", APIKey: "test-key",
+			MaxConcurrency:  1,
+			SupportedModels: map[string]bool{"gpt-6-astra": true},
+			ModelMapping:    map[string]string{"gpt-6-sol": "gpt-6-astra"},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var requestedModels []string
+	svc := NewModelTraceService(ps)
+	svc.client = &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		body, err := io.ReadAll(req.Body)
+		if err != nil {
+			return nil, err
+		}
+		var payload struct {
+			Model string `json:"model"`
+		}
+		if err := json.Unmarshal(body, &payload); err != nil {
+			return nil, err
+		}
+		requestedModels = append(requestedModels, payload.Model)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"choices":[{"message":{"content":"1 2"},"finish_reason":"stop"}]}`)),
+			Request:    req,
+		}, nil
+	})}
+
+	result := svc.VerifyProviderModel("", "openai-chat", 22, "gpt-6-sol")
+	if result.ExpectedModel != "gpt-6-sol" {
+		t.Fatalf("结果应保留外部模型名，got %q", result.ExpectedModel)
+	}
+	if len(requestedModels) == 0 {
+		t.Fatal("模型映射测试没有发起上游请求")
+	}
+	for _, model := range requestedModels {
+		if model != "gpt-6-astra" {
+			t.Fatalf("上游请求模型应为映射目标 gpt-6-astra，got %q", model)
+		}
+	}
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }
 
 func TestResolveChallengeEndpoint(t *testing.T) {

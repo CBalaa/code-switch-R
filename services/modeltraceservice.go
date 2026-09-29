@@ -254,17 +254,18 @@ func (mts *ModelTraceService) VerifyProviderModel(
 
 	expectedModel = strings.TrimSpace(expectedModel)
 	if expectedModel == "" {
-		return ModelTraceResult{Verdict: "error", Message: "未指定待检测模型"}
+		return ModelTraceResult{ExpectedModel: expectedModel, Verdict: "error", Message: "未指定待检测模型"}
 	}
 	bank, err := modeltrace.LoadBank()
 	if err != nil {
-		return ModelTraceResult{Verdict: "error", Message: err.Error()}
+		return ModelTraceResult{ExpectedModel: expectedModel, Verdict: "error", Message: err.Error()}
 	}
 	// 归一化：容忍 vendor 前缀（openai/gpt-5.4）与日期后缀（gpt-5.4-2026-01-31）。
 	// 归一化失败一律报错而不是当成 mismatch——把没见过的名字判成"偷换"是误报。
 	if _, ok := bank.ResolveModel(expectedModel); !ok {
 		return ModelTraceResult{
-			Verdict: "error",
+			ExpectedModel: expectedModel,
+			Verdict:       "error",
 			Message: fmt.Sprintf(
 				"模型 %s 不在指纹库覆盖范围内（当前覆盖 %d 个 GPT / Claude 型号，请从上方列表中选择）",
 				expectedModel, len(bank.Models)),
@@ -273,7 +274,11 @@ func (mts *ModelTraceService) VerifyProviderModel(
 
 	providers, err := mts.loadProviders(userID, platform)
 	if err != nil {
-		return ModelTraceResult{Verdict: "error", Message: fmt.Sprintf("读取供应商失败: %v", err)}
+		return ModelTraceResult{
+			ExpectedModel: expectedModel,
+			Verdict:       "error",
+			Message:       fmt.Sprintf("读取供应商失败: %v", err),
+		}
 	}
 	var provider *Provider
 	for i := range providers {
@@ -283,7 +288,21 @@ func (mts *ModelTraceService) VerifyProviderModel(
 		}
 	}
 	if provider == nil {
-		return ModelTraceResult{Verdict: "error", Message: "未找到指定供应商"}
+		return ModelTraceResult{ExpectedModel: expectedModel, Verdict: "error", Message: "未找到指定供应商"}
+	}
+
+	// 鉴伪必须和真实 relay 请求使用同一套供应商模型选择规则：
+	// 先判断外部请求模型是否在白名单或映射的 source 中，再应用映射。
+	// 如果跳过这一步，用户选择一个供应商未开放的模型时，检测会绕过白名单
+	// 直接向上游发起挑战，结果无法代表真实请求是否能被该供应商接收。
+	if !provider.IsModelSupported(expectedModel) {
+		return ModelTraceResult{
+			ExpectedModel: expectedModel,
+			Verdict:       "error",
+			Message: fmt.Sprintf(
+				"供应商 %s 未配置模型 %s（不在模型白名单或模型映射的外部模型中）",
+				provider.Name, expectedModel),
+		}
 	}
 
 	// 模型映射生效：外部模型名 -> provider 实际请求的内部模型名
