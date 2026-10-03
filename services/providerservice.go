@@ -143,6 +143,8 @@ func providerPlatformForPool(kind string) string {
 		return "openai-responses"
 	case "openai-chat", "openai_chat":
 		return "openai-chat"
+	case "gemini":
+		return "gemini"
 	default:
 		return strings.TrimSpace(kind)
 	}
@@ -160,6 +162,8 @@ func providerFilePathInDir(dir string, kind string) (string, error) {
 		filename = "openai-responses.json"
 	case "openai-chat", "openai_chat":
 		filename = "openai-chat.json"
+	case "gemini":
+		filename = "gemini.json"
 	default:
 		return "", fmt.Errorf("unknown provider type: %s", kind)
 	}

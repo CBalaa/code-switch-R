@@ -57,7 +57,7 @@ export function normalizeProviderMaxConcurrency(value?: number | string): number
   return Math.floor(parsed)
 }
 
-export const automationCardGroups: Record<'claude' | 'openai-responses' | 'openai-chat', AutomationCard[]> = {
+export const automationCardGroups: Record<'claude' | 'openai-responses' | 'openai-chat' | 'gemini', AutomationCard[]> = {
   claude: [
     {
       id: 100,
@@ -118,6 +118,7 @@ export const automationCardGroups: Record<'claude' | 'openai-responses' | 'opena
     },
   ],
   'openai-chat': [],
+  gemini: [],
 }
 
 export function createAutomationCards(data: AutomationCard[] = []): AutomationCard[] {

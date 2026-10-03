@@ -19,6 +19,8 @@ func validateProviderResponseProtocol(platform string, endpoint string, body []b
 
 	endpoint = strings.ToLower(strings.TrimSpace(endpoint))
 	switch {
+	case strings.EqualFold(platform, "gemini") || strings.Contains(endpoint, "generatecontent") || strings.Contains(endpoint, "models/"):
+		return validateGeminiResponse(body)
 	case strings.EqualFold(platform, "claude") || strings.Contains(endpoint, "/messages"):
 		return validateClaudeMessageResponse(body)
 	case strings.Contains(endpoint, "/responses"):
@@ -26,6 +28,26 @@ func validateProviderResponseProtocol(platform string, endpoint string, body []b
 	default:
 		return validateOpenAIChatResponse(body)
 	}
+}
+
+func validateGeminiResponse(body []byte) error {
+	result := gjson.ParseBytes(body)
+	if result.Get("error").Exists() {
+		return fmt.Errorf("上游返回错误: %s", compactResponseForError(body))
+	}
+	candidates := result.Get("candidates")
+	if !candidates.IsArray() || len(candidates.Array()) == 0 {
+		// 某些端点如 countTokens
+		if result.Get("totalTokens").Exists() {
+			return nil
+		}
+		return fmt.Errorf("Gemini 响应缺少 candidates 数组")
+	}
+	first := candidates.Array()[0]
+	if !first.Get("content").Exists() {
+		return fmt.Errorf("Gemini candidate 缺少 content")
+	}
+	return nil
 }
 
 func validateClaudeMessageResponse(body []byte) error {

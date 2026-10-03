@@ -337,6 +337,19 @@
                   />
                 </div>
 
+                <div v-if="showGeminiEndpointField" class="form-field">
+                  <div class="label-with-hint"><label for="provider-gemini-endpoint">{{ t('components.main.form.labels.geminiEndpoint') }}</label> <HelpHint :text="t('components.main.form.hints.geminiEndpoint')" /></div>
+                  <BaseInput
+                    id="provider-gemini-endpoint"
+                    v-model="modalState.form.apiEndpoint"
+                    type="text"
+                    :placeholder="t('components.main.form.placeholders.geminiEndpoint')"
+                    :class="{ 'has-error': !!modalState.errors.protocolEndpoint, 'shake-error': shakeFields.protocolEndpoint }"
+                    :aria-invalid="!!modalState.errors.protocolEndpoint"
+                    data-testid="provider-gemini-endpoint"
+                  />
+                </div>
+
                 <div class="form-field">
                   <div class="label-with-hint"><label for="provider-models-endpoint">{{ t('components.main.form.labels.modelsEndpoint') }}</label> <HelpHint :text="t('components.main.form.hints.modelsEndpoint')" /></div>
                   <BaseInput
@@ -725,11 +738,13 @@ const proxyStates = reactive<Record<ProviderTab, boolean>>({
   claude: false,
   'openai-responses': false,
   'openai-chat': false,
+  gemini: false,
 })
 const proxyBusy = reactive<Record<ProviderTab, boolean>>({
   claude: false,
   'openai-responses': false,
   'openai-chat': false,
+  gemini: false,
 })
 
 // 直连应用状态
@@ -737,10 +752,11 @@ const directAppliedIds = reactive<Record<ProviderTab, string | number | null>>({
   claude: null,
   'openai-responses': null,
   'openai-chat': null,
+  gemini: null,
 })
 
 const supportsDirectApply = (tab: ProviderTab) =>
-  tab !== 'openai-chat'
+  tab !== 'openai-chat' && tab !== 'gemini'
 
 const refreshDirectAppliedStatus = async (tab: ProviderTab = activeTab.value) => {
   if (!supportsDirectApply(tab)) return
@@ -800,22 +816,26 @@ const providerStatsMap = reactive<Record<ProviderTab, Record<string, ProviderDai
   claude: {},
   'openai-responses': {},
   'openai-chat': {},
+  gemini: {},
 })
 const providerStatsLoading = reactive<Record<ProviderTab, boolean>>({
   claude: false,
   'openai-responses': false,
   'openai-chat': false,
+  gemini: false,
 })
 const providerStatsLoaded = reactive<Record<ProviderTab, boolean>>({
   claude: false,
   'openai-responses': false,
   'openai-chat': false,
+  gemini: false,
 })
 const providerStatsRequests: Partial<Record<ProviderTab, Promise<void>>> = {}
 const providerStatsRequestVersions: Record<ProviderTab, number> = {
   claude: 0,
   'openai-responses': 0,
   'openai-chat': 0,
+  gemini: 0,
 }
 let providerStatsTimer: number | undefined
 let mainPageActive = false
@@ -830,6 +850,7 @@ const connectivityResultsMap = reactive<Record<ProviderTab, Record<number, Conne
   claude: {},
   'openai-responses': {},
   'openai-chat': {},
+  gemini: {},
 })
 
 // 可用性监控状态（新）
@@ -837,6 +858,7 @@ const availabilityResultsMap = reactive<Record<ProviderTab, Record<number, Provi
   claude: {},
   'openai-responses': {},
   'openai-chat': {},
+  gemini: {},
 })
 
 // 高亮闪烁的供应商名称
@@ -913,6 +935,7 @@ const tabs = [
   { id: 'claude', label: 'Claude Code' },
   { id: 'openai-responses', label: 'OpenAI Responses' },
   { id: 'openai-chat', label: 'OpenAI Chat' },
+  { id: 'gemini', label: 'Gemini' },
 ] as const
 type ProviderTab = (typeof tabs)[number]['id']
 const providerTabIds = tabs.map((tab) => tab.id) as ProviderTab[]
@@ -955,6 +978,7 @@ const cards = reactive<Record<ProviderTab, AutomationCard[]>>({
   claude: [],
   'openai-responses': [],
   'openai-chat': [],
+  gemini: [],
 })
 const draggingTab = ref<ProviderTab | null>(null)
 const tabOrder = ref<ProviderTab[]>(loadTabOrder())
@@ -1045,6 +1069,7 @@ const serializeProviders = (providers: AutomationCard[]) =>
 cards.claude.splice(0, cards.claude.length, ...loadInitialProviders('claude'))
 cards['openai-responses'].splice(0, cards['openai-responses'].length, ...loadInitialProviders('openai-responses'))
 cards['openai-chat'].splice(0, cards['openai-chat'].length, ...loadInitialProviders('openai-chat'))
+cards.gemini.splice(0, cards.gemini.length, ...loadInitialProviders('gemini'))
 
 const persistProviders = async (tabId: ProviderTab): Promise<{ ok: boolean; error?: string }> => {
   try {
@@ -1575,6 +1600,7 @@ const connectivityTestModelOptions = computed(() => {
     claude: ['claude-haiku-4-5-20251001', 'claude-sonnet-4-5-20250929'],
     'openai-responses': ['gpt-5.1', 'gpt-5.1-codex'],
     'openai-chat': ['gpt-5.1', 'gpt-5.1-mini'],
+    gemini: ['gemini-2.5-flash', 'gemini-2.5-pro'],
   }
   return options[modalState.tabId] || options.claude
 })
@@ -1584,6 +1610,7 @@ const connectivityEndpointOptions = [
   { value: '/v1/messages', label: '/v1/messages (Anthropic)' },
   { value: '/chat/completions', label: '/chat/completions (OpenAI Chat)' },
   { value: '/responses', label: '/responses (Codex)' },
+  { value: '/v1beta/models/gemini-2.5-flash:generateContent', label: '/v1beta/models/... (Gemini)' },
 ]
 
 // 可用性测试状态
@@ -1592,8 +1619,11 @@ const connectivityTestResult = ref<{ success: boolean; message: string } | null>
 const testingProtocolEndpoint = ref(false)
 const testingModelsEndpoint = ref(false)
 const defaultTestMessage = '这是一条测试消息，请回复"yes"'
-const getDefaultTestModel = (platform: ProviderTab) =>
-  platform === 'claude' ? 'claude-opus-4-8' : 'gpt-5.5'
+const getDefaultTestModel = (platform: ProviderTab) => {
+  if (platform === 'claude') return 'claude-opus-4-8'
+  if (platform === 'gemini') return 'gemini-2.5-flash'
+  return 'gpt-5.5'
+}
 const providerTestMessage = ref(defaultTestMessage)
 type ProtocolEndpointTestResult = {
   success: boolean
@@ -1623,6 +1653,7 @@ const getDefaultEndpoint = (platform: string) => {
     claude: '/v1/messages',
     'openai-responses': '/responses',
     'openai-chat': '/chat/completions',
+    gemini: '/v1beta/models/gemini-2.5-flash:generateContent',
   }
   return defaults[platform] || '/chat/completions'
 }
@@ -1632,6 +1663,7 @@ const getDefaultProtocolEndpoint = (platform: string) => {
     claude: '/messages',
     'openai-responses': '/responses',
     'openai-chat': '/chat/completions',
+    gemini: '/v1beta',
   }
   return defaults[platform] || '/chat/completions'
 }
@@ -1642,6 +1674,9 @@ const currentProtocolEndpoint = () => {
   }
   if (modalState.tabId === 'openai-responses') {
     return modalState.form.responsesEndpoint || ''
+  }
+  if (modalState.tabId === 'gemini') {
+    return modalState.form.apiEndpoint || getDefaultEndpoint('gemini')
   }
   return modalState.form.chatEndpoint || ''
 }
@@ -1967,7 +2002,7 @@ const defaultFormValues = (platform?: string): VendorForm => ({
   enabled: true,
   supportedModels: {},
   modelMapping: {},
-  apiEndpoint: platform === 'claude' ? getDefaultProtocolEndpoint('claude') : '',
+  apiEndpoint: (platform === 'claude' || platform === 'gemini') ? getDefaultProtocolEndpoint(platform) : '',
   responsesEndpoint: platform === 'openai-responses' ? getDefaultProtocolEndpoint('openai-responses') : '',
   chatEndpoint: platform === 'openai-chat' ? getDefaultProtocolEndpoint('openai-chat') : '',
   modelsEndpoint: '',
@@ -2060,14 +2095,16 @@ const customAuthHeader = ref<string>('')
 const authTypeOptions = computed(() => [
   { value: 'bearer', label: 'Bearer' },
   { value: 'x-api-key', label: 'X-API-Key' },
+  { value: 'x-goog-api-key', label: 'X-Goog-Api-Key' },
 ])
 
 const showMessagesEndpointField = computed(() => modalState.tabId === 'claude')
 const showResponsesEndpointField = computed(() => modalState.tabId === 'openai-responses')
 const showChatEndpointField = computed(() => modalState.tabId === 'openai-chat')
+const showGeminiEndpointField = computed(() => modalState.tabId === 'gemini')
 
 const protocolEndpointsForSave = () => ({
-  apiEndpoint: modalState.tabId === 'claude'
+  apiEndpoint: (modalState.tabId === 'claude' || modalState.tabId === 'gemini')
     ? modalState.form.apiEndpoint || ''
     : '',
   responsesEndpoint: modalState.tabId === 'openai-responses'
@@ -2154,7 +2191,7 @@ const openEditModal = (card: AutomationCard) => {
   if (!storedAuth) {
     selectedAuthType.value = getDefaultAuthType(activeTab.value)
     customAuthHeader.value = ''
-  } else if (lower === 'bearer' || lower === 'x-api-key') {
+  } else if (lower === 'bearer' || lower === 'x-api-key' || lower === 'x-goog-api-key') {
     selectedAuthType.value = lower
     customAuthHeader.value = ''
   } else {

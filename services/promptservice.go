@@ -25,6 +25,7 @@ type PromptConfig struct {
 	Claude          map[string]Prompt `json:"claude"`
 	OpenAIResponses map[string]Prompt `json:"openai-responses"`
 	OpenAIChat      map[string]Prompt `json:"openai-chat"`
+	Gemini          map[string]Prompt `json:"gemini"`
 	Codex           map[string]Prompt `json:"codex"` // Deprecated
 }
 
@@ -87,6 +88,8 @@ func (s *PromptService) GetPrompts(platform string) (map[string]Prompt, error) {
 		return s.deepCopyMap(s.config.OpenAIResponses), nil
 	case "openai-chat":
 		return s.deepCopyMap(s.config.OpenAIChat), nil
+	case "gemini":
+		return s.deepCopyMap(s.config.Gemini), nil
 	default:
 		return nil, fmt.Errorf("不支持的平台: %s", platform)
 	}
@@ -346,6 +349,11 @@ func (s *PromptService) getPromptsForPlatform(platform string) (*map[string]Prom
 		return &s.config.OpenAIResponses, nil
 	case "openai-chat":
 		return &s.config.OpenAIChat, nil
+	case "gemini":
+		if s.config.Gemini == nil {
+			s.config.Gemini = make(map[string]Prompt)
+		}
+		return &s.config.Gemini, nil
 	default:
 		return nil, fmt.Errorf("不支持的平台: %s", platform)
 	}
@@ -369,6 +377,9 @@ func (s *PromptService) getPromptFilePathReadOnly(platform string) (string, erro
 	case "openai-chat":
 		dir = filepath.Join(home, ".codex")
 		filename = "AGENTS.md"
+	case "gemini":
+		dir = filepath.Join(home, ".gemini")
+		filename = "GEMINI.md"
 	default:
 		return "", fmt.Errorf("不支持的平台: %s", platform)
 	}

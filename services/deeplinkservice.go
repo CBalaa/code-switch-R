@@ -94,8 +94,8 @@ func (s *DeepLinkService) ParseDeepLinkURL(urlStr string) (*DeepLinkImportReques
 	if app == "" {
 		return nil, fmt.Errorf("缺少 'app' 参数")
 	}
-	if app != "claude" && app != "codex" && app != "openai-responses" && app != "openai-chat" {
-		return nil, fmt.Errorf("无效的 app 类型: 必须是 'claude', 'openai-responses', 或 'openai-chat', 得到 '%s'", app)
+	if app != "claude" && app != "codex" && app != "openai-responses" && app != "openai-chat" && app != "gemini" {
+		return nil, fmt.Errorf("无效的 app 类型: 必须是 'claude', 'openai-responses', 'openai-chat', 或 'gemini', 得到 '%s'", app)
 	}
 
 	name := params.Get("name")
@@ -200,6 +200,8 @@ func (s *DeepLinkService) ImportProviderFromDeepLink(request *DeepLinkImportRequ
 		kind = "openai-responses"
 	case "openai-chat":
 		kind = "openai-chat"
+	case "gemini":
+		kind = "gemini"
 	default:
 		return "", fmt.Errorf("不支持的 app 类型: %s", merged.App)
 	}

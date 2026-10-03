@@ -139,8 +139,14 @@ func (cts *ConnectivityTestService) TestProvider(ctx context.Context, provider P
 			if strings.EqualFold(platform, "claude") {
 				req.Header.Set("anthropic-version", "2023-06-01")
 			}
+		case "x-goog-api-key":
+			req.Header.Set("x-goog-api-key", provider.APIKey)
 		case "bearer":
-			req.Header.Set("Authorization", "Bearer "+provider.APIKey)
+			if strings.EqualFold(platform, "gemini") {
+				req.Header.Set("x-goog-api-key", provider.APIKey)
+			} else {
+				req.Header.Set("Authorization", "Bearer "+provider.APIKey)
+			}
 		default:
 			// 自定义 Header 名
 			headerName := strings.TrimSpace(authType)
@@ -210,6 +216,8 @@ func defaultEndpointForPlatform(platform string) string {
 		return "/responses"
 	case "openai-chat":
 		return "/chat/completions"
+	case "gemini":
+		return "/v1beta/models/gemini-2.5-flash:generateContent"
 	default:
 		return "/chat/completions"
 	}
@@ -237,7 +245,7 @@ func resolveConnectivityEndpoint(provider *Provider, platform string) string {
 }
 
 // connectivityPlatforms 需要做可用性巡检的平台列表
-var connectivityPlatforms = []string{"claude", "openai-responses", "openai-chat"}
+var connectivityPlatforms = []string{"claude", "openai-responses", "openai-chat", "gemini"}
 
 // loadProvidersForUser 按用户加载 provider；userID 为空时退回全局列表（后台巡检用）。
 func (cts *ConnectivityTestService) loadProvidersForUser(userID, platform string) ([]Provider, error) {
@@ -291,6 +299,21 @@ func (cts *ConnectivityTestService) buildTestRequest(platform string, provider *
 					"role": "user",
 					"content": []map[string]string{
 						{"type": "input_text", "text": "hi"},
+					},
+				},
+			},
+		}
+		data, _ := json.Marshal(reqBody)
+		return data
+	}
+
+	// Gemini 格式: generateContent
+	if strings.Contains(endpoint, "generatecontent") || platform == "gemini" {
+		reqBody := map[string]interface{}{
+			"contents": []map[string]interface{}{
+				{
+					"parts": []map[string]string{
+						{"text": "hi"},
 					},
 				},
 			},
@@ -382,6 +405,8 @@ func (cts *ConnectivityTestService) getEffectiveModel(provider *Provider, platfo
 		return "gpt-5.1"
 	case "openai-chat":
 		return "gpt-5.1-mini"
+	case "gemini":
+		return "gemini-2.5-flash"
 	default:
 		return ""
 	}
@@ -873,6 +898,20 @@ func (cts *ConnectivityTestService) buildTestRequestWithMessage(platform string,
 					"role": "user",
 					"content": []map[string]string{
 						{"type": "input_text", "text": testMessage},
+					},
+				},
+			},
+		}
+		data, _ := json.Marshal(reqBody)
+		return data
+	}
+
+	if strings.Contains(endpoint, "generatecontent") || platform == "gemini" {
+		reqBody := map[string]interface{}{
+			"contents": []map[string]interface{}{
+				{
+					"parts": []map[string]string{
+						{"text": testMessage},
 					},
 				},
 			},

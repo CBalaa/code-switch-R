@@ -66,6 +66,8 @@ func (s *EnvCheckService) getKeywordsForApp(app string) []string {
 		return []string{"ANTHROPIC"}
 	case "openai-responses", "openai-chat":
 		return []string{"OPENAI"}
+	case "gemini":
+		return []string{"GEMINI"}
 	default:
 		return []string{}
 	}

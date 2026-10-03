@@ -6,9 +6,9 @@ export interface ClaudeProxyStatus {
   base_url: string
 }
 
-type Platform = 'claude' | 'openai-responses' | 'openai-chat'
+type Platform = 'claude' | 'openai-responses' | 'openai-chat' | 'gemini'
 
-const serviceNames: Record<Platform, string> = {
+const serviceNames: Partial<Record<Platform, string>> = {
   claude: 'codeswitch/services.ClaudeSettingsService',
   'openai-responses': 'codeswitch/services.CodexSettingsService',
   'openai-chat': 'codeswitch/services.CodexSettingsService',
@@ -16,6 +16,7 @@ const serviceNames: Record<Platform, string> = {
 
 const callByPlatform = async <T = unknown>(platform: Platform, method: string, payload?: any[]): Promise<T> => {
   const service = serviceNames[platform]
+  if (!service) return { enabled: false, base_url: '' } as T
   const args = payload ?? []
   return Call.ByName(`${service}.${method}`, ...args)
 }

@@ -117,6 +117,7 @@ func NewHealthCheckService(
 			"claude":           {},
 			"openai-responses": {},
 			"openai-chat":      {},
+			"gemini":           {},
 		},
 		pollInterval: time.Duration(DefaultPollIntervalSeconds) * time.Second,
 		client: &http.Client{
@@ -211,7 +212,7 @@ func (hcs *HealthCheckService) GetLatestResultsForUser(userID string) (map[strin
 	results := make(map[string][]ProviderTimeline)
 
 	// 遍历所有平台
-	for _, platform := range []string{"claude", "openai-responses", "openai-chat"} {
+	for _, platform := range []string{"claude", "openai-responses", "openai-chat", "gemini"} {
 		var providers []Provider
 		var err error
 		if strings.TrimSpace(userID) != "" {
@@ -499,7 +500,7 @@ func (hcs *HealthCheckService) RunAllChecks() (map[string][]HealthCheckResult, e
 func (hcs *HealthCheckService) RunAllChecksForUser(userID string) (map[string][]HealthCheckResult, error) {
 	results := make(map[string][]HealthCheckResult)
 
-	for _, platform := range []string{"claude", "openai-responses", "openai-chat"} {
+	for _, platform := range []string{"claude", "openai-responses", "openai-chat", "gemini"} {
 		platformResults := hcs.checkAllProvidersForUser(userID, platform)
 		results[platform] = platformResults
 	}
@@ -623,8 +624,14 @@ func (hcs *HealthCheckService) checkProvider(ctx context.Context, provider Provi
 			if strings.EqualFold(platform, "claude") {
 				req.Header.Set("anthropic-version", "2023-06-01")
 			}
+		case "x-goog-api-key":
+			req.Header.Set("x-goog-api-key", provider.APIKey)
 		case "bearer":
-			req.Header.Set("Authorization", "Bearer "+provider.APIKey)
+			if strings.EqualFold(platform, "gemini") {
+				req.Header.Set("x-goog-api-key", provider.APIKey)
+			} else {
+				req.Header.Set("Authorization", "Bearer "+provider.APIKey)
+			}
 		default:
 			// 自定义 Header 名
 			headerName := authTypeRaw
@@ -736,6 +743,8 @@ func (hcs *HealthCheckService) getEffectiveModel(provider *Provider, platform st
 		return "gpt-4o-mini"
 	case "openai-chat":
 		return "gpt-4o-mini"
+	case "gemini":
+		return "gemini-2.5-flash"
 	default:
 		return "gpt-3.5-turbo"
 	}
@@ -801,6 +810,20 @@ func (hcs *HealthCheckService) buildTestRequest(platform, endpoint, model string
 					"role": "user",
 					"content": []map[string]string{
 						{"type": "input_text", "text": "hi"},
+					},
+				},
+			},
+		}
+		data, _ := json.Marshal(reqBody)
+		return data
+	}
+
+	if strings.Contains(endpoint, "generatecontent") || platform == "gemini" {
+		reqBody := map[string]interface{}{
+			"contents": []map[string]interface{}{
+				{
+					"parts": []map[string]string{
+						{"text": "hi"},
 					},
 				},
 			},
@@ -958,7 +981,7 @@ func (hcs *HealthCheckService) SetAutoAvailabilityPolling(enabled bool) {
 
 // runAllPlatformChecks 执行所有平台的检测
 func (hcs *HealthCheckService) runAllPlatformChecks() {
-	platforms := []string{"claude", "openai-responses", "openai-chat"}
+	platforms := []string{"claude", "openai-responses", "openai-chat", "gemini"}
 	for _, platform := range platforms {
 		hcs.checkAllProviders(platform)
 	}

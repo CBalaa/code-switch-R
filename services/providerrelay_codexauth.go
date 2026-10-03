@@ -131,6 +131,8 @@ func (prs *ProviderRelayService) codexRelayAuthMiddleware() gin.HandlerFunc {
 		c.Request.Header.Del(codexRelayKeyHeader)
 		c.Request.Header.Del("X-API-Key")
 		c.Request.Header.Del("x-api-key")
+		c.Request.Header.Del("X-Goog-Api-Key")
+		c.Request.Header.Del("x-goog-api-key")
 
 		c.Next()
 	}
@@ -176,11 +178,19 @@ func extractCodexRelayKeyWithSource(req *http.Request) (string, string) {
 	if key := strings.TrimSpace(req.Header.Get(codexRelayKeyHeader)); key != "" {
 		return key, codexRelayKeyHeader
 	}
-	if key := strings.TrimSpace(req.Header.Get("X-API-Key")); key != "" {
-		return key, "X-API-Key"
+	if key := strings.TrimSpace(req.Header.Get("X-Goog-Api-Key")); key != "" {
+		return key, "X-Goog-Api-Key"
+	}
+	if key := strings.TrimSpace(req.Header.Get("x-goog-api-key")); key != "" {
+		return key, "x-goog-api-key"
 	}
 	if auth := strings.TrimSpace(req.Header.Get("Authorization")); auth != "" {
 		return extractBearerToken(auth), "Authorization"
+	}
+	if req.URL != nil {
+		if key := strings.TrimSpace(req.URL.Query().Get("key")); key != "" {
+			return key, "query_key"
+		}
 	}
 
 	return "", ""

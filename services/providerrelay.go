@@ -1721,7 +1721,7 @@ func (prs *ProviderRelayService) buildProviderAttemptPlan(c *gin.Context, kind s
 // relay-key bindings explicitly.
 func (prs *ProviderRelayService) EnsureDefaultPoolsAndBindings() error {
 	// 确定每个 platform 的当前模式
-	platforms := []string{"claude", "openai-responses", "openai-chat"}
+	platforms := []string{"claude", "openai-responses", "openai-chat", "gemini"}
 	seeds := make(map[string]DefaultPoolSeed)
 	platformDefaults := make(map[string]string)
 
@@ -1821,7 +1821,7 @@ func (prs *ProviderRelayService) Start() error {
 func (prs *ProviderRelayService) validateConfig() []string {
 	warnings := make([]string, 0)
 
-	for _, kind := range []string{"claude", "openai-responses", "openai-chat"} {
+	for _, kind := range []string{"claude", "openai-responses", "openai-chat", "gemini"} {
 		providers, err := prs.providerService.LoadProviders(kind)
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("[%s] 加载配置失败: %v", kind, err))
@@ -1899,6 +1899,12 @@ func (prs *ProviderRelayService) registerRoutes(router gin.IRouter) {
 	router.POST("/chat/completions", codexAuth, prs.proxyHandler("openai-chat", "/chat/completions"))
 	router.POST("/v1/chat/completions", codexAuth, prs.proxyHandler("openai-chat", "/chat/completions"))
 
+	// Gemini 端点
+	router.POST("/v1beta/models/*any", codexAuth, prs.proxyHandler("gemini", "/v1beta/models"))
+	router.POST("/v1/models/*any", codexAuth, prs.proxyHandler("gemini", "/v1/models"))
+	router.POST("/gemini/v1beta/*any", codexAuth, prs.proxyHandler("gemini", "/v1beta"))
+	router.POST("/gemini/v1/*any", codexAuth, prs.proxyHandler("gemini", "/v1"))
+
 	// /v1/models 端点（OpenAI-compatible API）
 	// 支持 Claude 和 Codex 平台
 	router.GET("/v1/models", codexAuth, prs.modelsHandler(""))
@@ -1906,6 +1912,19 @@ func (prs *ProviderRelayService) registerRoutes(router gin.IRouter) {
 }
 
 func (prs *ProviderRelayService) resolveRelayEndpoint(kind string, provider Provider, routeEndpoint string) string {
+	if kind == "gemini" {
+		// 对于 Gemini 协议，入站 routeEndpoint 已经是完整的 API 路径（如 /v1beta/models/...）
+		// 如果供应商自定义了前缀 apiEndpoint 且与默认前缀不同（如 /custom/v1beta），可替换前缀；否则保持 routeEndpoint
+		customPrefix := strings.TrimSpace(provider.APIEndpoint)
+		if customPrefix != "" && customPrefix != "/v1beta" && customPrefix != "v1beta" {
+			// 如果指定了自定义前缀，且路径以 /v1beta 开头，替换前缀
+			customPrefix = "/" + strings.Trim(customPrefix, "/")
+			if strings.HasPrefix(routeEndpoint, "/v1beta") {
+				return customPrefix + strings.TrimPrefix(routeEndpoint, "/v1beta")
+			}
+		}
+		return routeEndpoint
+	}
 	return provider.GetEffectiveEndpoint(routeEndpoint)
 }
 
@@ -1927,6 +1946,23 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 
 		isStream := gjson.GetBytes(bodyBytes, "stream").Bool()
 		requestedModel := gjson.GetBytes(bodyBytes, "model").String()
+
+		targetEndpoint := endpoint
+		if strings.HasSuffix(endpoint, "/*any") || c.Param("any") != "" {
+			targetEndpoint = strings.TrimSuffix(endpoint, "/*any") + c.Param("any")
+		} else if kind == "gemini" && c.Request.URL.Path != "" {
+			targetEndpoint = c.Request.URL.Path
+		}
+
+		if kind == "gemini" {
+			if strings.Contains(targetEndpoint, ":streamGenerateContent") || strings.Contains(c.Request.URL.RawQuery, "alt=sse") {
+				isStream = true
+			}
+			if requestedModel == "" {
+				requestedModel = extractGeminiModelFromEndpoint(targetEndpoint)
+			}
+		}
+
 		c.Set(requestedModelContextKey, requestedModel)
 
 		// 如果未指定模型，记录警告但不拦截
@@ -1935,6 +1971,9 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 		}
 
 		query := flattenQuery(c.Request.URL.Query())
+		if kind == "gemini" {
+			query.Del("key")
+		}
 		clientHeaders := cloneHeaders(c.Request.Header)
 
 		var requestLog *ReqeustLog
@@ -2152,26 +2191,31 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 					// 获取实际应该使用的模型名
 					effectiveModel := provider.GetEffectiveModel(requestedModel)
 
-					// 如果需要映射，修改请求体
+					// 如果需要映射，修改请求体（或 Gemini 的 URL 路径）
 					currentBodyBytes := bodyBytes
 					if effectiveModel != requestedModel && requestedModel != "" {
 						fmt.Printf("[INFO] Provider %s 映射模型: %s -> %s\n", provider.Name, requestedModel, effectiveModel)
 
-						modifiedBody, err := ReplaceModelInRequestBody(bodyBytes, effectiveModel)
-						if err != nil {
-							fmt.Printf("[ERROR] 替换模型名失败: %v\n", err)
-							// 映射失败不应阻止尝试其他 provider
-							releaseProviderSlot(true)
-							continue
+						if kind != "gemini" {
+							modifiedBody, err := ReplaceModelInRequestBody(bodyBytes, effectiveModel)
+							if err != nil {
+								fmt.Printf("[ERROR] 替换模型名失败: %v\n", err)
+								// 映射失败不应阻止尝试其他 provider
+								releaseProviderSlot(true)
+								continue
+							}
+							currentBodyBytes = modifiedBody
 						}
-						currentBodyBytes = modifiedBody
 					}
 
 					fmt.Printf("[INFO]   [%d/%d] Provider: %s | Model: %s\n", i+1, len(providersInLevel), provider.Name, effectiveModel)
 
 					// 尝试发送请求
 					// 获取有效的端点（用户配置优先）
-					effectiveEndpoint := prs.resolveRelayEndpoint(kind, provider, endpoint)
+					effectiveEndpoint := prs.resolveRelayEndpoint(kind, provider, targetEndpoint)
+					if kind == "gemini" && effectiveModel != requestedModel && requestedModel != "" {
+						effectiveEndpoint = rewriteGeminiModelInEndpoint(effectiveEndpoint, requestedModel, effectiveModel)
+					}
 					// The priority override applies until a replacement upstream attempt
 					// actually starts. It must survive queueing and config reloads.
 					retrySelectingPoolPriority = false
@@ -2748,9 +2792,15 @@ func (prs *ProviderRelayService) forwardRequestWithLog(
 		if kind == "claude" {
 			headers.Set("anthropic-version", "2023-06-01")
 		}
+	case "x-goog-api-key":
+		headers.Set("x-goog-api-key", provider.APIKey)
 	case "", "bearer":
-		// 默认使用 Bearer token（兼容所有第三方中转）
-		headers.Set("Authorization", fmt.Sprintf("Bearer %s", provider.APIKey))
+		if kind == "gemini" {
+			headers.Set("x-goog-api-key", provider.APIKey)
+		} else {
+			// 默认使用 Bearer token（兼容所有第三方中转）
+			headers.Set("Authorization", fmt.Sprintf("Bearer %s", provider.APIKey))
+		}
 	default:
 		// 自定义 Header 名
 		headerName := strings.TrimSpace(provider.ConnectivityAuthType)
@@ -4210,6 +4260,7 @@ func deleteHeaderCaseInsensitive(headers any, target string) {
 func removeInboundAuthHeaders(headers any) {
 	deleteHeaderCaseInsensitive(headers, "authorization")
 	deleteHeaderCaseInsensitive(headers, "x-api-key")
+	deleteHeaderCaseInsensitive(headers, "x-goog-api-key")
 	deleteHeaderCaseInsensitive(headers, codexRelayKeyHeader)
 }
 
@@ -4243,6 +4294,16 @@ func flattenQuery(values url.Values) url.Values {
 func joinURL(base string, endpoint string) string {
 	base = strings.TrimSuffix(base, "/")
 	endpoint = "/" + strings.TrimPrefix(endpoint, "/")
+
+	// If base URL already ends with a path prefix that endpoint starts with (e.g. base = "https://host/v1beta", endpoint = "/v1beta/models/..."),
+	// strip the duplicate prefix to avoid "/v1beta/v1beta/...".
+	if u, err := url.Parse(base); err == nil && u.Path != "" && u.Path != "/" {
+		basePath := strings.TrimSuffix(u.Path, "/")
+		if strings.HasPrefix(endpoint, basePath+"/") {
+			endpoint = strings.TrimPrefix(endpoint, basePath)
+		}
+	}
+
 	return base + endpoint
 }
 
@@ -4492,6 +4553,8 @@ func ReqeustLogHook(c *gin.Context, kind string, usage *ReqeustLog) func(data []
 			parserFn = CodexParseTokenUsageFromResponse
 		case "openai-chat":
 			parserFn = OpenAIChatParseTokenUsageFromResponse
+		case "gemini":
+			parserFn = GeminiParseTokenUsageFromResponse
 		}
 		parseEventPayload(payload, parserFn, usage)
 		markFirstTokenFromSSEPayload(payload, usage)
@@ -4671,6 +4734,7 @@ func ssePayloadHasText(data string) bool {
 		"content.0.text",
 		"choices.0.delta.content",
 		"choices.0.message.content",
+		"candidates.0.content.parts.0.text",
 	}
 	for _, path := range textPaths {
 		if gjson.Get(data, path).String() != "" {
@@ -4682,6 +4746,16 @@ func ssePayloadHasText(data string) bool {
 	if content.IsArray() {
 		for _, item := range content.Array() {
 			if item.Get("text").String() != "" {
+				return true
+			}
+		}
+	}
+
+	// Gemini candidates parts
+	parts := gjson.Get(data, "candidates.0.content.parts")
+	if parts.IsArray() {
+		for _, part := range parts.Array() {
+			if part.Get("text").String() != "" {
 				return true
 			}
 		}
@@ -4865,6 +4939,12 @@ func parseNonStreamingTokens(body []byte, kind string, requestLog *ReqeustLog) {
 		}
 		return
 	}
+
+	// Gemini format
+	if usageResult := result.Get("usageMetadata"); usageResult.Exists() {
+		mergeGeminiUsageMetadata(usageResult, requestLog)
+		return
+	}
 }
 
 // hasContentInResponse checks whether a non-streaming response body contains actual
@@ -4916,6 +4996,22 @@ func hasContentInResponse(body []byte, kind string) bool {
 	output := result.Get("output")
 	if output.IsArray() {
 		return responsesOutputHasUsefulContent(output)
+	}
+
+	// Gemini format
+	candidates := result.Get("candidates")
+	if candidates.IsArray() && len(candidates.Array()) > 0 {
+		for _, cand := range candidates.Array() {
+			parts := cand.Get("content.parts")
+			if parts.IsArray() && len(parts.Array()) > 0 {
+				for _, part := range parts.Array() {
+					if strings.TrimSpace(part.Get("text").String()) != "" || part.Get("functionCall").Exists() {
+						return true
+					}
+				}
+			}
+		}
+		return false
 	}
 
 	// Unknown format: treat as having content (conservative)
@@ -5294,7 +5390,7 @@ func modelsPlatformCandidates(c *gin.Context, preferredKind string) []string {
 
 	add(preferredKind)
 	bindings := relayKeyPoolBindingsFromContext(c)
-	for _, kind := range []string{"openai-responses", "openai-chat", "claude"} {
+	for _, kind := range []string{"openai-responses", "openai-chat", "claude", "gemini"} {
 		if _, ok := bindings[kind]; ok {
 			add(kind)
 		}
@@ -5835,4 +5931,102 @@ func (prs *ProviderRelayService) ClearProviderBlacklistForUser(userID, platform,
 // ClearAllProviderBlacklistsForUser clears all active blacklists in one user pool.
 func (prs *ProviderRelayService) ClearAllProviderBlacklistsForUser(userID, platform, poolID string) {
 	prs.clearAllProviderBlacklistsForUser(userID, platform, poolID)
+}
+
+// geminiModelSpan 定位 endpoint 路径中 "models/<model>" 段里模型名的 [start,end) 下标。
+// 未找到返回 (-1,-1)。只认路径段边界（"/models/" 或串首 "models/"），
+// 避免 "notmodels/" 之类子串误匹配；查询串里的 "/models/" 不算路径；
+// 模型名终止于 ':'、'?'、'#' 或串尾。'/' 不作终止符——模型映射目标
+// 可以带斜杠（如 vendor/gemini-x），在 '/' 截断会让请求日志只记到 "vendor"。
+func geminiModelSpan(endpoint string) (int, int) {
+	pathEnd := len(endpoint)
+	if q := strings.IndexByte(endpoint, '?'); q >= 0 {
+		pathEnd = q
+	}
+	path := endpoint[:pathEnd]
+
+	var start int
+	if strings.HasPrefix(path, "models/") {
+		start = len("models/")
+	} else if idx := strings.Index(path, "/models/"); idx >= 0 {
+		start = idx + len("/models/")
+	} else {
+		return -1, -1
+	}
+
+	end := start
+	for end < pathEnd {
+		c := endpoint[end]
+		if c == ':' || c == '#' {
+			break
+		}
+		end++
+	}
+	if end == start {
+		return -1, -1
+	}
+	return start, end
+}
+
+// extractGeminiModelFromEndpoint 从 Gemini API endpoint 中提取模型名
+// 例如 "/v1beta/models/gemini-2.5-pro:generateContent?alt=sse" -> "gemini-2.5-pro"
+func extractGeminiModelFromEndpoint(endpoint string) string {
+	start, end := geminiModelSpan(endpoint)
+	if start == -1 {
+		return ""
+	}
+	return strings.TrimSpace(endpoint[start:end])
+}
+
+// rewriteGeminiModelInEndpoint 把 endpoint 路径中的模型名从 from 替换为 to。
+// Gemini 的模型在 URL 路径而非请求体里，模型映射只能改写路径段。
+// 仅当 models/ 段正好等于 from 时才替换，否则原样返回。
+func rewriteGeminiModelInEndpoint(endpoint, from, to string) string {
+	if from == "" || to == "" || from == to {
+		return endpoint
+	}
+	start, end := geminiModelSpan(endpoint)
+	if start == -1 || endpoint[start:end] != from {
+		return endpoint
+	}
+	return endpoint[:start] + to + endpoint[end:]
+}
+
+// GeminiParseTokenUsageFromResponse parses token usage from Gemini SSE event or response
+func GeminiParseTokenUsageFromResponse(data string, usage *ReqeustLog) {
+	usageResult := gjson.Get(data, "usageMetadata")
+	if !usageResult.Exists() {
+		return
+	}
+	mergeGeminiUsageMetadata(usageResult, usage)
+}
+
+// mergeGeminiUsageMetadata 合并 Gemini usageMetadata 到 ReqeustLog
+func mergeGeminiUsageMetadata(usage gjson.Result, reqLog *ReqeustLog) {
+	if !usage.Exists() || reqLog == nil {
+		return
+	}
+
+	promptTokens := int(usage.Get("promptTokenCount").Int())
+	if usage.Get("promptTokenCount").Exists() || usage.Get("cachedContentTokenCount").Exists() {
+		cacheReadTokens := int(usage.Get("cachedContentTokenCount").Int())
+		if cacheReadTokens > promptTokens {
+			cacheReadTokens = promptTokens
+		}
+		reqLog.InputTokens = promptTokens - cacheReadTokens
+		reqLog.CacheReadTokens = cacheReadTokens
+	}
+	if v := usage.Get("candidatesTokenCount"); v.Exists() {
+		reqLog.OutputTokens = int(v.Int())
+	}
+	if v := usage.Get("thoughtsTokenCount"); v.Exists() {
+		reqLog.ReasoningTokens = int(v.Int())
+	}
+
+	total := usage.Get("totalTokenCount").Int()
+	if total > 0 && reqLog.OutputTokens == 0 && promptTokens > 0 && promptTokens < int(total) {
+		if derived := int(total) - promptTokens - reqLog.ReasoningTokens; derived > 0 {
+			reqLog.OutputTokens = derived
+		}
+	}
 }
