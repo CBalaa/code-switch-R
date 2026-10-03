@@ -6041,8 +6041,11 @@ func mergeGeminiUsageMetadata(usage gjson.Result, reqLog *ReqeustLog, roots ...g
 		if cacheReadTokens > promptTokens {
 			cacheReadTokens = promptTokens
 		}
-		reqLog.InputTokens = promptTokens - cacheReadTokens
+		reqLog.InputTokens = promptTokens
 		reqLog.CacheReadTokens = cacheReadTokens
+		if cacheReadTokens > 0 {
+			reqLog.inputTokensIncludeCacheRead = true
+		}
 	} else if cacheReadTokens > 0 && reqLog.CacheReadTokens == 0 {
 		reqLog.CacheReadTokens = cacheReadTokens
 	}

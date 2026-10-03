@@ -88,8 +88,8 @@ func TestGeminiParseTokenUsageFromResponse(t *testing.T) {
 		usageJSON := `{"candidates":[],"usageMetadata":{"promptTokenCount":120,"candidatesTokenCount":45,"thoughtsTokenCount":30,"totalTokenCount":195,"cachedContentTokenCount":100}}`
 		log := &ReqeustLog{}
 		GeminiParseTokenUsageFromResponse(usageJSON, log)
-		if log.InputTokens != 20 {
-			t.Errorf("InputTokens = %d, 期望 20 (120 - 100)", log.InputTokens)
+		if log.InputTokens != 120 {
+			t.Errorf("InputTokens = %d, 期望 120", log.InputTokens)
 		}
 		if log.CacheReadTokens != 100 {
 			t.Errorf("CacheReadTokens = %d, 期望 100", log.CacheReadTokens)
@@ -111,8 +111,8 @@ func TestGeminiParseTokenUsageFromResponse(t *testing.T) {
 		if log.CacheReadTokens != 113874 {
 			t.Errorf("Chunk 1 CacheReadTokens = %d, 期望 113874", log.CacheReadTokens)
 		}
-		if log.InputTokens != 117174-113874 {
-			t.Errorf("Chunk 1 InputTokens = %d, 期望 %d", log.InputTokens, 117174-113874)
+		if log.InputTokens != 117174 {
+			t.Errorf("Chunk 1 InputTokens = %d, 期望 %d", log.InputTokens, 117174)
 		}
 
 		// Chunk 2: 后续 chunk 传入 cachedContentTokenCount=0，不应把已记录的 CacheReadTokens 冲掉
@@ -121,8 +121,8 @@ func TestGeminiParseTokenUsageFromResponse(t *testing.T) {
 		if log.CacheReadTokens != 113874 {
 			t.Errorf("Chunk 2 防覆盖失败: CacheReadTokens = %d, 期望 113874", log.CacheReadTokens)
 		}
-		if log.InputTokens != 117174-113874 {
-			t.Errorf("Chunk 2 InputTokens = %d, 期望 %d", log.InputTokens, 117174-113874)
+		if log.InputTokens != 117174 {
+			t.Errorf("Chunk 2 InputTokens = %d, 期望 %d", log.InputTokens, 117174)
 		}
 	})
 }
