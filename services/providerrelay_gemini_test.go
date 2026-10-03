@@ -84,18 +84,47 @@ func TestRewriteGeminiModelInEndpoint(t *testing.T) {
 }
 
 func TestGeminiParseTokenUsageFromResponse(t *testing.T) {
-	usageJSON := `{"candidates":[],"usageMetadata":{"promptTokenCount":120,"candidatesTokenCount":45,"thoughtsTokenCount":30,"totalTokenCount":195}}`
-	log := &ReqeustLog{}
-	GeminiParseTokenUsageFromResponse(usageJSON, log)
-	if log.InputTokens != 120 {
-		t.Errorf("InputTokens = %d, 期望 120", log.InputTokens)
-	}
-	if log.OutputTokens != 45 {
-		t.Errorf("OutputTokens = %d, 期望 45", log.OutputTokens)
-	}
-	if log.ReasoningTokens != 30 {
-		t.Errorf("ReasoningTokens = %d, 期望 30", log.ReasoningTokens)
-	}
+	t.Run("原生 usageMetadata 解析", func(t *testing.T) {
+		usageJSON := `{"candidates":[],"usageMetadata":{"promptTokenCount":120,"candidatesTokenCount":45,"thoughtsTokenCount":30,"totalTokenCount":195,"cachedContentTokenCount":100}}`
+		log := &ReqeustLog{}
+		GeminiParseTokenUsageFromResponse(usageJSON, log)
+		if log.InputTokens != 20 {
+			t.Errorf("InputTokens = %d, 期望 20 (120 - 100)", log.InputTokens)
+		}
+		if log.CacheReadTokens != 100 {
+			t.Errorf("CacheReadTokens = %d, 期望 100", log.CacheReadTokens)
+		}
+		if log.OutputTokens != 45 {
+			t.Errorf("OutputTokens = %d, 期望 45", log.OutputTokens)
+		}
+		if log.ReasoningTokens != 30 {
+			t.Errorf("ReasoningTokens = %d, 期望 30", log.ReasoningTokens)
+		}
+	})
+
+	t.Run("网关 billing_usage 扩展字段解析与流式防 0 覆盖", func(t *testing.T) {
+		log := &ReqeustLog{}
+
+		// Chunk 1: 包含缓存用量 (New-API / One-API 格式)
+		chunk1 := `{"candidates":[],"usageMetadata":{"promptTokenCount":117174,"candidatesTokenCount":20,"totalTokenCount":117194,"cachedContentTokenCount":0,"billing_usage":{"source":"oai_chat","openai_usage":{"prompt_tokens_details":{"cached_tokens":113874}}}}}`
+		GeminiParseTokenUsageFromResponse(chunk1, log)
+		if log.CacheReadTokens != 113874 {
+			t.Errorf("Chunk 1 CacheReadTokens = %d, 期望 113874", log.CacheReadTokens)
+		}
+		if log.InputTokens != 117174-113874 {
+			t.Errorf("Chunk 1 InputTokens = %d, 期望 %d", log.InputTokens, 117174-113874)
+		}
+
+		// Chunk 2: 后续 chunk 传入 cachedContentTokenCount=0，不应把已记录的 CacheReadTokens 冲掉
+		chunk2 := `{"candidates":[],"usageMetadata":{"promptTokenCount":117174,"candidatesTokenCount":20,"totalTokenCount":117194,"cachedContentTokenCount":0}}`
+		GeminiParseTokenUsageFromResponse(chunk2, log)
+		if log.CacheReadTokens != 113874 {
+			t.Errorf("Chunk 2 防覆盖失败: CacheReadTokens = %d, 期望 113874", log.CacheReadTokens)
+		}
+		if log.InputTokens != 117174-113874 {
+			t.Errorf("Chunk 2 InputTokens = %d, 期望 %d", log.InputTokens, 117174-113874)
+		}
+	})
 }
 
 func TestGeminiRelayWithModelMapping(t *testing.T) {

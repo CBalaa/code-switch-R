@@ -4942,7 +4942,7 @@ func parseNonStreamingTokens(body []byte, kind string, requestLog *ReqeustLog) {
 
 	// Gemini format
 	if usageResult := result.Get("usageMetadata"); usageResult.Exists() {
-		mergeGeminiUsageMetadata(usageResult, requestLog)
+		mergeGeminiUsageMetadata(usageResult, requestLog, result)
 		return
 	}
 }
@@ -5994,28 +5994,59 @@ func rewriteGeminiModelInEndpoint(endpoint, from, to string) string {
 
 // GeminiParseTokenUsageFromResponse parses token usage from Gemini SSE event or response
 func GeminiParseTokenUsageFromResponse(data string, usage *ReqeustLog) {
-	usageResult := gjson.Get(data, "usageMetadata")
+	root := gjson.Parse(data)
+	usageResult := root.Get("usageMetadata")
 	if !usageResult.Exists() {
 		return
 	}
-	mergeGeminiUsageMetadata(usageResult, usage)
+	mergeGeminiUsageMetadata(usageResult, usage, root)
 }
 
 // mergeGeminiUsageMetadata 合并 Gemini usageMetadata 到 ReqeustLog
-func mergeGeminiUsageMetadata(usage gjson.Result, reqLog *ReqeustLog) {
+func mergeGeminiUsageMetadata(usage gjson.Result, reqLog *ReqeustLog, roots ...gjson.Result) {
 	if !usage.Exists() || reqLog == nil {
 		return
 	}
 
 	promptTokens := int(usage.Get("promptTokenCount").Int())
-	if usage.Get("promptTokenCount").Exists() || usage.Get("cachedContentTokenCount").Exists() {
-		cacheReadTokens := int(usage.Get("cachedContentTokenCount").Int())
+
+	// 提取缓存 Token：优先从 Gemini 原生 cachedContentTokenCount 提取，
+	// 若为 0 则尝试从 billing_usage 等网关（如 New-API / One-API）扩展字段中提取
+	cacheReadTokens := int(usage.Get("cachedContentTokenCount").Int())
+	if cacheReadTokens == 0 {
+		candidates := []string{
+			"billing_usage.openai_usage.prompt_tokens_details.cached_tokens",
+			"billing_usage.gemini_usage_metadata.cachedContentTokenCount",
+		}
+		for _, path := range candidates {
+			if v := usage.Get(path); v.Exists() && v.Int() > 0 {
+				cacheReadTokens = int(v.Int())
+				break
+			}
+			if len(roots) > 0 {
+				if v := roots[0].Get(path); v.Exists() && v.Int() > 0 {
+					cacheReadTokens = int(v.Int())
+					break
+				}
+			}
+		}
+	}
+
+	if promptTokens > 0 {
+		// 在流式多 chunk 场景下，如果此前已经记录到有效缓存读 Token，而当前 chunk 未提供或为 0，
+		// 保留已有的缓存读 Token，避免被部分中间块/估算块重置为 0
+		if cacheReadTokens == 0 && reqLog.CacheReadTokens > 0 {
+			cacheReadTokens = reqLog.CacheReadTokens
+		}
 		if cacheReadTokens > promptTokens {
 			cacheReadTokens = promptTokens
 		}
 		reqLog.InputTokens = promptTokens - cacheReadTokens
 		reqLog.CacheReadTokens = cacheReadTokens
+	} else if cacheReadTokens > 0 && reqLog.CacheReadTokens == 0 {
+		reqLog.CacheReadTokens = cacheReadTokens
 	}
+
 	if v := usage.Get("candidatesTokenCount"); v.Exists() {
 		reqLog.OutputTokens = int(v.Int())
 	}
