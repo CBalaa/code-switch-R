@@ -596,11 +596,7 @@ func (hcs *HealthCheckService) checkProvider(ctx context.Context, provider Provi
 	}
 
 	// 构建目标 URL
-	baseURL := strings.TrimSuffix(provider.APIURL, "/")
-	if !strings.HasPrefix(endpoint, "/") {
-		endpoint = "/" + endpoint
-	}
-	targetURL := baseURL + endpoint
+	targetURL := joinURL(provider.APIURL, endpoint)
 
 	// 创建 HTTP 请求
 	req, err := http.NewRequestWithContext(ctx, "POST", targetURL, bytes.NewReader(reqBody))
@@ -762,17 +758,25 @@ func (hcs *HealthCheckService) getEffectiveModel(provider *Provider, platform st
 func (hcs *HealthCheckService) getEffectiveEndpoint(provider *Provider, platform string) string {
 	defaultEndpoint := defaultEndpointForPlatform(platform)
 	resolved := provider.GetEffectiveEndpoint(defaultEndpoint)
-
+	endpoint := resolved
 	if cfg := provider.AvailabilityConfig; cfg != nil {
-		if endpoint := strings.TrimSpace(cfg.TestEndpoint); endpoint != "" {
+		if ep := strings.TrimSpace(cfg.TestEndpoint); ep != "" {
 			// 只有"等于平台默认值、且供应商另有协议端点"时才忽略它，其余情况仍尊重用户显式配置
-			if strings.EqualFold(endpoint, defaultEndpoint) && !strings.EqualFold(resolved, defaultEndpoint) {
-				return resolved
+			if strings.EqualFold(ep, defaultEndpoint) && !strings.EqualFold(resolved, defaultEndpoint) {
+				endpoint = resolved
+			} else {
+				endpoint = ep
 			}
-			return endpoint
 		}
 	}
-	return resolved
+	if strings.EqualFold(platform, "gemini") {
+		model := hcs.getEffectiveModel(provider, platform)
+		if provider != nil {
+			model = provider.GetEffectiveModel(model)
+		}
+		endpoint = resolveGeminiEndpoint(endpoint, model)
+	}
+	return endpoint
 }
 
 // getEffectiveTimeout 获取有效的超时时间（毫秒）

@@ -2479,7 +2479,7 @@ const handleDuplicate = (card: AutomationCard) => {
   if (!storedAuth) {
     selectedAuthType.value = getDefaultAuthType(activeTab.value)
     customAuthHeader.value = ''
-  } else if (lower === 'bearer' || lower === 'x-api-key') {
+  } else if (lower === 'bearer' || lower === 'x-api-key' || lower === 'x-goog-api-key') {
     selectedAuthType.value = lower
     customAuthHeader.value = ''
   } else {

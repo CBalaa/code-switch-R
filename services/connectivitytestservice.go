@@ -231,10 +231,20 @@ func defaultEndpointForPlatform(platform string) string {
 // responsesEndpoint 的供应商被探测到 /responses（很多网关这个路径返回门户
 // HTML 且状态码 200），探测结果和真实转发完全不是一回事。
 func (cts *ConnectivityTestService) getEffectiveEndpoint(provider *Provider, platform string) string {
-	if endpoint := strings.TrimSpace(provider.ConnectivityTestEndpoint); endpoint != "" {
-		return endpoint
+	var endpoint string
+	if ep := strings.TrimSpace(provider.ConnectivityTestEndpoint); ep != "" {
+		endpoint = ep
+	} else {
+		endpoint = provider.GetEffectiveEndpoint(defaultEndpointForPlatform(platform))
 	}
-	return provider.GetEffectiveEndpoint(defaultEndpointForPlatform(platform))
+	if strings.EqualFold(platform, "gemini") {
+		model := cts.getEffectiveModel(provider, platform)
+		if provider != nil {
+			model = provider.GetEffectiveModel(model)
+		}
+		endpoint = resolveGeminiEndpoint(endpoint, model)
+	}
+	return endpoint
 }
 
 // resolveConnectivityEndpoint 解析连通性/探测类请求应使用的端点。
@@ -384,12 +394,8 @@ func (cts *ConnectivityTestService) truncateMessage(msg string) string {
 
 // buildTargetURL 根据用户配置的端点构建目标 URL
 func (cts *ConnectivityTestService) buildTargetURL(provider *Provider, platform string) string {
-	baseURL := strings.TrimSuffix(provider.APIURL, "/")
 	endpoint := cts.getEffectiveEndpoint(provider, platform)
-	if !strings.HasPrefix(endpoint, "/") {
-		endpoint = "/" + endpoint
-	}
-	return baseURL + endpoint
+	return joinURL(provider.APIURL, endpoint)
 }
 
 func (cts *ConnectivityTestService) getEffectiveModel(provider *Provider, platform string) string {
@@ -811,14 +817,21 @@ func (cts *ConnectivityTestService) testProviderManual(
 	req.Header.Set("Content-Type", "application/json")
 	if provider.APIKey != "" {
 		authType := cts.getEffectiveAuthType(&provider, platform)
-		switch strings.ToLower(authType) {
+		authTypeLower := strings.ToLower(authType)
+		switch authTypeLower {
 		case "x-api-key":
 			req.Header.Set("x-api-key", provider.APIKey)
 			if strings.EqualFold(platform, "claude") {
 				req.Header.Set("anthropic-version", "2023-06-01")
 			}
+		case "x-goog-api-key":
+			req.Header.Set("x-goog-api-key", provider.APIKey)
 		case "bearer":
-			req.Header.Set("Authorization", "Bearer "+provider.APIKey)
+			if strings.EqualFold(platform, "gemini") {
+				req.Header.Set("x-goog-api-key", provider.APIKey)
+			} else {
+				req.Header.Set("Authorization", "Bearer "+provider.APIKey)
+			}
 		default:
 			headerName := strings.TrimSpace(authType)
 			if headerName == "" || strings.EqualFold(headerName, "custom") {
