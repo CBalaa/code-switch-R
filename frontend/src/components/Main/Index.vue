@@ -337,6 +337,19 @@
                   />
                 </div>
 
+                <div v-if="showImagesEndpointField" class="form-field">
+                  <div class="label-with-hint"><label for="provider-images-endpoint">{{ t('components.main.form.labels.imagesEndpoint') }}</label> <HelpHint :text="t('components.main.form.hints.imagesEndpoint')" /></div>
+                  <BaseInput
+                    id="provider-images-endpoint"
+                    v-model="modalState.form.imagesEndpoint"
+                    type="text"
+                    :placeholder="t('components.main.form.placeholders.imagesEndpoint')"
+                    :class="{ 'has-error': !!modalState.errors.protocolEndpoint, 'shake-error': shakeFields.protocolEndpoint }"
+                    :aria-invalid="!!modalState.errors.protocolEndpoint"
+                    data-testid="provider-images-endpoint"
+                  />
+                </div>
+
                 <div v-if="showGeminiEndpointField" class="form-field">
                   <div class="label-with-hint"><label for="provider-gemini-endpoint">{{ t('components.main.form.labels.geminiEndpoint') }}</label> <HelpHint :text="t('components.main.form.hints.geminiEndpoint')" /></div>
                   <BaseInput
@@ -738,12 +751,14 @@ const proxyStates = reactive<Record<ProviderTab, boolean>>({
   claude: false,
   'openai-responses': false,
   'openai-chat': false,
+  'openai-images': false,
   gemini: false,
 })
 const proxyBusy = reactive<Record<ProviderTab, boolean>>({
   claude: false,
   'openai-responses': false,
   'openai-chat': false,
+  'openai-images': false,
   gemini: false,
 })
 
@@ -752,11 +767,12 @@ const directAppliedIds = reactive<Record<ProviderTab, string | number | null>>({
   claude: null,
   'openai-responses': null,
   'openai-chat': null,
+  'openai-images': null,
   gemini: null,
 })
 
 const supportsDirectApply = (tab: ProviderTab) =>
-  tab !== 'openai-chat' && tab !== 'gemini'
+  tab !== 'openai-chat' && tab !== 'openai-images' && tab !== 'gemini'
 
 const refreshDirectAppliedStatus = async (tab: ProviderTab = activeTab.value) => {
   if (!supportsDirectApply(tab)) return
@@ -816,18 +832,21 @@ const providerStatsMap = reactive<Record<ProviderTab, Record<string, ProviderDai
   claude: {},
   'openai-responses': {},
   'openai-chat': {},
+  'openai-images': {},
   gemini: {},
 })
 const providerStatsLoading = reactive<Record<ProviderTab, boolean>>({
   claude: false,
   'openai-responses': false,
   'openai-chat': false,
+  'openai-images': false,
   gemini: false,
 })
 const providerStatsLoaded = reactive<Record<ProviderTab, boolean>>({
   claude: false,
   'openai-responses': false,
   'openai-chat': false,
+  'openai-images': false,
   gemini: false,
 })
 const providerStatsRequests: Partial<Record<ProviderTab, Promise<void>>> = {}
@@ -835,6 +854,7 @@ const providerStatsRequestVersions: Record<ProviderTab, number> = {
   claude: 0,
   'openai-responses': 0,
   'openai-chat': 0,
+  'openai-images': 0,
   gemini: 0,
 }
 let providerStatsTimer: number | undefined
@@ -850,6 +870,7 @@ const connectivityResultsMap = reactive<Record<ProviderTab, Record<number, Conne
   claude: {},
   'openai-responses': {},
   'openai-chat': {},
+  'openai-images': {},
   gemini: {},
 })
 
@@ -858,6 +879,7 @@ const availabilityResultsMap = reactive<Record<ProviderTab, Record<number, Provi
   claude: {},
   'openai-responses': {},
   'openai-chat': {},
+  'openai-images': {},
   gemini: {},
 })
 
@@ -935,6 +957,7 @@ const tabs = [
   { id: 'claude', label: 'Claude Code' },
   { id: 'openai-responses', label: 'OpenAI Responses' },
   { id: 'openai-chat', label: 'OpenAI Chat' },
+  { id: 'openai-images', label: 'OpenAI Images' },
   { id: 'gemini', label: 'Gemini' },
 ] as const
 type ProviderTab = (typeof tabs)[number]['id']
@@ -978,6 +1001,7 @@ const cards = reactive<Record<ProviderTab, AutomationCard[]>>({
   claude: [],
   'openai-responses': [],
   'openai-chat': [],
+  'openai-images': [],
   gemini: [],
 })
 const draggingTab = ref<ProviderTab | null>(null)
@@ -1069,6 +1093,7 @@ const serializeProviders = (providers: AutomationCard[]) =>
 cards.claude.splice(0, cards.claude.length, ...loadInitialProviders('claude'))
 cards['openai-responses'].splice(0, cards['openai-responses'].length, ...loadInitialProviders('openai-responses'))
 cards['openai-chat'].splice(0, cards['openai-chat'].length, ...loadInitialProviders('openai-chat'))
+cards['openai-images'].splice(0, cards['openai-images'].length, ...loadInitialProviders('openai-images'))
 cards.gemini.splice(0, cards.gemini.length, ...loadInitialProviders('gemini'))
 
 const persistProviders = async (tabId: ProviderTab): Promise<{ ok: boolean; error?: string }> => {
@@ -1622,6 +1647,7 @@ const defaultTestMessage = '这是一条测试消息，请回复"yes"'
 const getDefaultTestModel = (platform: ProviderTab) => {
   if (platform === 'claude') return 'claude-opus-4-8'
   if (platform === 'gemini') return 'gemini-2.5-flash'
+  if (platform === 'openai-images') return 'gpt-image-2'
   return 'gpt-5.5'
 }
 const providerTestMessage = ref(defaultTestMessage)
@@ -1651,21 +1677,25 @@ const shakeFields = reactive({
 const getDefaultEndpoint = (platform: string) => {
   const defaults: Record<string, string> = {
     claude: '/v1/messages',
-    'openai-responses': '/responses',
-    'openai-chat': '/chat/completions',
+    'openai-responses': '/v1/responses',
+    'openai-chat': '/v1/chat/completions',
+    'openai-images': '/v1/images/generations',
     gemini: '/v1beta/models/gemini-2.5-flash:generateContent',
   }
-  return defaults[platform] || '/chat/completions'
+  return defaults[platform] || '/v1/chat/completions'
 }
 
 const getDefaultProtocolEndpoint = (platform: string) => {
   const defaults: Record<string, string> = {
-    claude: '/messages',
-    'openai-responses': '/responses',
-    'openai-chat': '/chat/completions',
+    // 默认带 /v1 前缀：多数 OpenAI 兼容网关只在 /v1/* 下暴露协议端点。
+    // 若供应商 base URL 本身已含 /v1，relay 的 joinURL 会自动去重，不会拼成 /v1/v1/*。
+    claude: '/v1/messages',
+    'openai-responses': '/v1/responses',
+    'openai-chat': '/v1/chat/completions',
+    'openai-images': '/v1/images/generations',
     gemini: '/v1beta',
   }
-  return defaults[platform] || '/chat/completions'
+  return defaults[platform] || '/v1/chat/completions'
 }
 
 const currentProtocolEndpoint = () => {
@@ -1677,6 +1707,9 @@ const currentProtocolEndpoint = () => {
   }
   if (modalState.tabId === 'gemini') {
     return modalState.form.apiEndpoint || getDefaultEndpoint('gemini')
+  }
+  if (modalState.tabId === 'openai-images') {
+    return modalState.form.imagesEndpoint || ''
   }
   return modalState.form.chatEndpoint || ''
 }
@@ -1950,6 +1983,7 @@ type VendorForm = {
   apiEndpoint?: string
   responsesEndpoint?: string
   chatEndpoint?: string
+  imagesEndpoint?: string
   modelsEndpoint?: string
   maxConcurrency: string
   // === 可用性监控配置（新） ===
@@ -2005,6 +2039,7 @@ const defaultFormValues = (platform?: string): VendorForm => ({
   apiEndpoint: (platform === 'claude' || platform === 'gemini') ? getDefaultProtocolEndpoint(platform) : '',
   responsesEndpoint: platform === 'openai-responses' ? getDefaultProtocolEndpoint('openai-responses') : '',
   chatEndpoint: platform === 'openai-chat' ? getDefaultProtocolEndpoint('openai-chat') : '',
+  imagesEndpoint: platform === 'openai-images' ? getDefaultProtocolEndpoint('openai-images') : '',
   modelsEndpoint: '',
   maxConcurrency: String(defaultProviderMaxConcurrency),
   // 可用性监控配置（新）
@@ -2101,6 +2136,7 @@ const authTypeOptions = computed(() => [
 const showMessagesEndpointField = computed(() => modalState.tabId === 'claude')
 const showResponsesEndpointField = computed(() => modalState.tabId === 'openai-responses')
 const showChatEndpointField = computed(() => modalState.tabId === 'openai-chat')
+const showImagesEndpointField = computed(() => modalState.tabId === 'openai-images')
 const showGeminiEndpointField = computed(() => modalState.tabId === 'gemini')
 
 const protocolEndpointsForSave = () => ({
@@ -2112,6 +2148,9 @@ const protocolEndpointsForSave = () => ({
     : '',
   chatEndpoint: modalState.tabId === 'openai-chat'
     ? modalState.form.chatEndpoint || ''
+    : '',
+  imagesEndpoint: modalState.tabId === 'openai-images'
+    ? modalState.form.imagesEndpoint || ''
     : '',
 })
 
@@ -2158,6 +2197,7 @@ const openEditModal = (card: AutomationCard) => {
     apiEndpoint: card.apiEndpoint || '',
     responsesEndpoint: legacyResponsesEndpoint(card),
     chatEndpoint: legacyChatEndpoint(card),
+    imagesEndpoint: card.imagesEndpoint || '',
     modelsEndpoint: card.modelsEndpoint || '',
     maxConcurrency: String(normalizeProviderMaxConcurrency(card.maxConcurrency)),
     // 可用性监控配置（新）- 兼容从旧字段迁移
@@ -2299,6 +2339,7 @@ const submitModal = async (closeAfterSave = true): Promise<boolean> => {
       apiEndpoint: protocolEndpoints.apiEndpoint,
       responsesEndpoint: protocolEndpoints.responsesEndpoint,
       chatEndpoint: protocolEndpoints.chatEndpoint,
+      imagesEndpoint: protocolEndpoints.imagesEndpoint,
       modelsEndpoint: modalState.form.modelsEndpoint || '',
       maxConcurrency,
       // 可用性监控配置（新）
@@ -2338,6 +2379,7 @@ const submitModal = async (closeAfterSave = true): Promise<boolean> => {
       apiEndpoint: protocolEndpoints.apiEndpoint,
       responsesEndpoint: protocolEndpoints.responsesEndpoint,
       chatEndpoint: protocolEndpoints.chatEndpoint,
+      imagesEndpoint: protocolEndpoints.imagesEndpoint,
       modelsEndpoint: modalState.form.modelsEndpoint || '',
       maxConcurrency,
       // 可用性监控配置（新）
@@ -2447,6 +2489,7 @@ const handleDuplicate = (card: AutomationCard) => {
     apiEndpoint: card.apiEndpoint || '',
     responsesEndpoint: legacyResponsesEndpoint(card),
     chatEndpoint: legacyChatEndpoint(card),
+    imagesEndpoint: card.imagesEndpoint || '',
     modelsEndpoint: card.modelsEndpoint || '',
     maxConcurrency: String(normalizeProviderMaxConcurrency(card.maxConcurrency)),
     availabilityMonitorEnabled:

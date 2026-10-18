@@ -85,7 +85,9 @@ func captureResponseModel(data string, entry *ReqeustLog) {
 	if entry == nil {
 		return
 	}
-	for _, path := range []string{"response.model", "message.model", "model", "modelVersion"} {
+	// data.0.model 覆盖 OpenAI Images 协议：该协议把真实模型放在 data[0] 里，
+	// 顶层没有 model 字段，否则日志的「响应模型」列始终为空。
+	for _, path := range []string{"response.model", "message.model", "model", "data.0.model", "modelVersion"} {
 		value := gjson.Get(data, path)
 		if value.Type != gjson.String {
 			continue

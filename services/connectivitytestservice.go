@@ -216,6 +216,8 @@ func defaultEndpointForPlatform(platform string) string {
 		return "/responses"
 	case "openai-chat":
 		return "/chat/completions"
+	case "openai-images":
+		return "/images/generations"
 	case "gemini":
 		return "/v1beta/models/gemini-2.5-flash:generateContent"
 	default:
@@ -254,7 +256,8 @@ func resolveConnectivityEndpoint(provider *Provider, platform string) string {
 	return cts.getEffectiveEndpoint(provider, platform)
 }
 
-// connectivityPlatforms 需要做可用性巡检的平台列表
+// connectivityPlatforms 需要做可用性巡检的平台列表。
+// openai-images 有意不在其中：巡检请求会真实生成图片并计费，只支持手动探测。
 var connectivityPlatforms = []string{"claude", "openai-responses", "openai-chat", "gemini"}
 
 // loadProvidersForUser 按用户加载 provider；userID 为空时退回全局列表（后台巡检用）。
@@ -327,6 +330,18 @@ func (cts *ConnectivityTestService) buildTestRequest(platform string, provider *
 					},
 				},
 			},
+		}
+		data, _ := json.Marshal(reqBody)
+		return data
+	}
+
+	// Images 格式: /images/generations
+	// 注意：每次探测都会真实生成一张图，因此 Images 平台不加入后台巡检列表，
+	// 只允许用户手动触发。
+	if strings.Contains(endpoint, "/images/") {
+		reqBody := map[string]interface{}{
+			"model":  model,
+			"prompt": "hi",
 		}
 		data, _ := json.Marshal(reqBody)
 		return data
@@ -411,6 +426,8 @@ func (cts *ConnectivityTestService) getEffectiveModel(provider *Provider, platfo
 		return "gpt-5.1"
 	case "openai-chat":
 		return "gpt-5.1-mini"
+	case "openai-images":
+		return "gpt-image-2"
 	case "gemini":
 		return "gemini-2.5-flash"
 	default:

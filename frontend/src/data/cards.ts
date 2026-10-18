@@ -23,6 +23,8 @@ export type AutomationCard = {
   responsesEndpoint?: string
   // Chat Completions 协议端点（可选）
   chatEndpoint?: string
+  // Images 协议端点（可选）
+  imagesEndpoint?: string
   // 模型列表端点（可选）
   modelsEndpoint?: string
   // Provider 并发限制；99999 表示实际上不限
@@ -57,7 +59,7 @@ export function normalizeProviderMaxConcurrency(value?: number | string): number
   return Math.floor(parsed)
 }
 
-export const automationCardGroups: Record<'claude' | 'openai-responses' | 'openai-chat' | 'gemini', AutomationCard[]> = {
+export const automationCardGroups: Record<'claude' | 'openai-responses' | 'openai-chat' | 'openai-images' | 'gemini', AutomationCard[]> = {
   claude: [
     {
       id: 100,
@@ -118,6 +120,7 @@ export const automationCardGroups: Record<'claude' | 'openai-responses' | 'opena
     },
   ],
   'openai-chat': [],
+  'openai-images': [],
   gemini: [],
 }
 

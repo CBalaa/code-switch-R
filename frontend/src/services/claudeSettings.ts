@@ -6,7 +6,7 @@ export interface ClaudeProxyStatus {
   base_url: string
 }
 
-type Platform = 'claude' | 'openai-responses' | 'openai-chat' | 'gemini'
+type Platform = 'claude' | 'openai-responses' | 'openai-chat' | 'openai-images' | 'gemini'
 
 const serviceNames: Partial<Record<Platform, string>> = {
   claude: 'codeswitch/services.ClaudeSettingsService',

@@ -138,3 +138,14 @@ func TestForwardRequestPersistsRequestedAndResponseModels(t *testing.T) {
 		})
 	}
 }
+
+func TestCaptureResponseModelFromImagesPayload(t *testing.T) {
+	entry := &ReqeustLog{}
+	parseNonStreamingTokens(
+		[]byte(`{"data":[{"model":"gpt-image-2","b64_json":"aW1n"}],"usage":{"input_tokens":12,"output_tokens":301}}`),
+		"openai-images", entry,
+	)
+	if entry.ResponseModel != "gpt-image-2" {
+		t.Fatalf("ResponseModel = %q, want gpt-image-2", entry.ResponseModel)
+	}
+}

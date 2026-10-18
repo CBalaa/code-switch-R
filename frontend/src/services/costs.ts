@@ -197,7 +197,7 @@ for (const price of DEFAULT_MODEL_PRICES) {
 
 export const platformPriceGroup = (platform: string): 'claude' | 'openai' | 'unknown' => {
   if (platform === 'claude') return 'claude'
-  if (platform === 'openai-responses' || platform === 'openai-chat') return 'openai'
+  if (platform === 'openai-responses' || platform === 'openai-chat' || platform === 'openai-images') return 'openai'
   return 'unknown'
 }
 
