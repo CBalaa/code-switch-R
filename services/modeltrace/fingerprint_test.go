@@ -41,8 +41,8 @@ func TestAnalyzeAgainstGolden(t *testing.T) {
 	if err != nil {
 		t.Fatalf("加载指纹库失败: %v", err)
 	}
-	if len(bank.Models) != 16 {
-		t.Fatalf("指纹库模型数 = %d, 期望 16", len(bank.Models))
+	if len(bank.Models) != 18 {
+		t.Fatalf("指纹库模型数 = %d, 期望 18", len(bank.Models))
 	}
 
 	for _, testCase := range loadGolden(t) {
@@ -137,7 +137,7 @@ func TestBankContains(t *testing.T) {
 	if err != nil {
 		t.Fatalf("加载指纹库失败: %v", err)
 	}
-	for _, id := range []string{"gpt-5.4", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "claude-opus-4-8", "claude-opus-5-5", "claude-haiku-4-5-20251001"} {
+	for _, id := range []string{"gpt-5.4", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "claude-opus-4-8", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-haiku-4-5-20251001"} {
 		if !bank.ContainsModel(id) {
 			t.Errorf("指纹库应包含 %s", id)
 		}

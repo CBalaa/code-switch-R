@@ -408,14 +408,14 @@ func TestModelTraceSupportedModels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetSupportedModels 失败: %v", err)
 	}
-	if len(models) != 16 {
-		t.Fatalf("模型数 = %d, 期望 16", len(models))
+	if len(models) != 18 {
+		t.Fatalf("模型数 = %d, 期望 18", len(models))
 	}
 	ids := make(map[string]bool, len(models))
 	for _, model := range models {
 		ids[model.ID] = true
 	}
-	for _, id := range []string{"gpt-6-sol", "gpt-6-luna", "claude-opus-5-5"} {
+	for _, id := range []string{"gpt-6-sol", "gpt-6-luna", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"} {
 		if !ids[id] {
 			t.Errorf("模型列表缺少 %s", id)
 		}

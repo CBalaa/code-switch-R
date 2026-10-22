@@ -39,6 +39,9 @@ func TestResolveModelNormalization(t *testing.T) {
 		{"GPT-6-LUNA", "gpt-6-luna"},
 		{"claude-opus-5", "claude-opus-5"},
 		{"anthropic/claude-opus-5", "claude-opus-5"},
+		{"claude-sonnet-5-5", "claude-sonnet-5-5"},
+		{"anthropic/claude-haiku-5-5", "claude-haiku-5-5"},
+		{"claude-haiku-5-5-2026-01-31", "claude-haiku-5-5"},
 		// 库内 ID 是候选的前缀扩展：唯一命中即接受
 		{"claude-haiku-4-5", "claude-haiku-4-5-20251001"},
 	}
