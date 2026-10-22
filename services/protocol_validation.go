@@ -25,6 +25,8 @@ func validateProviderResponseProtocol(platform string, endpoint string, body []b
 		return validateClaudeMessageResponse(body)
 	case strings.Contains(endpoint, "/responses"):
 		return validateOpenAIResponsesResponse(body)
+	case strings.EqualFold(platform, "openai-images") || strings.Contains(endpoint, "/images/"):
+		return validateOpenAIImagesResponse(body)
 	default:
 		return validateOpenAIChatResponse(body)
 	}
@@ -109,6 +111,25 @@ func validateOpenAIResponsesResponse(body []byte) error {
 		return nil
 	}
 	return fmt.Errorf("Responses 响应缺少 status 或 output")
+}
+
+// validateOpenAIImagesResponse 校验 Images 协议响应：
+// 必须以 data 数组返回，且每张图至少带 b64_json 或 url 之一。
+func validateOpenAIImagesResponse(body []byte) error {
+	result := gjson.ParseBytes(body)
+	if result.Get("error").Exists() {
+		return fmt.Errorf("上游返回错误: %s", compactResponseForError(body))
+	}
+	data := result.Get("data")
+	if !data.IsArray() || len(data.Array()) == 0 {
+		return fmt.Errorf("Images 响应缺少 data 数组")
+	}
+	for _, item := range data.Array() {
+		if strings.TrimSpace(item.Get("b64_json").String()) != "" || strings.TrimSpace(item.Get("url").String()) != "" {
+			return nil
+		}
+	}
+	return fmt.Errorf("Images 响应缺少 b64_json/url")
 }
 
 func compactResponseForError(body []byte) string {

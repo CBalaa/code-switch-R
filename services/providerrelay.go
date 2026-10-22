@@ -1721,7 +1721,7 @@ func (prs *ProviderRelayService) buildProviderAttemptPlan(c *gin.Context, kind s
 // relay-key bindings explicitly.
 func (prs *ProviderRelayService) EnsureDefaultPoolsAndBindings() error {
 	// 确定每个 platform 的当前模式
-	platforms := []string{"claude", "openai-responses", "openai-chat", "gemini"}
+	platforms := []string{"claude", "openai-responses", "openai-chat", "openai-images", "gemini"}
 	seeds := make(map[string]DefaultPoolSeed)
 	platformDefaults := make(map[string]string)
 
@@ -1899,6 +1899,13 @@ func (prs *ProviderRelayService) registerRoutes(router gin.IRouter) {
 	router.POST("/chat/completions", codexAuth, prs.proxyHandler("openai-chat", "/chat/completions"))
 	router.POST("/v1/chat/completions", codexAuth, prs.proxyHandler("openai-chat", "/chat/completions"))
 
+	// Images 端点（OpenAI Images API）
+	// 文生图与图生图均为一次性 JSON 响应（图片以 base64 返回），不走流式。
+	router.POST("/v1/images/generations", codexAuth, prs.proxyHandler("openai-images", "/images/generations"))
+	router.POST("/images/generations", codexAuth, prs.proxyHandler("openai-images", "/images/generations"))
+	router.POST("/v1/images/edits", codexAuth, prs.proxyHandler("openai-images", "/images/edits"))
+	router.POST("/images/edits", codexAuth, prs.proxyHandler("openai-images", "/images/edits"))
+
 	// Gemini 端点
 	router.POST("/v1beta/models/*any", codexAuth, prs.proxyHandler("gemini", "/v1beta/models"))
 	router.POST("/v1/models/*any", codexAuth, prs.proxyHandler("gemini", "/v1/models"))
@@ -1945,6 +1952,11 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 		}
 
 		isStream := gjson.GetBytes(bodyBytes, "stream").Bool()
+		if kind == "openai-images" {
+			// Images 协议只返回一次性 JSON（图片以 base64 内联），
+			// 忽略客户端误传的 stream 标志，避免走 SSE 解析分支。
+			isStream = false
+		}
 		requestedModel := gjson.GetBytes(bodyBytes, "model").String()
 
 		targetEndpoint := endpoint
@@ -4954,6 +4966,21 @@ func hasContentInResponse(body []byte, kind string) bool {
 		return false
 	}
 	result := gjson.ParseBytes(body)
+
+	// OpenAI Images format：必须有真正可用的图片载荷才算有内容
+	// （b64_json 内联 base64 或 url 远端地址；data 为空数组视为空壳）
+	if kind == "openai-images" {
+		data := result.Get("data")
+		if !data.IsArray() {
+			return false
+		}
+		for _, item := range data.Array() {
+			if strings.TrimSpace(item.Get("b64_json").String()) != "" || strings.TrimSpace(item.Get("url").String()) != "" {
+				return true
+			}
+		}
+		return false
+	}
 
 	// Anthropic Messages format
 	if result.Get("type").String() == "message" {

@@ -24,6 +24,7 @@
           <option value="claude">Claude</option>
           <option value="openai-responses">OpenAI Responses</option>
           <option value="openai-chat">OpenAI Chat</option>
+          <option value="openai-images">OpenAI Images</option>
         </select>
       </div>
       <div class="filter-field">
@@ -211,7 +212,7 @@ const hasQueried = ref(false)
 const usageItems = ref<CostUsageItem[]>([])
 const settings = ref<CostSettings>(defaultCostSettings())
 const providerOptions = ref<string[]>([])
-const COST_PROVIDER_PLATFORMS: LogPlatform[] = ['claude', 'openai-responses', 'openai-chat']
+const COST_PROVIDER_PLATFORMS: LogPlatform[] = ['claude', 'openai-responses', 'openai-chat', 'openai-images']
 type ModelPriceDraft = { id: string; model: string; input: string; output: string; cache_read: string }
 const modelPriceDrafts = ref<ModelPriceDraft[]>([])
 const filters = reactive<{ platform: LogPlatform | ''; provider: string }>({ platform: '', provider: '' })

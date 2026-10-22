@@ -43,3 +43,30 @@ func TestValidateProviderResponseProtocolResponses(t *testing.T) {
 		t.Fatalf("expected Responses response to pass, got %v", err)
 	}
 }
+
+func TestValidateProviderResponseProtocolOpenAIImages(t *testing.T) {
+	ok := []byte(`{"created":1700000000,"data":[{"b64_json":"aW1hZ2U="}]}`)
+	if err := validateProviderResponseProtocol("openai-images", "/images/generations", ok); err != nil {
+		t.Fatalf("expected Images response to pass, got %v", err)
+	}
+
+	withURL := []byte(`{"data":[{"url":"https://example.com/a.png"}]}`)
+	if err := validateProviderResponseProtocol("openai-images", "/images/edits", withURL); err != nil {
+		t.Fatalf("expected Images url response to pass, got %v", err)
+	}
+
+	empty := []byte(`{"data":[]}`)
+	if err := validateProviderResponseProtocol("openai-images", "/images/generations", empty); err == nil {
+		t.Fatal("expected empty data array to fail Images protocol validation")
+	}
+
+	noPayload := []byte(`{"data":[{"revised_prompt":"a cat"}]}`)
+	if err := validateProviderResponseProtocol("openai-images", "/images/generations", noPayload); err == nil {
+		t.Fatal("expected data item without image payload to fail validation")
+	}
+
+	upstreamErr := []byte(`{"error":{"message":"model not found"}}`)
+	if err := validateProviderResponseProtocol("openai-images", "/images/generations", upstreamErr); err == nil {
+		t.Fatal("expected upstream error body to fail validation")
+	}
+}

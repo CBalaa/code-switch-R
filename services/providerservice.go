@@ -46,6 +46,10 @@ type Provider struct {
 	// 当入站请求为 /chat/completions 时优先使用。
 	ChatEndpoint string `json:"chatEndpoint,omitempty"`
 
+	// Images 协议端点（可选）
+	// 当入站请求为 /images/generations 或 /images/edits 时优先使用。
+	ImagesEndpoint string `json:"imagesEndpoint,omitempty"`
+
 	// 模型列表端点（可选）
 	// 用于模型监控页面拉取该供应商可用模型列表；留空默认使用 /v1/models。
 	ModelsEndpoint string `json:"modelsEndpoint,omitempty"`
@@ -143,6 +147,8 @@ func providerPlatformForPool(kind string) string {
 		return "openai-responses"
 	case "openai-chat", "openai_chat":
 		return "openai-chat"
+	case "openai-images", "openai_images":
+		return "openai-images"
 	case "gemini":
 		return "gemini"
 	default:
@@ -162,6 +168,8 @@ func providerFilePathInDir(dir string, kind string) (string, error) {
 		filename = "openai-responses.json"
 	case "openai-chat", "openai_chat":
 		filename = "openai-chat.json"
+	case "openai-images", "openai_images":
+		filename = "openai-images.json"
 	case "gemini":
 		filename = "gemini.json"
 	default:
@@ -803,6 +811,11 @@ func (p *Provider) endpointForRoute(defaultEndpoint string) string {
 	}
 	if strings.Contains(route, "/responses") {
 		if ep := strings.TrimSpace(p.ResponsesEndpoint); ep != "" {
+			return ep
+		}
+	}
+	if strings.Contains(route, "/images/generations") || strings.Contains(route, "/images/edits") {
+		if ep := strings.TrimSpace(p.ImagesEndpoint); ep != "" {
 			return ep
 		}
 	}
