@@ -69,10 +69,13 @@ test('Logs keeps a raw 105-row completed window before display filtering', async
 test('Claude provider creation defaults the test model to Claude Opus 4.8', async () => {
   const source = await readSource('../src/components/Main/Index.vue')
 
-  assert.match(
-    source,
-    /const getDefaultTestModel = \(platform: ProviderTab\) =>\s*platform === 'claude' \? 'claude-opus-4-8' : 'gpt-5\.5'/,
-  )
+  // 函数已从单行三元表达式演进为按平台返回；这里改为截取函数体做语义断言。
+  const defaultTestModelStart = source.indexOf('const getDefaultTestModel = (platform: ProviderTab) =>')
+  assert.notEqual(defaultTestModelStart, -1)
+  const defaultTestModelEnd = source.indexOf('\nconst ', defaultTestModelStart + 1)
+  const defaultTestModelSource = source.slice(defaultTestModelStart, defaultTestModelEnd)
+  assert.match(defaultTestModelSource, /if \(platform === 'claude'\) return 'claude-opus-4-8'/)
+  assert.match(defaultTestModelSource, /if \(platform === 'openai-images'\) return 'gpt-image-2'/)
 
   const createStart = source.indexOf('const openCreateModal = () =>')
   const createEnd = source.indexOf('\nconst openEditModal =', createStart)
@@ -80,12 +83,13 @@ test('Claude provider creation defaults the test model to Claude Opus 4.8', asyn
   assert.match(createHandler, /providerTestModel\.value = getDefaultTestModel\(activeTab\.value\)/)
 })
 
-test('Main only exposes the three supported provider platforms', async () => {
+test('Main exposes the supported provider platforms', async () => {
   const source = await readSource('../src/components/Main/Index.vue')
 
   assert.match(source, /\{ id: 'claude', label: 'Claude Code' \}/)
   assert.match(source, /\{ id: 'openai-responses', label: 'OpenAI Responses' \}/)
   assert.match(source, /\{ id: 'openai-chat', label: 'OpenAI Chat' \}/)
+  assert.match(source, /\{ id: 'openai-images', label: 'OpenAI Images' \}/)
   assert.doesNotMatch(source, /\{ id: 'others'/)
   assert.doesNotMatch(source, /CustomCliConfigEditor|customCliService|components\.main\.customCli/)
 })
