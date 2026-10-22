@@ -514,13 +514,13 @@
                     </div>
                   </div>
                   <div class="form-field">
-                    <label for="provider-test-message">{{ t('components.main.form.labels.testMessage') }}</label>
+                    <label for="provider-test-message">{{ isImagesPlatform ? t('components.main.form.labels.testPrompt') : t('components.main.form.labels.testMessage') }}</label>
                     <div class="field-with-action">
                       <BaseInput
                         id="provider-test-message"
                         v-model="providerTestMessage"
                         type="text"
-                        :placeholder="t('components.main.form.placeholders.testMessage')"
+                        :placeholder="isImagesPlatform ? t('components.main.form.placeholders.testPrompt') : t('components.main.form.placeholders.testMessage')"
                         data-testid="provider-test-message"
                       />
                       <button
@@ -530,16 +530,37 @@
                         data-testid="send-test-message"
                         @click="handleTestProtocolEndpoint"
                       >
-                        {{ testingProtocolEndpoint ? t('components.main.form.connectivity.testing') : t('components.main.form.connectivity.sendTestMessage') }}
+                        {{ testingProtocolEndpoint ? t('components.main.form.connectivity.testing') : (isImagesPlatform ? t('components.main.form.connectivity.sendTestPrompt') : t('components.main.form.connectivity.sendTestMessage')) }}
                       </button>
                     </div>
+                    <p v-if="isImagesPlatform" class="images-test-hint" data-testid="images-test-hint">
+                      {{ t('components.main.form.connectivity.imagesCostHint') }}
+                    </p>
                   </div>
                   <div v-if="protocolEndpointTestResult" class="field-test-output-group" data-testid="test-output">
                     <div class="field-test-output">
                       <div class="field-test-output-title">{{ t('components.main.form.connectivity.httpResponse') }}</div>
                       <pre>{{ protocolEndpointTestResult.httpResponse || protocolEndpointTestResult.message }}</pre>
                     </div>
-                    <div class="field-test-output">
+                    <div v-if="imagesTestPreview" class="field-test-output images-test-preview" data-testid="images-test-preview">
+                      <div class="field-test-output-title">{{ t('components.main.form.connectivity.imagesPreview') }}</div>
+                      <img
+                        class="images-test-preview-img"
+                        :src="imagesTestPreview.src"
+                        :alt="t('components.main.form.connectivity.imagesPreviewAlt')"
+                        loading="lazy"
+                      />
+                      <p v-if="imagesTestPreviewMeta.length" class="images-test-preview-meta">
+                        {{ imagesTestPreviewMeta.join(' · ') }}
+                      </p>
+                      <p v-if="imagesTestPreview.revisedPrompt" class="images-test-preview-revised">
+                        {{ t('components.main.form.connectivity.imagesPreviewRevised') }}{{ imagesTestPreview.revisedPrompt }}
+                      </p>
+                      <p v-if="imagesTestPreview.kind === 'url'" class="images-test-preview-meta">
+                        <a :href="imagesTestPreview.src" target="_blank" rel="noopener noreferrer">{{ imagesTestPreview.src }}</a>
+                      </p>
+                    </div>
+                    <div v-else class="field-test-output">
                       <div class="field-test-output-title">{{ t('components.main.form.connectivity.rawResult') }}</div>
                       <ReadOnlyJsonEditor
                         :value="protocolEndpointTestResult.rawResult || protocolEndpointTestResult.message"
@@ -1625,6 +1646,7 @@ const connectivityTestModelOptions = computed(() => {
     claude: ['claude-haiku-4-5-20251001', 'claude-sonnet-4-5-20250929'],
     'openai-responses': ['gpt-5.1', 'gpt-5.1-codex'],
     'openai-chat': ['gpt-5.1', 'gpt-5.1-mini'],
+    'openai-images': ['gpt-image-2'],
     gemini: ['gemini-2.5-flash', 'gemini-2.5-pro'],
   }
   return options[modalState.tabId] || options.claude
@@ -1644,6 +1666,11 @@ const connectivityTestResult = ref<{ success: boolean; message: string } | null>
 const testingProtocolEndpoint = ref(false)
 const testingModelsEndpoint = ref(false)
 const defaultTestMessage = '这是一条测试消息，请回复"yes"'
+// Images 平台没有 chat 语义：测试消息在这里充当生图提示词（prompt），
+// 默认值也换成一条低歧义的英文提示词，避免把中文聊天文本发给生图上游。
+const defaultImageTestPrompt = 'a red apple on a white background'
+const defaultTestMessageFor = (platform?: string) =>
+  platform === 'openai-images' ? defaultImageTestPrompt : defaultTestMessage
 const getDefaultTestModel = (platform: ProviderTab) => {
   if (platform === 'claude') return 'claude-opus-4-8'
   if (platform === 'gemini') return 'gemini-2.5-flash'
@@ -1659,6 +1686,87 @@ type ProtocolEndpointTestResult = {
   httpCode?: number
 }
 const protocolEndpointTestResult = ref<ProtocolEndpointTestResult | null>(null)
+
+// Images 平台测试结果预览：b64_json 内联渲染，url 直接展示远端图片。
+type ImagesTestPreview = {
+  src: string
+  kind: 'base64' | 'url'
+  bytes?: number
+  count: number
+  revisedPrompt?: string
+  inputTokens?: number
+  outputTokens?: number
+}
+const imagesTestPreview = ref<ImagesTestPreview | null>(null)
+
+const imageMimeFromBase64 = (b64: string) => {
+  if (b64.startsWith('/9j/')) return 'image/jpeg'
+  if (b64.startsWith('UklGR')) return 'image/webp'
+  return 'image/png'
+}
+
+const formatImageBytes = (bytes?: number) => {
+  if (!bytes || bytes <= 0) return ''
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`
+}
+
+const buildImagesTestPreview = (platform: string, rawResult: string): ImagesTestPreview | null => {
+  if (platform !== 'openai-images' || !rawResult) return null
+  let parsed: any
+  try {
+    parsed = JSON.parse(rawResult)
+  } catch {
+    return null
+  }
+  const data = parsed?.data
+  if (!Array.isArray(data) || data.length === 0) return null
+  const first = data[0] || {}
+  const b64 = typeof first.b64_json === 'string' ? first.b64_json.trim() : ''
+  const url = typeof first.url === 'string' ? first.url.trim() : ''
+  if (!b64 && !url) return null
+  const revisedPrompt = typeof first.revised_prompt === 'string' ? first.revised_prompt : ''
+  const usage = parsed?.usage
+  const inputTokens = typeof usage?.input_tokens === 'number' ? usage.input_tokens : undefined
+  const outputTokens = typeof usage?.output_tokens === 'number' ? usage.output_tokens : undefined
+  if (b64) {
+    const padding = (b64.match(/=+$/) || [''])[0].length
+    const bytes = Math.max(0, Math.floor((b64.length * 3) / 4) - padding)
+    return {
+      src: `data:${imageMimeFromBase64(b64)};base64,${b64}`,
+      kind: 'base64',
+      bytes,
+      count: data.length,
+      revisedPrompt,
+      inputTokens,
+      outputTokens,
+    }
+  }
+  return { src: url, kind: 'url', count: data.length, revisedPrompt, inputTokens, outputTokens }
+}
+
+const imagesTestPreviewMeta = computed(() => {
+  const preview = imagesTestPreview.value
+  if (!preview) return [] as string[]
+  const parts: string[] = [
+    preview.kind === 'base64'
+      ? t('components.main.form.connectivity.imagesPreviewBase64')
+      : t('components.main.form.connectivity.imagesPreviewUrl'),
+  ]
+  const bytesText = formatImageBytes(preview.bytes)
+  if (bytesText) parts.push(bytesText)
+  if (preview.count > 1) {
+    parts.push(t('components.main.form.connectivity.imagesPreviewCount', { count: preview.count }))
+  }
+  if (typeof preview.inputTokens === 'number' || typeof preview.outputTokens === 'number') {
+    parts.push(t('components.main.form.connectivity.imagesPreviewTokens', {
+      input: preview.inputTokens ?? 0,
+      output: preview.outputTokens ?? 0,
+    }))
+  }
+  return parts
+})
+
 const modelsEndpointTestResult = ref<{ success: boolean; message: string } | null>(null)
 const providerTestModel = ref('')
 const providerModelOptions = ref<string[]>([])
@@ -1808,10 +1916,11 @@ const getDefaultAuthType = (_platform: string) => 'bearer'
 const handleTestProtocolEndpoint = async () => {
   clearEndpointTestErrors()
   protocolEndpointTestResult.value = null
+  imagesTestPreview.value = null
   const apiUrl = ensureTestBaseURL()
   const apiKey = modalState.form.apiKey.trim()
   const endpoint = currentProtocolEndpoint()
-  const testMessage = providerTestMessage.value.trim() || defaultTestMessage
+  const testMessage = providerTestMessage.value.trim() || defaultTestMessageFor(modalState.tabId)
   if (!apiUrl) return
   if (!apiKey) {
     modalState.errors.apiKey = t('components.main.form.errors.required')
@@ -1850,6 +1959,7 @@ const handleTestProtocolEndpoint = async () => {
       httpResponse: result.httpResponse || '',
       httpCode: result.httpCode || 0,
     }
+    imagesTestPreview.value = buildImagesTestPreview(modalState.tabId, protocolEndpointTestResult.value.rawResult)
   } catch (error) {
     protocolEndpointTestResult.value = {
       success: false,
@@ -1857,6 +1967,7 @@ const handleTestProtocolEndpoint = async () => {
       rawResult: '',
       httpResponse: '',
     }
+    imagesTestPreview.value = null
   } finally {
     testingProtocolEndpoint.value = false
   }
@@ -2137,6 +2248,7 @@ const showMessagesEndpointField = computed(() => modalState.tabId === 'claude')
 const showResponsesEndpointField = computed(() => modalState.tabId === 'openai-responses')
 const showChatEndpointField = computed(() => modalState.tabId === 'openai-chat')
 const showImagesEndpointField = computed(() => modalState.tabId === 'openai-images')
+const isImagesPlatform = computed(() => modalState.tabId === 'openai-images')
 const showGeminiEndpointField = computed(() => modalState.tabId === 'gemini')
 
 const protocolEndpointsForSave = () => ({
@@ -2166,7 +2278,7 @@ const openCreateModal = () => {
   editingCard.value = null
   Object.assign(modalState.form, defaultFormValues(activeTab.value))
   providerTestModel.value = getDefaultTestModel(activeTab.value)
-  providerTestMessage.value = defaultTestMessage
+  providerTestMessage.value = defaultTestMessageFor(activeTab.value)
   providerModelOptions.value = []
   providerModelDropdownOpen.value = false
   // 初始化认证方式为平台默认
@@ -2222,7 +2334,7 @@ const openEditModal = (card: AutomationCard) => {
     card.availabilityConfig?.testModel ||
     card.connectivityTestModel ||
     getDefaultTestModel(activeTab.value)
-  providerTestMessage.value = defaultTestMessage
+  providerTestMessage.value = defaultTestMessageFor(activeTab.value)
   providerModelOptions.value = []
   providerModelDropdownOpen.value = false
   // 初始化认证方式状态
@@ -2512,7 +2624,7 @@ const handleDuplicate = (card: AutomationCard) => {
     card.availabilityConfig?.testModel ||
     card.connectivityTestModel ||
     getDefaultTestModel(activeTab.value)
-  providerTestMessage.value = defaultTestMessage
+  providerTestMessage.value = defaultTestMessageFor(activeTab.value)
   providerModelOptions.value = []
   providerModelDropdownOpen.value = false
 
@@ -3118,6 +3230,39 @@ const onTabDragEnd = () => {
 .field-test-output-title {
   font-size: 0.75rem;
   font-weight: 600;
+  color: var(--mac-text-secondary);
+}
+
+.images-test-hint {
+  margin: 2px 0 0;
+  font-size: 0.78rem;
+  color: var(--mac-text-secondary);
+}
+
+.images-test-preview-img {
+  display: block;
+  max-width: 100%;
+  max-height: 360px;
+  border: 1px solid var(--mac-border);
+  border-radius: 8px;
+  background: #fff;
+  object-fit: contain;
+}
+
+.images-test-preview-meta {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--mac-text-secondary);
+  word-break: break-all;
+}
+
+.images-test-preview-meta a {
+  color: #2563eb;
+}
+
+.images-test-preview-revised {
+  margin: 0;
+  font-size: 0.78rem;
   color: var(--mac-text-secondary);
 }
 

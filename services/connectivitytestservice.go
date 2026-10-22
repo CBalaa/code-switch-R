@@ -339,12 +339,7 @@ func (cts *ConnectivityTestService) buildTestRequest(platform string, provider *
 	// 注意：每次探测都会真实生成一张图，因此 Images 平台不加入后台巡检列表，
 	// 只允许用户手动触发。
 	if strings.Contains(endpoint, "/images/") {
-		reqBody := map[string]interface{}{
-			"model":  model,
-			"prompt": "hi",
-		}
-		data, _ := json.Marshal(reqBody)
-		return data
+		return buildImagesTestRequest(model, "hi")
 	}
 
 	// 默认 OpenAI 格式: /chat/completions
@@ -356,6 +351,20 @@ func (cts *ConnectivityTestService) buildTestRequest(platform string, provider *
 		},
 	}
 	data, _ := json.Marshal(reqBody)
+	return data
+}
+
+// buildImagesTestRequest 构造 Images 协议请求体。
+// Images API 没有 chat 语义，测试消息在探测时充当生成提示词 prompt。
+func buildImagesTestRequest(model, prompt string) []byte {
+	prompt = strings.TrimSpace(prompt)
+	if prompt == "" {
+		prompt = "a simple test image"
+	}
+	data, _ := json.Marshal(map[string]interface{}{
+		"model":  model,
+		"prompt": prompt,
+	})
 	return data
 }
 
@@ -875,7 +884,13 @@ func (cts *ConnectivityTestService) testProviderManual(
 	}
 	defer resp.Body.Close()
 
-	body, readErr := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
+	// 生图响应把图片以 base64 内联，通常是 MB 级；按平台放宽读取上限，
+	// 否则 rawResult 被截断后前端无法解析 data[0].b64_json 做预览。
+	responseLimit := int64(1024 * 1024)
+	if strings.EqualFold(platform, "openai-images") {
+		responseLimit = 16 << 20
+	}
+	body, readErr := io.ReadAll(io.LimitReader(resp.Body, responseLimit))
 	if readErr != nil {
 		body = []byte(fmt.Sprintf("读取响应失败: %v", readErr))
 	}
@@ -948,6 +963,12 @@ func (cts *ConnectivityTestService) buildTestRequestWithMessage(platform string,
 		}
 		data, _ := json.Marshal(reqBody)
 		return data
+	}
+
+	// Images 格式：/images/generations 或 /images/edits。
+	// 使用测试消息作为 prompt；真实生图上游缺少 prompt 会直接 400。
+	if strings.Contains(endpoint, "/images/") {
+		return buildImagesTestRequest(model, testMessage)
 	}
 
 	reqBody := map[string]interface{}{
