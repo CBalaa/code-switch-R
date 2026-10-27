@@ -262,7 +262,8 @@ func (mts *ModelTraceService) VerifyProviderModel(
 	}
 	// 归一化：容忍 vendor 前缀（openai/gpt-5.4）与日期后缀（gpt-5.4-2026-01-31）。
 	// 归一化失败一律报错而不是当成 mismatch——把没见过的名字判成"偷换"是误报。
-	if _, ok := bank.ResolveModel(expectedModel); !ok {
+	expectedIdentity, ok := bank.ResolveModel(expectedModel)
+	if !ok {
 		return ModelTraceResult{
 			ExpectedModel: expectedModel,
 			Verdict:       "error",
@@ -305,20 +306,11 @@ func (mts *ModelTraceService) VerifyProviderModel(
 		}
 	}
 
-	// 模型映射生效：外部模型名 -> provider 实际请求的内部模型名
+	// 模型映射只决定上游请求名；指纹比对仍使用用户选择的标准模型身份。
+	// 映射目标可以是供应商的任意别名，不要求它也出现在指纹库中。
 	apiModel := strings.TrimSpace(provider.GetEffectiveModel(expectedModel))
 	if apiModel == "" {
 		apiModel = expectedModel
-	}
-	requestModel, ok := bank.ResolveModel(apiModel)
-	if !ok {
-		return ModelTraceResult{
-			Verdict:       "error",
-			ExpectedModel: expectedModel,
-			Message: fmt.Sprintf(
-				"该供应商把 %s 映射为 %s，映射目标不在指纹库覆盖范围内，无法比对真伪",
-				expectedModel, apiModel),
-		}
 	}
 
 	// 每次调用一个会话 ID，前端据此过滤进度事件
@@ -352,9 +344,8 @@ func (mts *ModelTraceService) VerifyProviderModel(
 		return result
 	}
 
-	// 比对对象是映射后的 requestModel（provider 实际转发的模型）。
-	// 与外部名 expectedModel 比对会把用户自己配置的映射误判为"偷换"。
-	result.ExpectedMatched = result.TopModel == requestModel
+	// 供应商别名只用于请求，不能改变用户期望检测的模型身份。
+	result.ExpectedMatched = result.TopModel == expectedIdentity
 	if result.ExpectedMatched {
 		result.Verdict = "match"
 		mts.emitProgress(run, "done", attempts, "检测完成：身份一致")

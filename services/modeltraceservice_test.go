@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 
@@ -115,29 +116,6 @@ func TestExtractResponsesText(t *testing.T) {
 	}
 }
 
-func TestVerifyProviderModelMappingOutOfBank(t *testing.T) {
-	// 模型映射目标不在指纹库内 -> 应报 error 而非 mismatch
-	tmpHome := t.TempDir()
-	t.Setenv("HOME", tmpHome)
-	ps := NewProviderService()
-	if err := ps.SaveProviders("claude", []Provider{
-		{
-			ID:             7,
-			Name:           "mapper",
-			APIURL:         "https://example.com",
-			MaxConcurrency: 1,
-			ModelMapping:   map[string]string{"gpt-5.4": "gpt-4o-mini"},
-		},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	svc := NewModelTraceService(ps)
-	result := svc.VerifyProviderModel("", "claude", 7, "gpt-5.4")
-	if result.Verdict != "error" {
-		t.Errorf("映射目标不在库内应报 error, got %v (msg=%s)", result.Verdict, result.Message)
-	}
-}
-
 func TestVerifyProviderModelRejectsModelOutsideProviderWhitelist(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	ps := NewProviderService()
@@ -210,6 +188,102 @@ func TestVerifyProviderModelSendsMappedUpstreamModel(t *testing.T) {
 		if model != "gpt-6-astra" {
 			t.Fatalf("上游请求模型应为映射目标 gpt-6-astra，got %q", model)
 		}
+	}
+}
+
+func TestVerifyProviderModelUsesProviderMappingsForDetection(t *testing.T) {
+	const canonicalModel = "claude-opus-5-5"
+	data, err := os.ReadFile("modeltrace/testdata/golden.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixtures []struct {
+		ExpectedModel string              `json:"expected_model"`
+		Prediction    string              `json:"prediction"`
+		Outputs       []modeltrace.Output `json:"outputs"`
+	}
+	if err := json.Unmarshal(data, &fixtures); err != nil {
+		t.Fatal(err)
+	}
+	var output string
+	for _, fixture := range fixtures {
+		if fixture.ExpectedModel == canonicalModel && fixture.Prediction == canonicalModel && len(fixture.Outputs) == 1 {
+			output = fixture.Outputs[0].Text
+			break
+		}
+	}
+	if output == "" {
+		t.Fatal("缺少 Claude Opus 5.5 的单次挑战指纹样本")
+	}
+	responseBody, err := json.Marshal(map[string]interface{}{
+		"content":     []map[string]string{{"type": "text", "text": output}},
+		"stop_reason": "end_turn",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name            string
+		external        string
+		mappingSource   string
+		mappingTarget   string
+		upstream        string
+		expectedVerdict string
+	}{
+		{"screenshot mapping", canonicalModel, canonicalModel, "Claude-Opus-5.5", "Claude-Opus-5.5", "match"},
+		{"arbitrary supplier alias", canonicalModel, canonicalModel, "supplier-premium-route", "supplier-premium-route", "match"},
+		{"vendor prefix", canonicalModel, canonicalModel, "anthropic/Claude-Opus-5.5", "anthropic/Claude-Opus-5.5", "match"},
+		{"wildcard mapping", canonicalModel, "claude-opus-*", "supplier/opus-*", "supplier/opus-5-5", "match"},
+		{"normalized expected identity", "anthropic/claude-opus-5-5-2026-01-31", "anthropic/claude-opus-5-5-2026-01-31", "supplier-premium-route", "supplier-premium-route", "match"},
+		{"different identity in bank", "claude-opus-5", "claude-opus-5", canonicalModel, canonicalModel, "mismatch"},
+		{"different identity outside bank", "gpt-5.4", "gpt-5.4", "gpt-4o-mini", "gpt-4o-mini", "mismatch"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			ps := NewProviderService()
+			if err := ps.SaveProvidersForUser("gsh", "claude", []Provider{{
+				ID: 23, Name: "mapped-claude", APIURL: "https://upstream.example", APIKey: "test-key",
+				MaxConcurrency:  1,
+				SupportedModels: map[string]bool{tc.upstream: true},
+				ModelMapping:    map[string]string{tc.mappingSource: tc.mappingTarget},
+			}}); err != nil {
+				t.Fatal(err)
+			}
+			var requestedModels []string
+			svc := NewModelTraceService(ps)
+			svc.client = &http.Client{Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+				var payload struct {
+					Model string `json:"model"`
+				}
+				if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+					return nil, err
+				}
+				requestedModels = append(requestedModels, payload.Model)
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{"application/json"}},
+					Body:       io.NopCloser(strings.NewReader(string(responseBody))),
+					Request:    req,
+				}, nil
+			})}
+
+			result := svc.VerifyProviderModel("gsh", "claude", 23, tc.external)
+			if !result.Success || result.Verdict != tc.expectedVerdict || result.ExpectedMatched != (tc.expectedVerdict == "match") || result.TopModel != canonicalModel {
+				t.Fatalf("应按映射发起请求、按用户期望的身份比对（%s），got %+v", tc.expectedVerdict, result)
+			}
+			if result.ExpectedModel != tc.external {
+				t.Fatalf("结果应保留外部模型名 %q，got %q", tc.external, result.ExpectedModel)
+			}
+			if len(requestedModels) == 0 {
+				t.Fatal("未向上游发起挑战请求")
+			}
+			for _, model := range requestedModels {
+				if model != tc.upstream {
+					t.Fatalf("请求应保留映射目标原名 %q，got %q", tc.upstream, model)
+				}
+			}
+		})
 	}
 }
 
