@@ -349,6 +349,29 @@
 
           <!-- 号池配置摘要 -->
           <div v-else class="account-pool-summary">
+            <section class="account-schedule-summary" :aria-label="t('components.main.pool.scheduleTitle')">
+              <div class="account-schedule-heading">
+                <span class="account-summary-label">{{ t('components.main.pool.scheduleTitle') }}</span>
+                <span
+                  class="account-schedule-status"
+                  :class="scheduleStatusClass(pool.id)"
+                  role="status"
+                  :data-pool-id="pool.id"
+                  data-testid="pool-hours-state"
+                >{{ scheduleStatusLabel(pool.id) }}</span>
+              </div>
+              <template v-if="pool.accountPoolConfig?.schedule?.enabled">
+                <div v-for="weekday in scheduleWeekdays" :key="weekday" class="account-schedule-summary-day">
+                  <span>{{ scheduleWeekdayLabel(weekday) }}</span>
+                  <span>{{ scheduleDaySummary(pool, weekday) }}</span>
+                </div>
+                <p v-if="scheduleStatuses[pool.id]?.nextChangeAt" class="form-field-hint">
+                  {{ t('components.main.pool.scheduleNextChange', { time: formatScheduleChange(scheduleStatuses[pool.id]?.nextChangeAt) }) }}
+                </p>
+                <p class="form-field-hint">{{ t('components.main.pool.scheduleTimezone') }}</p>
+              </template>
+              <p v-else class="form-field-hint">{{ t('components.main.pool.scheduleDisabledHint') }}</p>
+            </section>
             <div class="account-pool-endpoint">
               <span class="account-summary-label">{{ t('components.main.pool.accountPoolBaseUrl') }}</span>
               <span class="account-summary-value">{{ pool.accountPoolConfig?.apiUrl || '-' }}</span>
@@ -685,6 +708,60 @@
 
           <!-- 号池上游与密钥配置 -->
           <template v-if="poolModalState.form.poolType === 'account'">
+            <section class="pool-schedule-editor" :aria-label="t('components.main.pool.scheduleTitle')">
+              <div class="pool-member-checkbox">
+                <input
+                  id="pool-hours-toggle"
+                  v-model="poolModalState.form.accountSchedule.enabled"
+                  type="checkbox"
+                  data-testid="pool-hours-enabled"
+                />
+                <label class="member-checkbox-label" for="pool-hours-toggle">{{ t('components.main.pool.scheduleEnable') }}</label>
+              </div>
+              <p class="form-field-hint">{{ t('components.main.pool.scheduleHint') }}</p>
+              <p v-if="!poolModalState.form.accountSchedule.enabled" class="form-field-hint">{{ t('components.main.pool.scheduleDisabledHint') }}</p>
+              <div v-if="poolModalState.form.accountSchedule.enabled || poolModalState.form.accountSchedule.windows.length > 0" class="pool-schedule-days">
+                <div v-for="weekday in scheduleWeekdays" :key="weekday" class="pool-schedule-day" :data-weekday="weekday">
+                  <div class="pool-schedule-day-heading">
+                    <span class="pool-schedule-weekday">{{ scheduleWeekdayLabel(weekday) }}</span>
+                    <button class="pool-schedule-button" type="button" :data-weekday="weekday" data-testid="pool-hours-add" @click="addScheduleWindow(weekday)">
+                      {{ t('components.main.pool.scheduleAdd') }}
+                    </button>
+                    <button class="pool-schedule-button" type="button" :disabled="scheduleWindowsForDay(weekday).length === 0" :data-weekday="weekday" data-testid="pool-hours-copy-open" @click="openScheduleCopy(weekday)">
+                      {{ t('components.main.pool.scheduleCopy') }}
+                    </button>
+                  </div>
+                  <p v-if="scheduleWindowsForDay(weekday).length === 0" class="form-field-hint">{{ t('components.main.pool.scheduleDayClosed') }}</p>
+                  <div v-for="(window, index) in scheduleWindowsForDay(weekday)" :key="index" class="pool-schedule-window" :data-window-index="index">
+                    <div class="pool-schedule-time-field">
+                      <label :for="`pool-hours-${weekday}-${index}-start`">{{ t('components.main.pool.scheduleStart') }}</label>
+                      <input :id="`pool-hours-${weekday}-${index}-start`" v-model="window.startTime" class="mac-input" type="time" step="60" required :data-weekday="weekday" :data-window-index="index" data-testid="pool-hours-start" />
+                    </div>
+                    <span class="pool-schedule-separator" aria-hidden="true">–</span>
+                    <div class="pool-schedule-time-field">
+                      <label :for="`pool-hours-${weekday}-${index}-end`">{{ t('components.main.pool.scheduleEnd') }}</label>
+                      <input :id="`pool-hours-${weekday}-${index}-end`" v-model="window.endTime" class="mac-input" type="time" step="60" required :data-weekday="weekday" :data-window-index="index" data-testid="pool-hours-end" />
+                    </div>
+                    <button class="pool-schedule-button pool-schedule-remove" type="button" :aria-label="t('components.main.pool.scheduleRemoveLabel', { day: scheduleWeekdayLabel(weekday), index: index + 1 })" :data-weekday="weekday" :data-window-index="index" data-testid="pool-hours-remove" @click="removeScheduleWindow(window)">
+                      {{ t('components.main.pool.scheduleRemove') }}
+                    </button>
+                  </div>
+                  <div v-if="scheduleCopySource === weekday" class="pool-schedule-copy">
+                    <p class="form-field-hint">{{ t('components.main.pool.scheduleCopyHint', { day: scheduleWeekdayLabel(weekday) }) }}</p>
+                    <div class="pool-schedule-copy-targets">
+                      <div v-for="target in scheduleWeekdays.filter((day) => day !== weekday)" :key="target" class="pool-member-checkbox">
+                        <input :id="`pool-hours-copy-${target}`" v-model="scheduleCopyTargets" type="checkbox" :value="target" :data-weekday="target" data-testid="pool-hours-copy-target" />
+                        <label :for="`pool-hours-copy-${target}`">{{ scheduleWeekdayLabel(target) }}</label>
+                      </div>
+                    </div>
+                    <div class="pool-schedule-copy-actions">
+                      <button class="pool-schedule-button" type="button" :disabled="scheduleCopyTargets.length === 0 || scheduleWindowsForDay(weekday).length === 0" data-testid="pool-hours-copy-apply" @click="applyScheduleCopy">{{ t('components.main.pool.scheduleCopyApply') }}</button>
+                      <button class="pool-schedule-button" type="button" data-testid="pool-hours-copy-cancel" @click="scheduleCopySource = null">{{ t('components.main.form.actions.cancel') }}</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
             <div class="form-field">
               <label for="pool-account-api-url">{{ t('components.main.pool.accountPoolBaseUrl') }}</label>
               <input
@@ -1314,7 +1391,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, onActivated, onDeactivated, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseButton from '../common/BaseButton.vue'
 import BaseModal from '../common/BaseModal.vue'
@@ -1338,6 +1415,10 @@ import {
   UnhideProxyConfig,
   TestProxy,
   GetProxySpeedTests,
+  GetAccountPoolScheduleStatuses,
+  type AccountPoolSchedule,
+  type AccountPoolScheduleWindow,
+  type AccountPoolScheduleStatus,
   type AccountPoolKey,
   type AccountPoolProxySelection,
   type ProxyConfigSummary,
@@ -1357,12 +1438,21 @@ import {
   normalizeSpecialRuleForm,
   type SpecialBlacklistRuleError,
 } from '../../utils/specialBlacklistRules'
+import {
+  ACCOUNT_POOL_WEEKDAYS,
+  accountPoolScheduleForm,
+  accountPoolScheduleSignature,
+  buildAccountPoolSchedulePayload,
+  copyAccountPoolScheduleDay,
+  nextAccountPoolScheduleRefreshDelay,
+  type AccountPoolScheduleError,
+} from '../../utils/accountPoolSchedule'
 import { fetchAppSettings } from '../../services/appSettings'
 import type { AutomationCard } from '../../data/cards'
 import { showToast } from '../../utils/toast'
 import ProviderInfoPanel from './ProviderInfoPanel.vue'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const props = defineProps<{
   platform: string
@@ -1407,6 +1497,7 @@ interface PoolFormState {
   accountApiUrl: string
   accountEndpoint: string
   accountKeysText: string
+  accountSchedule: AccountPoolSchedule
   proxyEnabled: boolean
   proxySelection: AccountPoolProxySelection
   proxyNodeId: string
@@ -1456,6 +1547,7 @@ const createEmptyPoolForm = (platform: string): PoolFormState => ({
   accountApiUrl: '',
   accountEndpoint: defaultAccountPoolEndpoint(platform),
   accountKeysText: '',
+  accountSchedule: accountPoolScheduleForm(),
   proxyEnabled: false,
   proxySelection: 'none',
   proxyNodeId: '',
@@ -1479,6 +1571,132 @@ const poolModalState = reactive<{
   editingId: '',
   form: createEmptyPoolForm(props.platform),
 })
+
+const scheduleWeekdays = ACCOUNT_POOL_WEEKDAYS
+const scheduleWeekdayKeys = ['weekdayMon', 'weekdayTue', 'weekdayWed', 'weekdayThu', 'weekdayFri', 'weekdaySat', 'weekdaySun']
+const scheduleWeekdayLabel = (weekday: number) => t(`components.general.label.${scheduleWeekdayKeys[weekday - 1]}`)
+const scheduleCopySource = ref<number | null>(null)
+const scheduleCopyTargets = ref<number[]>([])
+const scheduleErrorKeys: Record<AccountPoolScheduleError, string> = {
+  weekday: 'components.main.pool.scheduleInvalidWeekday',
+  time: 'components.main.pool.scheduleInvalidTime',
+  overnight: 'components.main.pool.scheduleOvernight',
+  empty: 'components.main.pool.scheduleEmpty',
+}
+const scheduleWindowsForDay = (weekday: number) =>
+  poolModalState.form.accountSchedule.windows.filter((window) => window.weekday === weekday)
+const addScheduleWindow = (weekday: number) => {
+  poolModalState.form.accountSchedule.windows.push({ weekday, startTime: '18:00', endTime: '23:59' })
+}
+const removeScheduleWindow = (window: AccountPoolScheduleWindow) => {
+  const windows = poolModalState.form.accountSchedule.windows
+  const index = windows.indexOf(window)
+  if (index >= 0) windows.splice(index, 1)
+}
+const openScheduleCopy = (weekday: number) => {
+  scheduleCopySource.value = weekday
+  scheduleCopyTargets.value = []
+}
+const applyScheduleCopy = () => {
+  if (scheduleCopySource.value === null || scheduleCopyTargets.value.length === 0) return
+  if (scheduleWindowsForDay(scheduleCopySource.value).length === 0) return
+  poolModalState.form.accountSchedule = copyAccountPoolScheduleDay(
+    poolModalState.form.accountSchedule,
+    scheduleCopySource.value,
+    scheduleCopyTargets.value,
+  )
+  scheduleCopySource.value = null
+  scheduleCopyTargets.value = []
+}
+
+const scheduleStatuses = ref<Record<string, AccountPoolScheduleStatus>>({})
+let schedulePageActive = true
+let scheduleDisposed = false
+let scheduleStatusGeneration = 0
+let scheduleStatusRequestGeneration: number | undefined
+let scheduleStatusInterval: number | undefined
+let scheduleBoundaryTimer: number | undefined
+const canPollScheduleStatuses = () =>
+  !scheduleDisposed && schedulePageActive && !document.hidden && subTab.value === 'pools'
+  && pools.value.some((pool) => pool.platform === props.platform && pool.poolType === 'account')
+
+const clearScheduleBoundaryTimer = () => {
+  if (scheduleBoundaryTimer !== undefined) window.clearTimeout(scheduleBoundaryTimer)
+  scheduleBoundaryTimer = undefined
+}
+
+const refreshScheduleStatuses = async () => {
+  if (!canPollScheduleStatuses()) return
+  const generation = scheduleStatusGeneration
+  if (scheduleStatusRequestGeneration === generation) return
+  scheduleStatusRequestGeneration = generation
+  const requestStartedAt = performance.now()
+  try {
+    const snapshot = await GetAccountPoolScheduleStatuses(props.platform)
+    if (generation !== scheduleStatusGeneration || !canPollScheduleStatuses()) return
+    clearScheduleBoundaryTimer()
+    const delay = nextAccountPoolScheduleRefreshDelay(snapshot, performance.now() - requestStartedAt)
+    // A slow response may already describe the previous period. Keep the badge
+    // unknown and requery immediately instead of briefly publishing stale data.
+    scheduleStatuses.value = delay === 0 ? {} : Object.fromEntries(snapshot.statuses.map((status) => [status.poolId, status]))
+    if (delay !== null) {
+      scheduleBoundaryTimer = window.setTimeout(() => {
+        scheduleBoundaryTimer = undefined
+        scheduleStatuses.value = {}
+        void refreshScheduleStatuses()
+      }, delay)
+    }
+  } catch {
+    if (generation === scheduleStatusGeneration) {
+      scheduleStatuses.value = {}
+      clearScheduleBoundaryTimer()
+    }
+  } finally {
+    if (scheduleStatusRequestGeneration === generation) scheduleStatusRequestGeneration = undefined
+  }
+}
+
+const stopScheduleStatusPolling = () => {
+  scheduleStatusGeneration += 1
+  if (scheduleStatusInterval !== undefined) window.clearInterval(scheduleStatusInterval)
+  scheduleStatusInterval = undefined
+  clearScheduleBoundaryTimer()
+}
+const syncScheduleStatusPolling = () => {
+  stopScheduleStatusPolling()
+  scheduleStatuses.value = {}
+  if (!canPollScheduleStatuses()) return
+  void refreshScheduleStatuses()
+  scheduleStatusInterval = window.setInterval(() => void refreshScheduleStatuses(), 60_000)
+}
+const handleScheduleVisibilityChange = () => syncScheduleStatusPolling()
+const scheduleStatusClass = (poolID: string): string => {
+  const status = scheduleStatuses.value[poolID]
+  return status ? status.isOpen ? 'is-open' : 'is-closed' : 'is-unknown'
+}
+const scheduleStatusLabel = (poolID: string): string => {
+  const status = scheduleStatuses.value[poolID]
+  if (!status) return t('components.main.pool.scheduleStatusUnknown')
+  if (!status.enabled) return t('components.main.pool.scheduleStatusUnrestricted')
+  return t(status.isOpen ? 'components.main.pool.scheduleStatusOpen' : 'components.main.pool.scheduleStatusClosed')
+}
+const scheduleDaySummary = (pool: ProviderPool, weekday: number): string => {
+  const windows = (pool.accountPoolConfig?.schedule?.windows ?? [])
+    .filter((window) => window.weekday === weekday)
+    .sort((a, b) => a.startTime.localeCompare(b.startTime) || a.endTime.localeCompare(b.endTime))
+  return windows.length
+    ? windows.map((window) => `${window.startTime}–${window.endTime}`).join(' / ')
+    : t('components.main.pool.scheduleDayClosed')
+}
+const formatScheduleChange = (value?: string): string => {
+  if (!value) return ''
+  const date = new Date(value)
+  if (!Number.isFinite(date.getTime())) return ''
+  return new Intl.DateTimeFormat(locale.value === 'zh' ? 'zh-CN' : 'en-US', {
+    timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).format(date)
+}
 
 const proxyConfigs = ref<ProxyConfigSummary[]>([])
 const hiddenProxyConfigs = ref<ProxyConfigSummary[]>([])
@@ -2115,6 +2333,7 @@ const loadPools = async () => {
     const nextPools = await ListPools(props.platform)
     if (generation !== poolLoadGeneration) return
     pools.value = nextPools
+    syncScheduleStatusPolling()
     await loadBlacklistStatus(generation)
   } catch (error) {
     console.error('Failed to load pools:', error)
@@ -2279,6 +2498,8 @@ const updateMemberLevel = async (poolID: string, providerId: number, level: numb
 
 const openCreatePool = () => {
 	poolModalGeneration += 1
+  scheduleCopySource.value = null
+  scheduleCopyTargets.value = []
   invalidateAllProxyTests()
   poolModalState.editingId = ''
   poolModalState.form = createEmptyPoolForm(props.platform)
@@ -2287,6 +2508,8 @@ const openCreatePool = () => {
 
 const openEditPool = (pool: ProviderPool) => {
 	poolModalGeneration += 1
+  scheduleCopySource.value = null
+  scheduleCopyTargets.value = []
   const endpoint = pool.accountPoolConfig ? readAccountPoolEndpoint(pool) : ''
   const targetURL = pool.accountPoolConfig
     ? `${pool.accountPoolConfig.apiUrl.trim().replace(/\/+$/, '')}/${endpoint.replace(/^\/+/, '')}`
@@ -2310,6 +2533,7 @@ const openEditPool = (pool: ProviderPool) => {
     accountApiUrl: pool.accountPoolConfig?.apiUrl ?? '',
     accountEndpoint: readAccountPoolEndpoint(pool),
     accountKeysText: (pool.accountPoolConfig?.keys ?? []).map((key) => key.apiKey).join('\n'),
+    accountSchedule: accountPoolScheduleForm(pool.accountPoolConfig?.schedule),
     proxyEnabled: pool.proxyConfig?.enabled ?? false,
     proxySelection: pool.proxyConfig?.selection === 'node' ? 'node' : pool.proxyConfig?.enabled ? 'auto' : 'none',
     proxyNodeId: pool.proxyConfig?.proxyNodeId ?? '',
@@ -2470,6 +2694,7 @@ const poolConfigSignature = (pool: Partial<ProviderPool>) => {
             ? accountPoolConfig?.chatEndpoint
             : accountPoolConfig?.responsesEndpoint)?.trim() ?? '',
           keys: (accountPoolConfig?.keys ?? []).map((key) => key.apiKey),
+          schedule: accountPoolScheduleSignature(accountPoolConfig?.schedule),
         }
       : undefined,
   })
@@ -2518,6 +2743,11 @@ const submitPoolModal = async (closeAfterSave = true): Promise<boolean> => {
   }
 
   if (poolType === 'account') {
+    const schedulePayload = buildAccountPoolSchedulePayload(poolModalState.form.accountSchedule)
+    if (schedulePayload.error) {
+      showToast(t(scheduleErrorKeys[schedulePayload.error]), 'error')
+      return false
+    }
     const parsedKeys = parseAccountKeys(poolModalState.form.accountKeysText)
     if (parsedKeys.length === 0) {
       showToast(t('components.main.pool.accountPoolKeysRequired'), 'error')
@@ -2552,6 +2782,7 @@ const submitPoolModal = async (closeAfterSave = true): Promise<boolean> => {
         id: existingKeysBySecret.get(apiKey)?.id ?? 0,
         apiKey,
       })),
+      schedule: schedulePayload.schedule,
     }
   } else {
     const mode = poolModalState.form.mode
@@ -2733,10 +2964,24 @@ const confirmDeletePool = async () => {
 
 onMounted(() => {
   void loadPools()
+  document.addEventListener('visibilitychange', handleScheduleVisibilityChange)
   unsubscribeBlacklistChanged = Events.On('provider:blacklist:changed', handleProviderBlacklistChanged)
 })
 
+onActivated(() => {
+  schedulePageActive = true
+  syncScheduleStatusPolling()
+})
+
+onDeactivated(() => {
+  schedulePageActive = false
+  stopScheduleStatusPolling()
+})
+
 onUnmounted(() => {
+  scheduleDisposed = true
+  stopScheduleStatusPolling()
+  document.removeEventListener('visibilitychange', handleScheduleVisibilityChange)
   if (unsubscribeBlacklistChanged) {
     unsubscribeBlacklistChanged()
     unsubscribeBlacklistChanged = undefined
@@ -2746,10 +2991,14 @@ onUnmounted(() => {
 watch(
   () => props.platform,
   () => {
+    stopScheduleStatusPolling()
+    scheduleStatuses.value = {}
     closePoolModal(true)
     void loadPools()
   }
 )
+
+watch(subTab, () => syncScheduleStatusPolling())
 
 watch(
 	() => [poolModalState.open, poolModalState.form.poolType] as const,
@@ -2774,6 +3023,160 @@ watch(
 <style scoped>
 .pool-panel {
   width: 100%;
+}
+
+.pool-schedule-editor {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 8px;
+}
+
+.pool-schedule-days {
+  display: grid;
+  gap: 10px;
+}
+
+.pool-schedule-day {
+  display: grid;
+  gap: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-border, #e5e7eb);
+}
+
+.pool-schedule-day-heading,
+.pool-schedule-copy-actions,
+.pool-schedule-copy-targets,
+.account-schedule-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.pool-schedule-weekday {
+  margin-right: auto;
+  color: var(--color-text, #1f2937);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.pool-schedule-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 8px;
+  border: 1px solid var(--color-border, #d1d5db);
+  border-radius: 5px;
+  background: var(--color-bg, #fff);
+  color: var(--color-text-secondary, #4b5563);
+  font-size: 11px;
+  line-height: 1.3;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.pool-schedule-button:hover:not(:disabled) {
+  background: var(--color-bg-hover, #f3f4f6);
+  color: var(--color-text, #1f2937);
+}
+
+.pool-schedule-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.pool-schedule-button:focus-visible {
+  outline: 2px solid var(--color-primary, #3b82f6);
+  outline-offset: 2px;
+}
+
+.pool-schedule-window {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.pool-schedule-time-field {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.pool-schedule-time-field label {
+  color: var(--color-text-secondary, #6b7280);
+  font-size: 11px;
+}
+
+.pool-schedule-time-field input {
+  min-width: 0;
+  width: 100%;
+}
+
+.pool-schedule-remove,
+.pool-schedule-separator {
+  margin-bottom: 7px;
+}
+
+.pool-schedule-copy {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 6px;
+  background: var(--color-bg-secondary, #f9fafb);
+}
+
+.account-schedule-summary {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 5px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+}
+
+.account-schedule-status {
+  padding: 3px 7px;
+  border-radius: 5px;
+  font-size: 11px;
+  background: var(--color-bg-secondary, #f3f4f6);
+}
+
+.account-schedule-status.is-open {
+  color: var(--color-success, #16803c);
+}
+
+.account-schedule-status.is-closed {
+  color: var(--color-warning, #b45309);
+}
+
+.account-schedule-status.is-unknown {
+  color: var(--color-text-secondary, #6b7280);
+}
+
+.account-schedule-summary-day {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 8px;
+  color: var(--color-text-secondary, #6b7280);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 480px) {
+  .pool-schedule-window {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pool-schedule-separator {
+    display: none;
+  }
+
+  .pool-schedule-remove {
+    justify-self: end;
+    margin-bottom: 0;
+  }
 }
 
 .pool-proxy-section {

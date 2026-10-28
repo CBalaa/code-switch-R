@@ -2029,7 +2029,7 @@ html.dark .secondary-btn:active:not(:disabled) {
    这条规则全是 !important：任何"长得不像按钮"的自定义按钮（卡片、磁贴之类）
    都必须把类名加进下面的 :not() 列表，否则会被强行改成 inline-flex + 固定内边距。
    反过来，能保持 <article>/<div> 的展示型卡片就别改成 <button>。 */
-button:where(:not(.ghost-icon):not(.mac-switch):not(.nav-item):not(.platform-tab):not(.tab-pill):not(.collapse-btn):not(.toggle-switch):not(.action-btn):not(.remove-btn):not(.icon-select-button):not(.level-select-button):not(.docs-toc-link):not(.docs-code-copy)) {
+button:where(:not(.ghost-icon):not(.mac-switch):not(.nav-item):not(.platform-tab):not(.tab-pill):not(.collapse-btn):not(.toggle-switch):not(.action-btn):not(.remove-btn):not(.icon-select-button):not(.level-select-button):not(.docs-toc-link):not(.docs-code-copy):not(.pool-schedule-button)) {
   display: inline-flex !important;
   flex-direction: row !important;
   align-items: center !important;

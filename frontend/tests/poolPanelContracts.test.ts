@@ -63,3 +63,25 @@ test('both account pool endpoint locales are declared', async () => {
     assert.equal(typeof pool.chatEndpointPlaceholder, 'string')
   }
 })
+
+test('weekly schedule is included in editing, save payloads and autosave change detection', async () => {
+  const source = await readSource('../src/components/Main/PoolPanel.vue')
+  assert.match(source, /accountSchedule: accountPoolScheduleForm\(pool\.accountPoolConfig\?\.schedule\)/)
+  assert.match(source, /buildAccountPoolSchedulePayload\(poolModalState\.form\.accountSchedule\)/)
+  assert.match(source, /schedule: schedulePayload\.schedule/)
+  assert.match(source, /schedule: accountPoolScheduleSignature\(accountPoolConfig\?\.schedule\)/)
+})
+
+test('schedule controls and both locales expose accessible editing and status hooks', async () => {
+  const source = await readSource('../src/components/Main/PoolPanel.vue')
+  for (const hook of ['enabled', 'start', 'end', 'add', 'remove', 'copy-open', 'copy-target', 'copy-apply', 'copy-cancel', 'state']) {
+    assert.ok(source.includes(`data-testid="pool-hours-${hook}"`), `missing schedule hook ${hook}`)
+  }
+  const zh = JSON.parse(await readSource('../src/locales/zh.json'))
+  const en = JSON.parse(await readSource('../src/locales/en.json'))
+  const usedKeys = [...source.matchAll(/components\.main\.pool\.(schedule[A-Za-z]+)/g)].map((match) => match[1])
+  for (const key of new Set(usedKeys)) {
+    assert.equal(typeof zh.components.main.pool[key], 'string', `missing Chinese ${key}`)
+    assert.equal(typeof en.components.main.pool[key], 'string', `missing English ${key}`)
+  }
+})

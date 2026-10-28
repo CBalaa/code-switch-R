@@ -73,6 +73,10 @@ type ProviderRelayService struct {
 	poolAttemptLogs       *PoolAttemptLogService
 	accountPoolStickyMu   sync.Mutex
 	accountPoolStickiness *accountPoolStickyStore
+	// Admission time and timers are injectable so schedule boundaries can be
+	// tested without changing the clock used by request accounting.
+	scheduleNow   func() time.Time
+	scheduleAfter func(time.Duration) (<-chan time.Time, func())
 }
 
 func (prs *ProviderRelayService) SetPoolAttemptLogService(service *PoolAttemptLogService) {
@@ -1678,6 +1682,12 @@ func (prs *ProviderRelayService) buildProviderAttemptPlan(c *gin.Context, kind s
 	}
 
 	userID := relayUserIDFromContext(c)
+	poolContext := withProviderPoolContext(c.Request.Context(), pool, userID)
+	c.Request = c.Request.WithContext(context.WithValue(poolContext, persistedProviderPoolContextKey{}, true))
+	c.Set(providerPoolIDContextKey, pool.ID)
+	if err := checkAccountPoolScheduleOpen(pool, prs.accountPoolScheduleNow()); err != nil {
+		return nil, true, err
+	}
 	active, err := prs.selectProvidersForRequestForUser(userID, kind, pool, requestedModel)
 	if err != nil {
 		return nil, true, err
@@ -2028,6 +2038,13 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 
 			plan, poolResolved, selectErr := prs.buildProviderAttemptPlan(c, kind, requestedModel)
 			if selectErr != nil {
+				if isAccountPoolScheduleClosed(selectErr) {
+					if queueItem != nil && prs.concurrencyLimiter != nil {
+						prs.removeScheduleClosedQueueItem(queueItem)
+					}
+					writeAccountPoolScheduleClosed(c, selectErr, ensureRequestLog())
+					return
+				}
 				if requestLog != nil {
 					if !poolResolved {
 						requestLog.HttpCode = http.StatusForbidden
@@ -2234,6 +2251,12 @@ func (prs *ProviderRelayService) proxyHandler(kind string, endpoint string) gin.
 					startTime := time.Now()
 					ok, err := prs.forwardRequestWithLog(c, kind, provider, effectiveEndpoint, query, clientHeaders, currentBodyBytes, isStream, effectiveModel, currentLog)
 					duration := time.Since(startTime)
+					if isAccountPoolScheduleClosed(err) {
+						prs.recordFailureBeforeScheduleClose(userID, kind, pool, provider, err)
+						releaseProviderSlot(true)
+						writeAccountPoolScheduleClosed(c, err, currentLog)
+						return
+					}
 					if errors.Is(err, errActiveRequestRetryRequested) {
 						fmt.Printf("[INFO] 用户触发重试，按当前池优先级重新选择 provider: Provider=%s | Model=%s\n", provider.Name, effectiveModel)
 						releaseProviderSlot(true)
@@ -2725,19 +2748,7 @@ func (prs *ProviderRelayService) waitForProviderQueueTurn(c *gin.Context, item *
 		prs.syncProviderQueuePositions(queueKey)
 	}
 
-	select {
-	case <-item.Ready:
-		return true
-	case <-c.Request.Context().Done():
-		_, queueKeys := prs.concurrencyLimiter.RemoveQueuedAndReserveNext(item.RequestID, item.UserID, item.Platform)
-		queueKeys = appendStringUnique(queueKeys, queueKey)
-		for _, syncedQueueKey := range queueKeys {
-			prs.syncProviderQueuePositions(syncedQueueKey)
-		}
-		requestLog.HttpCode = 499
-		requestLog.ErrorMessage = "client cancelled while queued"
-		return false
-	}
+	return prs.awaitProviderQueueTurn(c, item, requestLog)
 }
 
 func (prs *ProviderRelayService) forwardRequest(
@@ -2885,7 +2896,7 @@ func (prs *ProviderRelayService) forwardRequestWithLog(
 	defer func() {
 		retryRequested := defaultActiveRequestTracker.UnregisterCancel(activeRequestID, cancelGeneration)
 		requestCancel()
-		if retryRequested && !errors.Is(err, errActiveRequestRetryRequested) && !errors.Is(err, errCodexFirstTextTimeout) {
+		if retryRequested && !errors.Is(err, errActiveRequestRetryRequested) && !errors.Is(err, errCodexFirstTextTimeout) && !isAccountPoolScheduleClosed(err) {
 			requestLog.markRetryRequested()
 			ok = false
 			err = errActiveRequestRetryRequested
@@ -2898,6 +2909,9 @@ func (prs *ProviderRelayService) forwardRequestWithLog(
 		targetURL:  targetURL,
 	}
 	resp, firstTextAttempt, err := prs.doProviderRequestWithAttemptStart(requestCtx, targetURL, headers, query, bodyBytes, startFirstTextAttempt, trafficMetadata)
+	if isAccountPoolScheduleClosed(err) {
+		return false, err
+	}
 	if firstTextAttempt != nil {
 		firstTextAttempt.stop()
 		defer firstTextAttempt.close()
@@ -3244,6 +3258,7 @@ func (prs *ProviderRelayService) doProviderRequestWithAttemptStart(
 ) (*xrequest.Response, *providerRequestAttempt, error) {
 	const maxAttempts = 2
 	var lastErr error
+	var priorFailure *schedulePriorUpstreamFailure
 	var traffic *upstreamTrafficMetadata
 	if len(trafficMetadata) > 0 {
 		traffic = trafficMetadata[0]
@@ -3259,6 +3274,9 @@ func (prs *ProviderRelayService) doProviderRequestWithAttemptStart(
 				continue
 			}
 			return nil, nil, clientErr
+		}
+		if err := prs.checkCurrentAccountPoolSchedule(ctx); err != nil {
+			return nil, nil, withSchedulePriorUpstreamFailure(err, priorFailure)
 		}
 
 		var requestAttempt *providerRequestAttempt
@@ -3285,6 +3303,7 @@ func (prs *ProviderRelayService) doProviderRequestWithAttemptStart(
 			}
 			trafficAttempt.finish()
 			lastErr = err
+			priorFailure = &schedulePriorUpstreamFailure{err: err}
 			timedOut := requestAttempt != nil && requestAttempt.timedOut.Load()
 			requestAttempt.close()
 			if timedOut {
@@ -3315,6 +3334,7 @@ func (prs *ProviderRelayService) doProviderRequestWithAttemptStart(
 			if upstreamErrorBodyIsRequestScoped(prefix) {
 				return xrequest.NewResponse(resp), requestAttempt, nil
 			}
+			priorFailure = &schedulePriorUpstreamFailure{status: resp.StatusCode, body: string(prefix)}
 			_, _ = io.Copy(io.Discard, resp.Body)
 			_ = resp.Body.Close()
 			requestAttempt.close()
@@ -5534,6 +5554,9 @@ func (prs *ProviderRelayService) fetchModelsFromProvider(
 			}
 			return nil, clientErr
 		}
+		if err := prs.checkCurrentAccountPoolSchedule(ctx); err != nil {
+			return nil, err
+		}
 		resp, err = client.Do(req)
 		if err == nil {
 			break
@@ -5630,6 +5653,7 @@ func (prs *ProviderRelayService) forwardModelsRequest(
 	var sawPoolResolved bool
 	var sawAccountPoolFailure bool
 	var sawAccountPoolUnavailable bool
+	var scheduleClosedErr error
 	var modelsStickyRequests []*accountPoolStickyRequest
 	defer func() {
 		for _, request := range modelsStickyRequests {
@@ -5643,6 +5667,11 @@ candidateLoop:
 		for {
 			plan, poolResolved, selectErr := prs.buildProviderAttemptPlan(c, candidate, "")
 			if selectErr != nil {
+				if isAccountPoolScheduleClosed(selectErr) {
+					scheduleClosedErr = selectErr
+					sawPoolResolved = true
+					continue candidateLoop
+				}
 				lastErr = selectErr
 				if poolResolved {
 					sawPoolResolved = true
@@ -5758,6 +5787,10 @@ candidateLoop:
 				response, fetchErr := prs.fetchModelsFromProvider(
 					c.Request.Context(), c.Request.Header, c.Request.URL.RawQuery, provider, logPrefix,
 				)
+				if isAccountPoolScheduleClosed(fetchErr) {
+					scheduleClosedErr = fetchErr
+					continue candidateLoop
+				}
 				if fetchErr == nil && response != nil && response.statusCode >= http.StatusOK && response.statusCode < http.StatusMultipleChoices {
 					if !accountPool {
 						fetchErr = applyModelsMappingToResponse(response, provider)
@@ -5830,6 +5863,12 @@ candidateLoop:
 		}
 	}
 
+	// A later attempt may be denied after an earlier genuine upstream failure.
+	// Preserve its failure accounting, but report the current admission reason.
+	if scheduleClosedErr != nil {
+		writeAccountPoolScheduleClosed(c, scheduleClosedErr, nil)
+		return scheduleClosedErr
+	}
 	if sawAccountPoolFailure {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "号池中所有可用账号均请求失败，请稍后重试"})
 		return lastErr

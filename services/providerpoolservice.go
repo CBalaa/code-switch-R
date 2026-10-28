@@ -98,10 +98,11 @@ type SpecialBlacklistRule struct {
 // ResponsesEndpoint 仅用于 openai-responses 号池，ChatEndpoint 仅用于
 // openai-chat 号池；保存时只会保留与 platform 匹配的那一个。
 type AccountPoolConfig struct {
-	APIURL            string           `json:"apiUrl"`
-	ResponsesEndpoint string           `json:"responsesEndpoint,omitempty"`
-	ChatEndpoint      string           `json:"chatEndpoint,omitempty"`
-	Keys              []AccountPoolKey `json:"keys"`
+	APIURL            string               `json:"apiUrl"`
+	ResponsesEndpoint string               `json:"responsesEndpoint,omitempty"`
+	ChatEndpoint      string               `json:"chatEndpoint,omitempty"`
+	Keys              []AccountPoolKey     `json:"keys"`
+	Schedule          *AccountPoolSchedule `json:"schedule,omitempty"`
 }
 
 // AccountPoolKey 号池中的单个上游凭据。
@@ -133,7 +134,7 @@ type providerPoolStore struct {
 
 const (
 	providerPoolsFile                    = "provider-pools.json"
-	providerPoolsStoreVersion            = 6 // version 6 = per-pool first-text retry configuration
+	providerPoolsStoreVersion            = 7 // version 7 = account-pool weekly schedules
 	providerPoolsBindingMigrationVersion = 2 // version 2 = relay keys explicitly bound
 	initialPoolName                      = "初始池"
 
@@ -407,6 +408,7 @@ func (s *ProviderPoolService) SavePool(pool *ProviderPool) (string, error) {
 	if err := s.saveLocked(store); err != nil {
 		return "", err
 	}
+	notifyAccountPoolScheduleChanges(s.path, pool.ID)
 	return pool.ID, nil
 }
 
@@ -515,6 +517,9 @@ func normalizeAndValidatePoolForSave(pool *ProviderPool, existing *ProviderPool,
 	}
 
 	config := pool.AccountPoolConfig
+	if err := normalizeAndValidateAccountPoolSchedule(config.Schedule); err != nil {
+		return err
+	}
 	if pool.ProxyConfig == nil {
 		pool.ProxyConfig = &AccountPoolProxyConfig{Selection: AccountPoolProxySelectionNone}
 	}
@@ -817,7 +822,11 @@ func (s *ProviderPoolService) DeletePool(poolID string) error {
 	}
 
 	store.Pools = filtered
-	return s.saveLocked(store)
+	if err := s.saveLocked(store); err != nil {
+		return err
+	}
+	notifyAccountPoolScheduleChanges(s.path, poolID)
+	return nil
 }
 
 func (s *ProviderPoolService) DeletePoolForUser(userID string, poolID string) error {
@@ -1024,12 +1033,15 @@ func (s *ProviderPoolService) loadLocked() (*providerPoolStore, error) {
 	if err := json.Unmarshal(data, store); err != nil {
 		return nil, fmt.Errorf("解析 provider-pools.json 失败: %w", err)
 	}
-	// Only migrate the immediately preceding schema. Older stores must retain
-	// their existing relay-key binding migration flow before any newer fields
-	// are written back.
-	if store.Version == providerPoolsStoreVersion-1 {
+	if store.Version > providerPoolsStoreVersion {
+		return nil, newerProviderPoolStoreVersionError(store.Version)
+	}
+	// The global first-text retry setting belonged specifically to schema 5.
+	// Keep that migration independent from newer, additive pool schemas.
+	// Older stores retain their explicit relay-key binding migration flow.
+	if store.Version == 5 {
 		migrateFirstTextRetryToPools(store)
-		store.Version = providerPoolsStoreVersion
+		store.Version = 6
 		if err := s.saveLocked(store); err != nil {
 			return nil, fmt.Errorf("迁移首字重试池配置失败: %w", err)
 		}

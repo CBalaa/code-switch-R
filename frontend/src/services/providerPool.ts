@@ -65,6 +65,31 @@ export interface AccountPoolKey {
   apiKey: string
 }
 
+export interface AccountPoolScheduleWindow {
+  /** Beijing weekday: 1 = Monday, 7 = Sunday. */
+  weekday: number
+  startTime: string
+  /** HH:mm; the entire ending minute is included. Windows cannot cross midnight. */
+  endTime: string
+}
+
+export interface AccountPoolSchedule {
+  enabled: boolean
+  windows: AccountPoolScheduleWindow[]
+}
+
+export interface AccountPoolScheduleStatus {
+  poolId: string
+  enabled: boolean
+  isOpen: boolean
+  nextChangeAt?: string
+}
+
+export interface AccountPoolScheduleStatuses {
+  serverNow: string
+  statuses: AccountPoolScheduleStatus[]
+}
+
 /** Mirrors the relay's secret-safe account-key provider label. */
 export function accountPoolKeyDisplayName(key: AccountPoolKey): string {
   const apiKey = key.apiKey.trim()
@@ -79,6 +104,7 @@ export interface AccountPoolConfig {
   /** openai-chat 号池的协议端点（仅 chat 号池使用） */
   chatEndpoint?: string
   keys: AccountPoolKey[]
+  schedule?: AccountPoolSchedule
 }
 
 export interface ProviderPoolMember {
@@ -156,6 +182,11 @@ export async function ListPools(platform: string): Promise<ProviderPool[]> {
  */
 export async function ListAllPools(): Promise<ProviderPool[]> {
   return Call.ByName('codeswitch/services.ProviderPoolService.ListAllPools')
+}
+
+/** The server clock and admission rules are authoritative for schedule status. */
+export async function GetAccountPoolScheduleStatuses(platform: string): Promise<AccountPoolScheduleStatuses> {
+  return Call.ByName('codeswitch/services.ProviderPoolService.GetAccountPoolScheduleStatuses', platform)
 }
 
 /**

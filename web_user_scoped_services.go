@@ -411,6 +411,14 @@ func (s *userScopedProviderPoolService) ListAllPools(ctx context.Context) ([]ser
 	return s.base.ListAllPoolsForUser(user.ID)
 }
 
+func (s *userScopedProviderPoolService) GetAccountPoolScheduleStatuses(ctx context.Context, platform string) (*services.AccountPoolScheduleStatuses, error) {
+	user, err := authenticatedUserFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.base.GetAccountPoolScheduleStatusesForUser(user.ID, platform)
+}
+
 func (s *userScopedProviderPoolService) GetPool(ctx context.Context, poolID string) (*services.ProviderPool, error) {
 	user, err := authenticatedUserFromContext(ctx)
 	if err != nil {
